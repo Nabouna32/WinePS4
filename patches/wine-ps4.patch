@@ -1,0 +1,284 @@
+From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sat, 31 Oct 2026 17:24:27 +0300
+Subject: [PATCH 1/2] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+ pages, paths, in-process wineserver)
+
+---
+ dlls/ntdll/unix/loader.c        |  4 ++++
+ dlls/ntdll/unix/server.c        |  8 +++++++-
+ dlls/ntdll/unix/signal_x86_64.c | 17 ++++++++++++-----
+ dlls/ntdll/unix/virtual.c       |  4 ++--
+ server/main.c                   | 29 +++++++++++++++++++++++++++++
+ server/ptrace.c                 |  2 ++
+ server/request.c                | 11 ++++++++++-
+ 7 files changed, 66 insertions(+), 9 deletions(-)
+
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index cb700dd..a499899 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -448,10 +448,14 @@ static void set_config_dir(void)
+ 
+ static void init_paths(void)
+ {
++#ifdef __PS4_WINE__
++    ntdll_dir = strdup( LIBDIR "/wine/x86_64-unix" );
++#else
+     Dl_info info;
+ 
+     if (!dladdr( init_paths, &info ) || !(ntdll_dir = realpath_dirname( info.dli_fname )))
+         fatal_error( "cannot get path to ntdll.so\n" );
++#endif
+ 
+     if ((build_dir = remove_tail( ntdll_dir, "/dlls/ntdll" )))
+     {
+diff --git a/dlls/ntdll/unix/server.c b/dlls/ntdll/unix/server.c
+index 258a959..3507172 100644
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -1305,7 +1305,7 @@ static const char *init_server_dir( dev_t dev, ino_t ino )
+ {
+     char *dir = NULL;
+ 
+-#ifdef __ANDROID__  /* there's no /tmp dir on Android */
++#if defined(__ANDROID__) || defined(__PS4_WINE__)  /* there's no /tmp dir on Android */
+     asprintf( &dir, "%s/.wineserver/server-%llx-%llx", config_dir, (unsigned long long)dev, (unsigned long long)ino );
+ #else
+     asprintf( &dir, "/tmp/.wine-%u/server-%llx-%llx", getuid(), (unsigned long long)dev, (unsigned long long)ino );
+@@ -1399,8 +1399,14 @@ static void server_connect_error( const char *serverdir )
+  *
+  * Attempt to connect to an existing server socket.
+  */
++#ifdef __PS4_WINE__
++extern int ps4_start_wineserver( void );
++#endif
+ static int server_connect(void)
+ {
++#ifdef __PS4_WINE__
++    return ps4_start_wineserver();
++#endif
+     struct sockaddr_un addr;
+     struct stat st;
+     int s, slen, retry;
+diff --git a/dlls/ntdll/unix/signal_x86_64.c b/dlls/ntdll/unix/signal_x86_64.c
+index 62be480..9441bc9 100644
+--- a/dlls/ntdll/unix/signal_x86_64.c
++++ b/dlls/ntdll/unix/signal_x86_64.c
+@@ -194,7 +194,7 @@ __ASM_GLOBAL_FUNC( modify_ldt,
+ #define FPU_sig(context)     ((void *)((context)->uc_mcontext.fpregs))
+ #define XState_sig(fpu)      (((unsigned int *)((XMM_SAVE_AREA32 *)fpu)->Reserved4)[12] == FP_XSTATE_MAGIC1 ? (XSAVE_AREA_HEADER *)(((XMM_SAVE_AREA32 *)fpu) + 1) : NULL)
+ 
+-#elif defined(__FreeBSD__) || defined (__FreeBSD_kernel__)
++#elif defined(__FreeBSD__) || defined (__FreeBSD_kernel__) || defined(__PS4_WINE__)
+ 
+ #include <machine/trap.h>
+ 
+@@ -362,7 +362,7 @@ static inline const WORD *SS_sig_ptr( const ucontext_t *context )
+ 
+ enum i386_trap_code
+ {
+-#if defined(__FreeBSD__) || defined (__FreeBSD_kernel__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
++#if defined(__FreeBSD__) || defined (__FreeBSD_kernel__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__) || defined(__PS4_WINE__)
+     TRAP_x86_DIVIDE     = T_DIVIDE,     /* Division by zero exception */
+     TRAP_x86_TRCTRAP    = T_TRCTRAP,    /* Single-step exception */
+     TRAP_x86_NMI        = T_NMI,        /* NMI interrupt */
+@@ -525,7 +525,7 @@ static unsigned int frame_size;
+ static unsigned int xstate_size = sizeof(XSAVE_AREA_HEADER);
+ static UINT64 xstate_extended_features;
+ 
+-#if defined(__linux__) || defined(__APPLE__)
++#if defined(__linux__) || defined(__APPLE__) || defined(__PS4_WINE__)
+ static inline TEB *get_current_teb(void)
+ {
+     unsigned long rsp;
+@@ -907,6 +907,9 @@ __ASM_GLOBAL_FUNC( clear_alignment_flag,
+  */
+ static inline ucontext_t *init_handler( void *sigcontext )
+ {
++#ifdef __PS4_WINE__
++    amd64_set_gsbase( get_current_teb() );
++#endif
+     clear_alignment_flag();
+ #ifdef __linux__
+     if (fs32_sel)
+@@ -2314,7 +2317,7 @@ static inline BOOL check_invalid_gsbase( ucontext_t *ucontext )
+         __asm__("rdgsbase %0" : "=r" (cur_gsbase));
+     else
+         arch_prctl( ARCH_GET_GS, &cur_gsbase );
+-#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
++#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__PS4_WINE__)
+     amd64_get_gsbase( (void**)&cur_gsbase );
+ #elif defined(__NetBSD__)
+     sysarch( X86_64_GET_GSBASE, &cur_gsbase );
+@@ -2375,7 +2378,7 @@ static inline BOOL check_invalid_gsbase( ucontext_t *ucontext )
+ 
+ #ifdef __linux__
+     arch_prctl( ARCH_SET_GS, teb );
+-#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
++#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__PS4_WINE__)
+     amd64_set_gsbase( teb );
+ #elif defined(__NetBSD__)
+     sysarch( X86_64_SET_GSBASE, &teb );
+@@ -2913,6 +2916,10 @@ void init_syscall_frame( LPTHREAD_START_ROUTINE entry, void *arg, BOOL suspend,
+     }
+ #elif defined (__FreeBSD__) || defined (__FreeBSD_kernel__)
+     amd64_set_gsbase( teb );
++#elif defined(__PS4_WINE__)
++    amd64_set_gsbase( teb );
++    ps4_thread_teb = teb;
++    ps4_thread_register();
+ #elif defined(__NetBSD__)
+     sysarch( X86_64_SET_GSBASE, &teb );
+ #elif defined (__APPLE__)
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index 111849d..296db73 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -173,7 +173,7 @@ static const UINT page_shift = 12;
+ static const UINT_PTR page_mask = 0xfff;
+ static const UINT_PTR granularity_mask = 0xffff;
+ 
+-#ifdef __aarch64__
++#if defined(__aarch64__) || defined(__PS4_WINE__)
+ static UINT_PTR host_page_size;
+ static UINT_PTR host_page_mask;
+ #else
+@@ -3648,7 +3648,7 @@ void virtual_init(void)
+     pthread_mutex_init( &virtual_mutex, &attr );
+     pthread_mutexattr_destroy( &attr );
+ 
+-#ifdef __aarch64__
++#if defined(__aarch64__) || defined(__PS4_WINE__)
+     host_page_size = sysconf( _SC_PAGESIZE );
+     host_page_mask = host_page_size - 1;
+     TRACE( "host page size: %uk\n", (UINT)host_page_size / 1024 );
+diff --git a/server/main.c b/server/main.c
+index 46419a0..33b127b 100644
+--- a/server/main.c
++++ b/server/main.c
+@@ -241,6 +241,35 @@ static void init_limits(void)
+ #endif
+ }
+ 
++#ifdef __PS4_WINE__
++extern void ps4_server_dir_init(void);
++
++/* WinePS4: wineserver as a thread of the app's process. Its signals belong to ntdll in this process,
++ * so init_signals() is left out (it only handles SIGCHLD/SIGHUP/SIGINT/SIGTERM/SIGIO for a server
++ * of its own). */
++int ps4_wineserver_main( int client_fd )
++{
++    server_argv0 = "wineserver";
++    foreground = 1;
++    if (getenv( "WINEPS4_SERVER_DEBUG" )) debug_level = atoi( getenv( "WINEPS4_SERVER_DEBUG" ));
++    init_limits();
++    sock_init();
++    ps4_server_dir_init();
++    if (debug_level) fprintf( stderr, "wineserver: starting in-process
++" );
++    set_current_time();
++    init_memory();
++    init_directories( load_intl_file() );
++    init_threading();
++    init_registry();
++    if (!create_process( client_fd, NULL, 0, NULL, NULL, NULL, 0, NULL ))
++        fatal_error( "wineserver: could not create the first process
++" );
++    main_loop();
++    return 0;
++}
++#endif
++
+ int main( int argc, char *argv[] )
+ {
+     setvbuf( stderr, NULL, _IOLBF, 0 );
+diff --git a/server/ptrace.c b/server/ptrace.c
+index c4b71e9..e266b53 100644
+--- a/server/ptrace.c
++++ b/server/ptrace.c
+@@ -227,6 +227,8 @@ static inline int tkill( int tgid, int pid, int sig )
+     return ret;
+ #elif (defined(__FreeBSD__) || defined (__FreeBSD_kernel__)) && defined(HAVE_THR_KILL2)
+     return thr_kill2( tgid, pid, sig );
++#elif defined(__PS4_WINE__)
++    return ps4_thread_kill( pid, sig );
+ #else
+     errno = ENOSYS;
+     return -1;
+diff --git a/server/request.c b/server/request.c
+index 432a591..122208b 100644
+--- a/server/request.c
++++ b/server/request.c
+@@ -640,7 +640,7 @@ static char *create_server_dir( int force )
+ 
+     /* create the base directory if needed */
+ 
+-#ifdef __ANDROID__  /* there's no /tmp dir on Android */
++#if defined(__ANDROID__) || defined(__PS4_WINE__)  /* there's no /tmp dir on Android */
+     if (asprintf( &base_dir, "%s/.wineserver", config_dir ) == -1)
+         fatal_error( "out of memory\n" );
+ #else
+@@ -902,6 +902,15 @@ void open_master_socket(void)
+     close( fd );
+ }
+ 
++#ifdef __PS4_WINE__
++/* WinePS4: the server directory without the master socket or the lock (one client, this process). */
++void ps4_server_dir_init(void)
++{
++    server_dir = create_server_dir( 1 );
++    init_tracing_mechanism();
++}
++#endif
++
+ /* master socket timer expiration handler */
+ static void close_socket_timeout( void *arg )
+ {
+-- 
+2.53.0
+
+
+From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sat, 31 Oct 2026 17:35:43 +0300
+Subject: [PATCH 2/2] WinePS4: wineserver main fixes
+
+---
+ server/main.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/server/main.c b/server/main.c
+index 33b127b..4b4c083 100644
+--- a/server/main.c
++++ b/server/main.c
+@@ -38,6 +38,7 @@
+ #include "object.h"
+ #include "file.h"
+ #include "thread.h"
++#include "process.h"
+ #include "request.h"
+ #include "unicode.h"
+ 
+@@ -255,16 +256,14 @@ int ps4_wineserver_main( int client_fd )
+     init_limits();
+     sock_init();
+     ps4_server_dir_init();
+-    if (debug_level) fprintf( stderr, "wineserver: starting in-process
+-" );
++    if (debug_level) fprintf( stderr, "wineserver: starting in-process\n" );
+     set_current_time();
+     init_memory();
+     init_directories( load_intl_file() );
+     init_threading();
+     init_registry();
+     if (!create_process( client_fd, NULL, 0, NULL, NULL, NULL, 0, NULL ))
+-        fatal_error( "wineserver: could not create the first process
+-" );
++        fatal_error( "wineserver: could not create the first process\n" );
+     main_loop();
+     return 0;
+ }
+-- 
+2.53.0
+
