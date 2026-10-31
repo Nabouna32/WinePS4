@@ -35,5 +35,7 @@ struct Input {
 void input_open();
 // Once per frame, dt in seconds
 const Input &input_poll(float dt);
+// Puts the pointer at (x, y): the D-pad steps it through a menu's items
+void input_warp(float x, float y);
 
 } // namespace shell

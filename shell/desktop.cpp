@@ -27,7 +27,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "fileops.h"
 #include "input.h"
+#include "keyboard.h"
 #include "ps4_canvas.h"
 #include "screen.h"
 
@@ -646,13 +648,55 @@ int next_id = 1;
 enum class Popup { None, Start, Power };
 Popup popup = Popup::None;
 
+enum class DialogKind { Message, Run, Delete };
+
 struct Dialog {
     bool open = false;
-    std::string title, text;
-    std::string program;  // Run asks about this
-    bool run = false;     // [Run] [Cancel] (else [OK])
+    DialogKind kind = DialogKind::Message;  // [OK], [Run] [Cancel], [Delete] [Cancel]
+    std::string title, text;                // text: lines split by '\n'
+    std::string program;                    // what Run runs
+    std::vector<std::string> paths;         // what Delete deletes
+    bool two() const { return kind != DialogKind::Message; }
 };
 Dialog dialog;
+
+// The right-click menu
+struct MenuItem {
+    std::string label;
+    std::string action;  // "" for a separator
+    bool enabled = true;
+};
+struct Menu {
+    bool open = false;
+    int x = 0, y = 0;
+    std::vector<MenuItem> items;
+    std::string target;  // what was right-clicked (a hit key)
+};
+Menu menu;
+constexpr int MENU_W = 280, MENU_ITEM_H = 38, MENU_SEPARATOR_H = 9;
+
+// Cut or Copy, for Paste
+struct Clipboard {
+    std::vector<std::string> paths;
+    bool cut = false;
+};
+Clipboard clipboard;
+
+// What the keyboard's text is for
+enum class TextFor { None, Rename };
+struct TextRequest {
+    TextFor what = TextFor::None;
+    std::string path;  // the entry to rename
+    int window = 0;    // the Files window showing it
+};
+TextRequest text_request;
+bool input_held_back = false;  // after the keyboard closes: until the buttons that closed it are let go
+
+// A window being resized by an edge: which ones (1 left, 2 right, 4 top, 8 bottom)
+int resizing = 0, resize_edges = 0;
+float resize_px = 0, resize_py = 0;
+int resize_x = 0, resize_y = 0, resize_w = 0, resize_h = 0;
+constexpr int MIN_W = 480, MIN_H = 300;
 
 struct Toast {
     std::string text;
@@ -757,12 +801,24 @@ Icon window_icon(const Window &w) {
 // --- running a program: launch.txt, then the app again ----------------------------------------
 
 void show_message(const std::string &title, const std::string &text) {
-    dialog = Dialog{true, title, text, std::string(), false};
+    dialog = Dialog{};
+    dialog.open = true;
+    dialog.title = title;
+    dialog.text = text;
 }
 
 void ask_run(const std::string &path) {
-    dialog = Dialog{true, "Run " + base_name(path) + "?",
-                    "WinePS4 restarts and runs it. A running program is closed first.", path, true};
+    show_message("Run " + base_name(path) + "?", "WinePS4 restarts and runs it. A running program is closed first.");
+    dialog.kind = DialogKind::Run;
+    dialog.program = path;
+}
+
+void ask_delete(const std::string &path) {
+    show_message("Delete " + base_name(path) + "?",
+                 is_dir(path) ? "The folder and everything in it are deleted for good: WinePS4 has no Recycle Bin."
+                              : "It is deleted for good: WinePS4 has no Recycle Bin.");
+    dialog.kind = DialogKind::Delete;
+    dialog.paths = {path};
 }
 
 void run_program(const std::string &path) {
@@ -809,6 +865,275 @@ void go_up(Window &w) {
         }
     const size_t slash = w.path.find_last_of('/');
     navigate(w, slash == 0 || slash == std::string::npos ? "" : w.path.substr(0, slash));
+}
+
+// --- file commands ----------------------------------------------------------------------------
+
+// The list again (keeping the selection, by name): after a change in the folder
+void refresh(Window &w, const std::string &select = std::string()) {
+    if (w.kind != Kind::Files)
+        return;
+    std::string keep = select;
+    if (keep.empty() && w.selected >= 0 && w.selected < static_cast<int>(w.entries.size()))
+        keep = w.entries[w.selected].path;
+    const float scroll = w.scroll;
+    w.entries = list_dir(w.path);
+    w.scroll = scroll;
+    w.selected = -1;
+    for (int i = 0; i < static_cast<int>(w.entries.size()); i++)
+        if (w.entries[i].path == keep) {
+            w.selected = i;
+            // into view
+            const int rows = 12;
+            if (i < w.scroll || i >= w.scroll + rows)
+                w.scroll = static_cast<float>(std::max(0, i - 2));
+        }
+}
+
+void refresh_all(const std::vector<std::string> &folders) {
+    for (Window &w : windows)
+        if (w.kind == Kind::Files &&
+            (folders.empty() || std::find(folders.begin(), folders.end(), w.path) != folders.end()))
+            refresh(w);
+}
+
+std::string folder_of(const std::string &path) {
+    const size_t slash = path.find_last_of('/');
+    return slash == 0 || slash == std::string::npos ? "/" : path.substr(0, slash);
+}
+
+void start_rename(Window &w, const std::string &path) {
+    text_request = TextRequest{TextFor::Rename, path, w.id};
+    if (!keyboard_open("Rename " + base_name(path), base_name(path))) {
+        text_request = TextRequest{};
+        show_message("Rename", "The system keyboard did not open.");
+    }
+}
+
+void finish_text(const std::string &text) {
+    const TextRequest request = text_request;
+    text_request = TextRequest{};
+    if (request.what != TextFor::Rename)
+        return;
+    std::string name = text;
+    while (!name.empty() && name.back() == ' ')
+        name.pop_back();
+    if (name.empty() || name == base_name(request.path))
+        return;
+    if (name.find('/') != std::string::npos || name == "." || name == "..") {
+        show_message("Rename", "A name can't contain / or be . or ..");
+        return;
+    }
+    const std::string to = folder_of(request.path) + "/" + name;
+    const std::string error = rename_entry(request.path, to);
+    if (!error.empty()) {
+        show_message("Rename", error);
+        return;
+    }
+    if (Window *w = find_window(request.window))
+        refresh(*w, to);
+}
+
+// New folder / New text document: made at once, then named on the keyboard (as Windows does)
+void make_new(Window &w, bool folder) {
+    const std::string name = folder ? unique_name(w.path, "New folder", "") : unique_name(w.path, "New Text Document", ".txt");
+    const std::string path = w.path + "/" + name;
+    const std::string error = folder ? make_folder(path) : make_file(path);
+    if (!error.empty()) {
+        show_message(folder ? "New folder" : "New text document", error);
+        return;
+    }
+    refresh(w, path);
+    start_rename(w, path);
+}
+
+void paste_into(Window &w) {
+    if (clipboard.paths.empty() || w.path.empty())
+        return;
+    if (!job_paste(clipboard.paths, clipboard.cut, w.path)) {
+        show_message("Paste", "Wait for the copy that is running to finish.");
+        return;
+    }
+    if (clipboard.cut)
+        clipboard = Clipboard{};  // moved: nothing left to paste
+}
+
+void show_properties(const Entry &e) {
+    struct stat st{};
+    const bool ok = stat(e.path.c_str(), &st) == 0;
+    std::string text = "Type: " + type_text(e) + "\nLocation: " + (e.path.empty() ? "This PS4" : folder_of(e.path));
+    if (ok && !S_ISDIR(st.st_mode)) {
+        text += "\nSize: " + size_text(st.st_size);
+    } else if (ok) {
+        int count = 0;
+        if (DIR *dir = opendir(e.path.c_str())) {
+            while (dirent *d = readdir(dir))
+                if (std::strcmp(d->d_name, ".") && std::strcmp(d->d_name, ".."))
+                    count++;
+            closedir(dir);
+        }
+        text += "\nContains: " + std::to_string(count) + (count == 1 ? " item" : " items");
+    }
+    if (ok) {
+        char when[64];
+        std::tm local{};
+        localtime_r(&st.st_mtime, &local);
+        std::strftime(when, sizeof when, "%d/%m/%Y %H:%M", &local);
+        text += std::string("\nModified: ") + when;
+    }
+    show_message(e.name + " properties", text);
+}
+
+// --- the right-click menu ---------------------------------------------------------------------
+
+int number_after(const std::string &key, const char *prefix) {
+    return std::atoi(key.c_str() + std::strlen(prefix));
+}
+
+bool is_program(const std::string &name) { return ends_with(name, ".exe") || ends_with(name, ".msi"); }
+
+void open_menu(const std::string &target, float px, float py) {
+    std::vector<MenuItem> items;
+    const auto sep = [&] { items.push_back({"", "", false}); };
+    if (target == "desktop" || target.rfind("icon:", 0) == 0) {
+        if (target != "desktop")
+            items.push_back({"Open", "icon-open"}), sep();
+        items.push_back({"Open Files", "files"});
+        items.push_back({"Open Terminal", "terminal"});
+        items.push_back({"Settings", "settings"});
+        sep();
+        items.push_back({"Refresh", "refresh-all"});
+    } else if (target.rfind("taskbar:", 0) == 0) {
+        const int i = number_after(target, "taskbar:");
+        if (i <= 1) {
+            items.push_back({"Files", "files"});
+            items.push_back({"Terminal", "terminal"});
+            items.push_back({"Settings", "settings"});
+            sep();
+            items.push_back({"Restart WinePS4", "restart"});
+            items.push_back({"Exit to the PS4 menu", "exit"});
+        } else {
+            const char *kinds[] = {"files", "terminal", "settings"};
+            const char *names[] = {"New Files window", "Terminal", "Settings"};
+            items.push_back({names[i - 2], kinds[i - 2]});
+            sep();
+            items.push_back({"Close window", "close-kind"});
+        }
+    } else if (target.rfind("win:", 0) == 0) {
+        const int id = number_after(target, "win:");
+        const std::string part = target.substr(target.find(':', 4) + 1);
+        Window *w = find_window(id);
+        if (!w)
+            return;
+        if (part == "title" || part.rfind("cap", 0) == 0 || part.rfind("edge", 0) == 0) {
+            items.push_back({"Restore", "restore", w->maximized});
+            items.push_back({"Minimize", "minimize"});
+            items.push_back({"Maximize", "maximize", !w->maximized});
+            sep();
+            items.push_back({"Close", "close"});
+        } else if (w->kind == Kind::Files && part.rfind("row", 0) == 0) {
+            const int row = number_after(part, "row");
+            if (row >= static_cast<int>(w->entries.size()))
+                return;
+            w->selected = row;
+            const Entry &e = w->entries[row];
+            const bool place = w->path.empty();
+            items.push_back({is_program(e.name) ? "Run" : "Open", "open"});
+            if (!place) {
+                sep();
+                items.push_back({"Cut", "cut"});
+                items.push_back({"Copy", "copy"});
+                if (e.dir)
+                    items.push_back({"Paste into folder", "paste-into", !clipboard.paths.empty()});
+                sep();
+                items.push_back({"Rename", "rename"});
+                items.push_back({"Delete", "delete"});
+            }
+            sep();
+            items.push_back({"Properties", "properties"});
+        } else if (w->kind == Kind::Files) {
+            const bool place = w->path.empty();
+            items.push_back({"Refresh", "refresh"});
+            if (!place) {
+                sep();
+                items.push_back({"New folder", "new-folder"});
+                items.push_back({"New text document", "new-file"});
+                sep();
+                items.push_back({"Paste", "paste", !clipboard.paths.empty()});
+                sep();
+                items.push_back({"Up one folder", "up"});
+            }
+        } else if (w->kind == Kind::Terminal) {
+            items.push_back({"Scroll to the end", "terminal-end"});
+            sep();
+            items.push_back({"Close", "close"});
+        } else {
+            items.push_back({"Close", "close"});
+        }
+    } else {
+        return;
+    }
+    int h = 8;
+    for (const MenuItem &it : items)
+        h += it.action.empty() ? MENU_SEPARATOR_H : MENU_ITEM_H;
+    menu.open = true;
+    menu.items = items;
+    menu.target = target;
+    // at the pointer, inside the screen (above the taskbar)
+    menu.x = std::min(static_cast<int>(px), W - MENU_W - 8);
+    menu.y = static_cast<int>(py) + h > H - TASKBAR_H - 4 ? std::max(8, static_cast<int>(py) - h) : static_cast<int>(py);
+}
+
+void open_desktop_icon(int i);  // (below, with the icons)
+
+void menu_action(const std::string &action) {
+    const std::string target = menu.target;
+    menu.open = false;
+    Window *w = nullptr;
+    std::string part;
+    if (target.rfind("win:", 0) == 0) {
+        w = find_window(number_after(target, "win:"));
+        part = target.substr(target.find(':', 4) + 1);
+    }
+    const Entry *entry = w && w->kind == Kind::Files && w->selected >= 0 && w->selected < static_cast<int>(w->entries.size())
+                             ? &w->entries[w->selected] : nullptr;
+    if (action == "files") open_window(Kind::Files, "");
+    else if (action == "terminal") open_window(Kind::Terminal);
+    else if (action == "settings") open_window(Kind::Settings);
+    else if (action == "refresh-all") refresh_all({});
+    else if (action == "restart") sceSystemServiceLoadExec("/app0/eboot.bin", nullptr);
+    else if (action == "exit") { ps4_boot_trace("shell: exit to the PS4 menu"); exit(0); }
+    else if (action == "icon-open") open_desktop_icon(number_after(target, "icon:"));
+    else if (action == "close-kind") {
+        const int i = number_after(target, "taskbar:");
+        const Kind kind = i == 2 ? Kind::Files : i == 3 ? Kind::Terminal : Kind::Settings;
+        windows.erase(std::remove_if(windows.begin(), windows.end(), [&](const Window &x) { return x.kind == kind; }), windows.end());
+    }
+    if (!w)
+        return;
+    if (action == "restore" && w->maximized) toggle_maximize(*w);
+    else if (action == "maximize" && !w->maximized) toggle_maximize(*w);
+    else if (action == "minimize") w->minimized = true;
+    else if (action == "close") close_window(w->id);
+    else if (action == "terminal-end") w->scroll = 0;
+    else if (action == "refresh") refresh(*w);
+    else if (action == "up") go_up(*w);
+    else if (action == "new-folder") make_new(*w, true);
+    else if (action == "new-file") make_new(*w, false);
+    else if (action == "paste") paste_into(*w);
+    else if (entry) {
+        const Entry e = *entry;
+        if (action == "open") open_entry(*w, e);
+        else if (action == "cut" || action == "copy") {
+            clipboard = Clipboard{{e.path}, action == "cut"};
+            toast = Toast{std::string(action == "cut" ? "Cut " : "Copied ") + e.name + ": Paste it in a folder", now_seconds() + 3};
+        } else if (action == "paste-into") {
+            if (!clipboard.paths.empty() && job_paste(clipboard.paths, clipboard.cut, e.path) && clipboard.cut)
+                clipboard = Clipboard{};
+        } else if (action == "rename") start_rename(*w, e.path);
+        else if (action == "delete") ask_delete(e.path);
+        else if (action == "properties") show_properties(e);
+    }
 }
 
 // --- layout -----------------------------------------------------------------------------------
@@ -877,6 +1202,11 @@ void start_action(int action) {
     }
 }
 
+void open_desktop_icon(int i) {
+    if (i >= 0 && i < static_cast<int>(std::size(DESKTOP_ICONS)))
+        start_action(DESKTOP_ICONS[i].action);
+}
+
 Rect caption_button(const Window &w, int i) {  // 0 close, 1 maximize, 2 minimize
     return Rect{w.x + w.w - 46 * (i + 1), w.y, 46, TITLE_H};
 }
@@ -898,22 +1228,64 @@ void clamp_scroll(Window &w, int count, int visible) {
 Rect toggle_rect(const Window &w, int i) { return Rect{w.x + 32, w.y + TITLE_H + 150 + i * 92, w.w - 64, 80}; }
 
 // Dialog buttons
-Rect dialog_rect() { return Rect{W / 2 - 300, H / 2 - 130, 600, 240}; }
-Rect dialog_button(int i) {  // 0 primary (Run / OK), 1 Cancel
+int dialog_lines() { return 1 + static_cast<int>(std::count(dialog.text.begin(), dialog.text.end(), '\n')); }
+Rect dialog_rect() {
+    const int h = 200 + 26 * std::max(0, dialog_lines() - 1) + (dialog.text.size() > 60 && dialog_lines() == 1 ? 22 : 0);
+    return Rect{W / 2 - 300, H / 2 - h / 2, 600, h};
+}
+Rect dialog_button(int i) {  // 0 primary (OK, Run, Delete), 1 Cancel
     const Rect d = dialog_rect();
-    const bool two = dialog.run;
-    const int bw = two ? 262 : 540;
+    const int bw = dialog.two() ? 262 : 540;
     return Rect{d.x + 30 + i * (bw + 16), d.y + d.h - 64, bw, 44};
+}
+
+// The right-click menu's items (separators are thinner)
+Rect menu_item_rect(int i) {
+    int y = menu.y + 4;
+    for (int k = 0; k < i; k++)
+        y += menu.items[k].action.empty() ? MENU_SEPARATOR_H : MENU_ITEM_H;
+    return Rect{menu.x + 4, y, MENU_W - 8, menu.items[i].action.empty() ? MENU_SEPARATOR_H : MENU_ITEM_H};
+}
+Rect menu_rect() {
+    int h = 8;
+    for (const MenuItem &it : menu.items)
+        h += it.action.empty() ? MENU_SEPARATOR_H : MENU_ITEM_H;
+    return Rect{menu.x, menu.y, MENU_W, h};
+}
+
+// A window's edge under the pointer: 1 left, 2 right, 4 top, 8 bottom (0: none). The grip reaches
+// a little outside the window, as on Windows.
+constexpr int GRIP_OUT = 8, GRIP_IN = 5;
+int edge_at(const Window &w, float px, float py) {
+    if (w.maximized || w.minimized)
+        return 0;
+    if (px < w.x - GRIP_OUT || py < w.y - GRIP_OUT || px >= w.x + w.w + GRIP_OUT || py >= w.y + w.h + GRIP_OUT)
+        return 0;
+    int edges = 0;
+    if (px < w.x + GRIP_IN) edges |= 1;
+    if (px >= w.x + w.w - GRIP_IN) edges |= 2;
+    if (py < w.y + GRIP_IN) edges |= 4;
+    if (py >= w.y + w.h - GRIP_IN) edges |= 8;
+    return edges;
 }
 
 // --- hit testing and clicks -------------------------------------------------------------------
 
 std::string hit(float px, float py) {
     if (dialog.open) {
-        for (int i = 0; i < (dialog.run ? 2 : 1); i++)
+        for (int i = 0; i < (dialog.two() ? 2 : 1); i++)
             if (dialog_button(i).contains(px, py))
                 return "dialog:" + std::to_string(i);
         return "dialog";
+    }
+    if (menu.open) {
+        if (menu_rect().contains(px, py)) {
+            for (int i = 0; i < static_cast<int>(menu.items.size()); i++)
+                if (!menu.items[i].action.empty() && menu_item_rect(i).contains(px, py))
+                    return "menu:" + std::to_string(i);
+            return "menu";
+        }
+        return "outside-menu";
     }
     if (popup == Popup::Power)
         for (int i = 0; i < 2; i++)
@@ -942,9 +1314,11 @@ std::string hit(float px, float py) {
     }
     for (auto it = windows.rbegin(); it != windows.rend(); ++it) {
         const Window &w = *it;
+        const std::string id = "win:" + std::to_string(w.id) + ":";
+        if (const int edges = edge_at(w, px, py))
+            return id + "edge" + std::to_string(edges);
         if (w.minimized || !Rect{w.x, w.y, w.w, w.h}.contains(px, py))
             continue;
-        const std::string id = "win:" + std::to_string(w.id) + ":";
         for (int i = 0; i < 3; i++)
             if (caption_button(w, i).contains(px, py))
                 return id + "cap" + std::to_string(i);
@@ -977,24 +1351,33 @@ std::string hit(float px, float py) {
     return "desktop";
 }
 
-int number_after(const std::string &key, const char *prefix) {
-    return std::atoi(key.c_str() + std::strlen(prefix));
-}
-
 std::string selected_icon;  // a desktop icon clicked once
 
 void click(const std::string &key, bool twice, float px, float py) {
     if (key.rfind("dialog:", 0) == 0) {
         const int i = number_after(key, "dialog:");
-        const std::string program = dialog.program;
-        const bool run = dialog.run && i == 0;
+        const Dialog d = dialog;
         dialog.open = false;
-        if (run)
-            run_program(program);
+        if (i == 0 && d.kind == DialogKind::Run)
+            run_program(d.program);
+        else if (i == 0 && d.kind == DialogKind::Delete && !job_delete(d.paths))
+            show_message("Delete", "Wait for the copy that is running to finish.");
         return;
     }
     if (key == "dialog")
         return;
+    if (key.rfind("menu:", 0) == 0) {
+        const int i = number_after(key, "menu:");
+        if (i < static_cast<int>(menu.items.size()) && menu.items[i].enabled)
+            menu_action(menu.items[i].action);
+        return;
+    }
+    if (key == "menu")
+        return;
+    if (key == "outside-menu") {
+        menu.open = false;  // (a click away from a menu only closes it, as on Windows)
+        return;
+    }
     if (key.rfind("power:", 0) == 0) {
         const int i = number_after(key, "power:");
         popup = Popup::None;
@@ -1075,7 +1458,12 @@ void click(const std::string &key, bool twice, float px, float py) {
     Window *w = find_window(id);
     if (!w)
         return;
-    if (part == "cap0") {
+    if (part.rfind("edge", 0) == 0) {
+        resizing = id;
+        resize_edges = number_after(part, "edge");
+        resize_px = px, resize_py = py;
+        resize_x = w->x, resize_y = w->y, resize_w = w->w, resize_h = w->h;
+    } else if (part == "cap0") {
         close_window(id);
     } else if (part == "cap1") {
         toggle_maximize(*w);
@@ -1206,7 +1594,11 @@ void draw_files(Canvas &c, Window &w) {
         else if (hover == id + "row" + std::to_string(i))
             c.fill_round_rect(list.x + 8, ry + 1, list.w - 16, ROW_H - 2, 5, HOVER);
         draw_icon(c, e.icon, list.x + 32, ry + ROW_H / 2.f, 22);
-        c.text(list.x + 52, ry + 24, e.name, 15, TEXT, Weight::Regular, name_w - 60);
+        // (a cut entry is shown faded until it is pasted)
+        const bool cut = clipboard.cut && std::find(clipboard.paths.begin(), clipboard.paths.end(), e.path) != clipboard.paths.end();
+        if (cut)
+            c.fill_rect(list.x + 18, ry + 6, 30, ROW_H - 12, rgb(0x1b1b1b, 0x90));
+        c.text(list.x + 52, ry + 24, e.name, 15, cut ? TEXT3 : TEXT, Weight::Regular, name_w - 60);
         c.text(list.x + name_w, ry + 24, type_text(e), 15, TEXT2, Weight::Regular, type_w - 10);
         c.text(list.x + name_w + type_w, ry + 24, size_text(e.size), 15, TEXT2, Weight::Regular, list.w - name_w - type_w - 20);
     }
@@ -1400,16 +1792,67 @@ void draw_dialog(Canvas &c) {
     c.fill_round_rect(d.x + 1, d.y + d.h - 88, d.w - 2, 87, RADIUS - 1, rgb(0x202020));
     c.fill_rect(d.x + 1, d.y + d.h - 88, d.w - 2, 10, rgb(0x202020));
     c.text(d.x + 30, d.y + 48, dialog.title, 20, TEXT, Weight::Bold, d.w - 60);
-    c.text_wrapped(d.x + 30, d.y + 84, dialog.text, 15, TEXT2, d.w - 60, 22);
-    for (int i = 0; i < (dialog.run ? 2 : 1); i++) {
+    if (dialog_lines() == 1) {
+        c.text_wrapped(d.x + 30, d.y + 84, dialog.text, 15, TEXT2, d.w - 60, 22);
+    } else {
+        size_t start = 0;
+        for (int line = 0; start <= dialog.text.size(); line++) {
+            const size_t end = dialog.text.find('\n', start);
+            const std::string piece = dialog.text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            c.text(d.x + 30, d.y + 84 + line * 26, piece, 15, TEXT2, Weight::Regular, d.w - 60);
+            if (end == std::string::npos)
+                break;
+            start = end + 1;
+        }
+    }
+    for (int i = 0; i < (dialog.two() ? 2 : 1); i++) {
         const Rect b = dialog_button(i);
         const bool primary = i == 0;
         const bool hot = hover == "dialog:" + std::to_string(i);
-        panel(c, b.x, b.y, b.w, b.h, 5, primary ? (hot ? rgb(0x6dd0ff) : ACCENT) : (hot ? rgb(0x3d3d3d) : rgb(0x333333)),
-              primary ? rgb(0x3aa6e0) : rgb(0x454545));
-        const char *label = dialog.run ? (primary ? "Run" : "Cancel") : "OK";
-        c.text_centered(b.x + b.w / 2, b.y + 28, label, 15, primary ? rgb(0x000000) : TEXT);
+        const bool danger = primary && dialog.kind == DialogKind::Delete;
+        const Color fill = danger ? (hot ? rgb(0xe0453a) : CLOSE_RED) : primary ? (hot ? rgb(0x6dd0ff) : ACCENT)
+                                                                     : (hot ? rgb(0x3d3d3d) : rgb(0x333333));
+        panel(c, b.x, b.y, b.w, b.h, 5, fill, danger ? rgb(0xa32317) : primary ? rgb(0x3aa6e0) : rgb(0x454545));
+        const char *label = !primary ? "Cancel" : dialog.kind == DialogKind::Run ? "Run" : dialog.kind == DialogKind::Delete ? "Delete" : "OK";
+        c.text_centered(b.x + b.w / 2, b.y + 28, label, 15, primary && !danger ? rgb(0x000000) : TEXT);
     }
+}
+
+void draw_menu(Canvas &c) {
+    const Rect m = menu_rect();
+    c.blit(shadow_for(m.w, m.h, true), m.x - SHADOW, m.y - SHADOW);
+    acrylic(c, m.x, m.y, m.w, m.h, RADIUS, rgb(0x2c2c2c, 0xec));
+    c.fill_round_rect(m.x, m.y, m.w, 1, 0, rgb(0xffffff, 0x10));
+    for (int i = 0; i < static_cast<int>(menu.items.size()); i++) {
+        const MenuItem &it = menu.items[i];
+        const Rect r = menu_item_rect(i);
+        if (it.action.empty()) {
+            c.fill_rect(r.x + 8, r.y + r.h / 2, r.w - 16, 1, rgb(0xffffff, 0x18));
+            continue;
+        }
+        if (it.enabled && hover == "menu:" + std::to_string(i))
+            c.fill_round_rect(r.x, r.y + 1, r.w, r.h - 2, 5, rgb(0xffffff, 0x14));
+        c.text(r.x + 16, r.y + 25, it.label, 15, it.enabled ? TEXT : rgb(0x6e6e6e));
+    }
+}
+
+// a copy, move or delete running: a card above the taskbar with its progress
+void draw_job(Canvas &c) {
+    const JobStatus s = job_status();
+    if (!s.running)
+        return;
+    const int w = 440, h = 104, x = W - w - 16, y = H - TASKBAR_H - 16 - h;
+    c.blit(shadow_for(w, h, true), x - SHADOW, y - SHADOW);
+    acrylic(c, x, y, w, h, RADIUS, rgb(0x262626, 0xe8));
+    c.text(x + 22, y + 32, s.title, 16, TEXT, Weight::Bold, w - 44);
+    c.text(x + 22, y + 56, s.current, 14, TEXT2, Weight::Regular, w - 44);
+    const float f = s.total > 0 ? std::clamp(static_cast<float>(s.done) / s.total, 0.f, 1.f) : 0.f;
+    c.fill_round_rect(x + 22, y + 74, w - 44, 6, 3, rgb(0xffffff, 0x20));
+    c.fill_round_rect(x + 22, y + 74, std::max(6, static_cast<int>((w - 44) * f)), 6, 3, ACCENT);
+    const std::string amount = s.title.rfind("Deleting", 0) == 0
+                                   ? std::to_string(s.done) + " of " + std::to_string(s.total)
+                                   : size_text(s.done) + " of " + size_text(s.total);
+    c.text(x + 22, y + 98, amount, 13, TEXT3);
 }
 
 void draw_toast(Canvas &c) {
@@ -1432,21 +1875,60 @@ void draw_scene(Canvas &c) {
     draw_taskbar(c);
     if (popup != Popup::None)
         draw_start_menu(c);
-    draw_toast(c);
+    draw_job(c);
+    if (!job_status().running)
+        draw_toast(c);
+    if (menu.open)
+        draw_menu(c);
     if (dialog.open)
         draw_dialog(c);
 }
 
+// The resize pointers: a double arrow along (dx, dy), white with a dark outline, centred
+Image make_resize_pointer(float dx, float dy) {
+    const float len = std::sqrt(dx * dx + dy * dy);
+    dx /= len, dy /= len;
+    const float nx = -dy, ny = dx;  // across it
+    constexpr int S = 34;
+    const float c = S / 2.f;
+    struct Seg { float ax, ay, bx, by; };
+    const Seg segs[] = {
+        {c - dx * 12, c - dy * 12, c + dx * 12, c + dy * 12},
+        {c + dx * 12, c + dy * 12, c + dx * 6 + nx * 6, c + dy * 6 + ny * 6},
+        {c + dx * 12, c + dy * 12, c + dx * 6 - nx * 6, c + dy * 6 - ny * 6},
+        {c - dx * 12, c - dy * 12, c - dx * 6 + nx * 6, c - dy * 6 + ny * 6},
+        {c - dx * 12, c - dy * 12, c - dx * 6 - nx * 6, c - dy * 6 - ny * 6},
+    };
+    Image img;
+    img.width = img.height = S;
+    img.pixels.assign(S * S, 0);
+    for (int y = 0; y < S; y++)
+        for (int x = 0; x < S; x++) {
+            float best = 1e9f;
+            for (const Seg &s : segs) {
+                const float vx = s.bx - s.ax, vy = s.by - s.ay;
+                const float t = std::clamp(((x + 0.5f - s.ax) * vx + (y + 0.5f - s.ay) * vy) / (vx * vx + vy * vy), 0.f, 1.f);
+                const float ex = x + 0.5f - (s.ax + vx * t), ey = y + 0.5f - (s.ay + vy * t);
+                best = std::min(best, std::sqrt(ex * ex + ey * ey));
+            }
+            const float white = std::clamp(1.6f - best, 0.f, 1.f);
+            const float all = std::clamp(3.2f - best, 0.f, 1.f);
+            const uint32_t v = static_cast<uint32_t>(255.f * white);
+            img.pixels[y * S + x] = v | (v << 8) | (v << 16) | (static_cast<uint32_t>(all * 255.f) << 24);
+        }
+    return img;
+}
+
 // The frame on the screen: the scene, then the pointer on top (the pointer moves without the
-// scene being drawn again)
-void present(const Canvas &scene, const Image &pointer, float px, float py) {
+// scene being drawn again); (hx, hy) is the pointer picture's hot spot
+void present(const Canvas &scene, const Image &pointer, float px, float py, int hx = 1, int hy = 1) {
     uint32_t *const dst = screen_back_buffer();
     const uint32_t *const src = scene.data();
     parallel_rows(0, H, static_cast<size_t>(W) * H, [&](int a, int b) {
         std::memcpy(dst + static_cast<size_t>(a) * W, src + static_cast<size_t>(a) * W, static_cast<size_t>(b - a) * W * 4);
         __builtin_ia32_sfence();
     });
-    const int ox = static_cast<int>(px) - 1, oy = static_cast<int>(py) - 1;
+    const int ox = static_cast<int>(px) - hx, oy = static_cast<int>(py) - hy;
     for (int y = 0; y < pointer.height; y++) {
         const int sy = oy + y;
         if (sy < 0 || sy >= H)
@@ -1532,6 +2014,8 @@ extern "C" void ps4_shell_run(const char *program) {
     input_open();
     make_wallpaper();
     const Image pointer = make_pointer();
+    const Image resize_ew = make_resize_pointer(1, 0), resize_ns = make_resize_pointer(0, 1);
+    const Image resize_nwse = make_resize_pointer(1, 1), resize_nesw = make_resize_pointer(1, -1);
     Canvas scene(W, H);
     if (program) {
         Window *w = open_window(Kind::Terminal);
@@ -1540,14 +2024,35 @@ extern "C" void ps4_shell_run(const char *program) {
     bool dirty = true;
     bool ended_seen = false;
     int last_minute = -1;
-    double last = now_seconds();
+    double last = now_seconds(), last_job_frame = 0;
     float last_px = -1, last_py = -1;
+    const Image *last_cursor = nullptr;
     for (;;) {
         const double t = now_seconds();
         const float dt = static_cast<float>(std::min(0.1, t - last));
         last = t;
         const Input &in = input_poll(dt);
         last_input = in;
+
+        // the system keyboard: the desktop waits while it's open, then takes its text
+        if (keyboard_active()) {
+            std::string text;
+            const int done = keyboard_poll(text);
+            if (done == 0) {
+                const timespec pause = {0, 16000000};
+                nanosleep(&pause, nullptr);
+                continue;
+            }
+            if (done > 0)
+                finish_text(text);
+            else
+                text_request = TextRequest{};
+            input_held_back = true;  // until the buttons that closed it are let go
+            dirty = true;
+        }
+        if (input_held_back && !in.held)
+            input_held_back = false;
+        const bool live = !input_held_back;
 
         if (program_changed.exchange(false)) {
             dirty = true;
@@ -1557,20 +2062,50 @@ extern "C" void ps4_shell_run(const char *program) {
                 toast = Toast{program_name + " ended (exit code " + std::to_string(program_code) + ")", t + 5};
             }
         }
+        // a copy, move or delete: its progress a few times a second, its end
+        const JobStatus job = job_status();
+        if (job.running && t - last_job_frame > 0.25) {
+            last_job_frame = t;
+            dirty = true;
+        }
+        if (job.finished) {
+            job_acknowledge();
+            refresh_all(job.touched);
+            if (!job.error.empty())
+                show_message(job.title + " stopped", job.error);
+            else
+                toast = Toast{job.title + ": done", t + 3};
+            dirty = true;
+        }
+
         const std::string now_hover = hit(in.x, in.y);
         if (now_hover != hover) {
             hover = now_hover;
             dirty = true;
         }
-        if (in.pressed & BTN_CLICK) {
+        if (live && (in.pressed & BTN_CLICK)) {
             const bool twice = hover == last_click_key && t - last_click_time < 0.5;
             last_click_key = twice ? std::string() : hover;
             last_click_time = t;
             click(hover, twice, in.x, in.y);
             dirty = true;
         }
+        if (live && (in.pressed & BTN_MENU)) {
+            // right click: the menu for what's under the pointer
+            if (menu.open) {
+                menu.open = false;
+            } else if (!dialog.open) {
+                if (popup != Popup::None && hover.rfind("taskbar", 0) != 0)
+                    popup = Popup::None;
+                std::string target = hover;
+                if (target.rfind("win:", 0) == 0)
+                    bring_to_front(number_after(target, "win:"));
+                open_menu(target, in.x, in.y);
+            }
+            dirty = true;
+        }
         if (in.released & BTN_CLICK)
-            dragging = 0;
+            dragging = 0, resizing = 0;
         if (dragging && (in.held & BTN_CLICK) && in.moved) {
             if (Window *w = find_window(dragging)) {
                 w->x = std::clamp(static_cast<int>(in.x - drag_dx), -w->w + 120, W - 120);
@@ -1578,13 +2113,38 @@ extern "C" void ps4_shell_run(const char *program) {
                 dirty = true;
             }
         }
-        if (in.pressed & BTN_START) {
+        if (resizing && (in.held & BTN_CLICK) && in.moved) {
+            if (Window *w = find_window(resizing)) {
+                const int dx = static_cast<int>(in.x - resize_px), dy = static_cast<int>(in.y - resize_py);
+                int x = resize_x, y = resize_y, ww = resize_w, hh = resize_h;
+                if (resize_edges & 1) {
+                    ww = std::max(MIN_W, resize_w - dx);
+                    x = resize_x + resize_w - ww;
+                }
+                if (resize_edges & 2)
+                    ww = std::max(MIN_W, resize_w + dx);
+                if (resize_edges & 4) {
+                    hh = std::max(MIN_H, resize_h - dy);
+                    y = resize_y + resize_h - hh;
+                    if (y < 0)
+                        hh += y, y = 0;
+                }
+                if (resize_edges & 8)
+                    hh = std::max(MIN_H, std::min(resize_h + dy, H - TASKBAR_H - y));
+                w->x = x, w->y = y, w->w = ww, w->h = hh;
+                dirty = true;
+            }
+        }
+        if (live && (in.pressed & BTN_START)) {
+            menu.open = false;
             popup = popup == Popup::None ? Popup::Start : Popup::None;
             dirty = true;
         }
-        if (in.pressed & BTN_BACK) {
+        if (live && (in.pressed & BTN_BACK)) {
             if (dialog.open)
                 dialog.open = false;
+            else if (menu.open)
+                menu.open = false;
             else if (popup == Popup::Power)
                 popup = Popup::Start;
             else if (popup != Popup::None)
@@ -1593,7 +2153,7 @@ extern "C" void ps4_shell_run(const char *program) {
                 go_up(*w);
             dirty = true;
         }
-        if (in.pressed & (BTN_SWITCH | BTN_NEXT | BTN_PREV)) {
+        if (live && (in.pressed & (BTN_SWITCH | BTN_NEXT | BTN_PREV)) && !menu.open && !dialog.open) {
             // the next window to the front (minimized ones too)
             if (!windows.empty()) {
                 if (in.pressed & BTN_PREV) {
@@ -1607,11 +2167,32 @@ extern "C" void ps4_shell_run(const char *program) {
             }
             dirty = true;
         }
-        // scrolling: the window under the pointer, else the focused one; the D-pad scrolls too
+        // the D-pad: steps through a menu's items or a dialog's buttons (the pointer goes there),
+        // else scrolls like the right stick
         float scroll = in.scroll;
-        if (in.repeat & BTN_DOWN) scroll += 1;
-        if (in.repeat & BTN_UP) scroll -= 1;
-        if (scroll != 0) {
+        if (live && menu.open && (in.repeat & (BTN_UP | BTN_DOWN))) {
+            const int n = static_cast<int>(menu.items.size());
+            int at = hover.rfind("menu:", 0) == 0 ? number_after(hover, "menu:") : -1;
+            const int step = (in.repeat & BTN_DOWN) ? 1 : -1;
+            for (int k = 0; k < n; k++) {
+                at = at < 0 ? (step > 0 ? 0 : n - 1) : (at + step + n) % n;
+                if (!menu.items[at].action.empty() && menu.items[at].enabled)
+                    break;
+            }
+            if (at >= 0) {
+                const Rect r = menu_item_rect(at);
+                input_warp(r.x + 40.f, r.y + r.h / 2.f);
+            }
+        } else if (live && dialog.open && (in.repeat & (BTN_LEFT | BTN_RIGHT | BTN_UP | BTN_DOWN))) {
+            int at = hover.rfind("dialog:", 0) == 0 ? number_after(hover, "dialog:") : -1;
+            at = dialog.two() ? (at == 0 ? 1 : 0) : 0;
+            const Rect r = dialog_button(at);
+            input_warp(r.x + r.w / 2.f, r.y + r.h / 2.f);
+        } else if (live) {
+            if (in.repeat & BTN_DOWN) scroll += 1;
+            if (in.repeat & BTN_UP) scroll -= 1;
+        }
+        if (scroll != 0 && !menu.open && !dialog.open) {
             Window *target = nullptr;
             if (hover.rfind("win:", 0) == 0)
                 target = find_window(number_after(hover, "win:"));
@@ -1634,14 +2215,31 @@ extern "C" void ps4_shell_run(const char *program) {
             dirty = true;
         }
 
+        // the pointer: an arrow, or a double arrow over a window's edge
+        int edges = resizing ? resize_edges : 0;
+        if (!edges) {
+            const size_t at = hover.find(":edge");
+            if (at != std::string::npos)
+                edges = std::atoi(hover.c_str() + at + 5);
+        }
+        const Image *cursor = &pointer;
+        int hx = 1, hy = 1;
+        if (edges) {
+            const bool across = edges & 3, up_down = edges & 12;
+            cursor = across && !up_down ? &resize_ew
+                   : up_down && !across ? &resize_ns
+                   : ((edges & 1) && (edges & 4)) || ((edges & 2) && (edges & 8)) ? &resize_nwse : &resize_nesw;
+            hx = hy = cursor->width / 2;
+        }
+
         if (dirty) {
             draw_scene(scene);
             dirty = false;
-            present(scene, pointer, in.x, in.y);
-            last_px = in.x, last_py = in.y;
-        } else if (in.x != last_px || in.y != last_py) {
-            present(scene, pointer, in.x, in.y);
-            last_px = in.x, last_py = in.y;
+            present(scene, *cursor, in.x, in.y, hx, hy);
+            last_px = in.x, last_py = in.y, last_cursor = cursor;
+        } else if (in.x != last_px || in.y != last_py || cursor != last_cursor) {
+            present(scene, *cursor, in.x, in.y, hx, hy);
+            last_px = in.x, last_py = in.y, last_cursor = cursor;
         } else {
             const timespec pause = {0, 8000000};
             nanosleep(&pause, nullptr);

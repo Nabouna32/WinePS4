@@ -113,6 +113,12 @@ float axis(uint8_t value) {
 
 } // namespace
 
+void input_warp(float x, float y) {
+    state.x = std::clamp(x, 0.f, static_cast<float>(SCREEN_W - 1));
+    state.y = std::clamp(y, 0.f, static_cast<float>(SCREEN_H - 1));
+    state.moved = true;
+}
+
 void input_open() {
     sceUserServiceInitialize(nullptr);
     scePadInit();

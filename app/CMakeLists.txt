@@ -62,7 +62,7 @@ add_custom_target(wine_server_one DEPENDS ${SERVER_ONE})
 # --- The desktop ---------------------------------------------------------------------------------
 # A Windows 11-style desktop on the CPU (shell/), with HENkaku's canvas (ps4_canvas.cpp).
 set(SHELL_DIR ${CMAKE_CURRENT_LIST_DIR}/../shell)
-add_library(wine_shell OBJECT ${SHELL_DIR}/desktop.cpp ${SHELL_DIR}/screen.cpp ${SHELL_DIR}/input.cpp
+add_library(wine_shell OBJECT ${SHELL_DIR}/desktop.cpp ${SHELL_DIR}/screen.cpp ${SHELL_DIR}/input.cpp ${SHELL_DIR}/keyboard.cpp ${SHELL_DIR}/fileops.cpp
     ${SHELL_DIR}/ps4_canvas.cpp ${SHELL_DIR}/stb_impl.c)
 target_include_directories(wine_shell BEFORE PRIVATE ${SHELL_DIR} ${SHELL_DIR}/compat ${SHELL_DIR}/third_party ${PS4_SYSROOT}/include)
 target_compile_definitions(wine_shell PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" FMT_HEADER_ONLY)
@@ -75,5 +75,5 @@ add_dependencies(wineps4 wine_server_one)
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
-target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse)
+target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceImeDialog SceCommonDialog)
 ps4_kit_app(wineps4)
