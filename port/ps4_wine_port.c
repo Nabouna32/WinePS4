@@ -251,7 +251,7 @@ void ps4_wine_exit( int status )
         fflush( NULL );
         for (;;) raw_syscall3( 1 /* SYS_exit */, status, 0, 0 );
     }
-    fprintf( stderr, "wineps4: wineserver ended (%d)\n", status );
+    fprintf( stderr, "wineps4: wineserver ended (%d), exit from %p\n", status, __builtin_return_address( 0 ));
     __atomic_store_n( &ps4_wineserver_stopped, 1, __ATOMIC_SEQ_CST );
     for (;;) sleep( 3600 );
 }
