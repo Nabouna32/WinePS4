@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 1/5] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 1/6] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 2/5] WinePS4: wineserver main fixes
+Subject: [PATCH 2/6] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 3/5] ntdll: set up the prefix (dosdevices) before starting the
+Subject: [PATCH 3/6] ntdll: set up the prefix (dosdevices) before starting the
  in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 4/5] server: send the first thread its request pipe in the
+Subject: [PATCH 4/6] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 5/5] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 5/6] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -376,6 +376,89 @@ index 296db73..c5621ae 100644
      unsigned int flags = MAP_PRIVATE | MAP_ANON;
      UINT_PTR addr = (UINT_PTR)1 << 63;
  
+-- 
+2.53.0
+
+
+From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sat, 31 Oct 2026 22:06:18 +0300
+Subject: [PATCH 6/6] ntdll, server: keep the syscall dispatcher pointer at
+ 7ffe1000 with 16 KiB host pages (one host page for the USD)
+
+---
+ dlls/ntdll/unix/signal_x86_64.c |  6 ++++++
+ dlls/ntdll/unix/virtual.c       | 15 +++++++++++++++
+ server/mapping.c                |  5 +++++
+ 3 files changed, 26 insertions(+)
+
+diff --git a/dlls/ntdll/unix/signal_x86_64.c b/dlls/ntdll/unix/signal_x86_64.c
+index 9441bc9..43068f9 100644
+--- a/dlls/ntdll/unix/signal_x86_64.c
++++ b/dlls/ntdll/unix/signal_x86_64.c
+@@ -2845,7 +2845,13 @@ void signal_init_process(void)
+ 
+     /* sneak in a syscall dispatcher pointer at a fixed address (7ffe1000) */
+     ptr = (char *)user_shared_data + page_size;
++#ifdef __PS4_WINE__
++    /* 16 KiB host pages: this page is part of the USD's, already mapped; a mapping of its own would
++     * replace the USD too. virtual_map_user_shared_data() puts the pointer back after its remap. */
++    mprotect( user_shared_data, PS4_HOST_PAGE_SIZE, PROT_READ | PROT_WRITE );
++#else
+     anon_mmap_fixed( ptr, page_size, PROT_READ | PROT_WRITE, 0 );
++#endif
+     *(void **)ptr = __wine_syscall_dispatcher;
+ 
+     xstate_extended_features = user_shared_data->XState.EnabledFeatures & ~(UINT64)3;
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index c5621ae..6d01de4 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -4406,12 +4406,27 @@ void virtual_map_user_shared_data(void)
+         ERR( "failed to open the USD section: %08x\n", status );
+         exit(1);
+     }
++#ifdef __PS4_WINE__
++    /* 16 KiB host pages: the server's file is one host page (create_user_data_mapping), mapped whole,
++     * so it covers the syscall dispatcher pointer at 7ffe1000 too (signal_init_process): put it back */
++    void *dispatcher = *(void **)((char *)user_shared_data + page_size);
++
++    if ((res = server_get_unix_fd( section, 0, &fd, &needs_close, NULL, NULL )) ||
++        (user_shared_data != mmap( user_shared_data, PS4_HOST_PAGE_SIZE, PROT_READ | PROT_WRITE,
++                                   MAP_SHARED|MAP_FIXED, fd, 0 )))
++    {
++        ERR( "failed to remap the process USD: %d\n", res );
++        exit(1);
++    }
++    *(void **)((char *)user_shared_data + page_size) = dispatcher;
++#else
+     if ((res = server_get_unix_fd( section, 0, &fd, &needs_close, NULL, NULL )) ||
+         (user_shared_data != mmap( user_shared_data, page_size, PROT_READ, MAP_SHARED|MAP_FIXED, fd, 0 )))
+     {
+         ERR( "failed to remap the process USD: %d\n", res );
+         exit(1);
+     }
++#endif
+     if (needs_close) close( fd );
+     NtClose( section );
+ }
+diff --git a/server/mapping.c b/server/mapping.c
+index 905d528..0f787a1 100644
+--- a/server/mapping.c
++++ b/server/mapping.c
+@@ -1497,7 +1497,12 @@ struct object *create_user_data_mapping( struct object *root, const struct unico
+     void *ptr;
+     struct mapping *mapping;
+ 
++#ifdef __PS4_WINE__
++    /* one 16 KiB host page: ntdll maps it whole at 7ffe0000 (virtual_map_user_shared_data) */
++    if (!(mapping = create_mapping( root, name, attr, PS4_HOST_PAGE_SIZE,
++#else
+     if (!(mapping = create_mapping( root, name, attr, sizeof(KUSER_SHARED_DATA),
++#endif
+                                     SEC_COMMIT, 0, FILE_READ_DATA | FILE_WRITE_DATA, sd ))) return NULL;
+     ptr = mmap( NULL, mapping->size, PROT_WRITE, MAP_SHARED, get_unix_fd( mapping->fd ), 0 );
+     if (ptr != MAP_FAILED) user_shared_data = ptr;
 -- 
 2.53.0
 

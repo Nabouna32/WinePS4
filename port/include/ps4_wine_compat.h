@@ -266,6 +266,7 @@ int ps4_vm_munmap( void *addr, size_t len );
 int ps4_vm_mprotect( void *addr, size_t len, int prot );
 int ps4_vm_madvise( void *addr, size_t len, int advice );
 void *ps4_vm_address_limit( void );
+#define PS4_HOST_PAGE_SIZE 0x4000  /* the PS4's page: where Wine's 4 KiB pages share one */
 #define mmap ps4_vm_mmap
 #define munmap ps4_vm_munmap
 #define mprotect ps4_vm_mprotect
