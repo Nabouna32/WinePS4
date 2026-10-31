@@ -1162,7 +1162,7 @@ struct Pin {
 };
 const Pin PINS[] = {
     {"Files", Icon::Folder, 0}, {"Terminal", Icon::Terminal, 1}, {"Settings", Icon::Settings, 2},
-    {"C: drive", Icon::Drive, 3}, {"Wine test", Icon::Program, 4}, {"This PS4", Icon::Computer, 5},
+    {"C: drive", Icon::Drive, 3}, {"Wine test", Icon::Program, 4}, {"32-bit test", Icon::Program, 6},
 };
 Rect pin_rect(int i) {
     const Rect m = start_menu_rect();
@@ -1199,6 +1199,7 @@ void start_action(int action) {
     case 3: open_window(Kind::Files, C_DRIVE); break;
     case 4: ask_run("/app0/wine/hello.exe"); break;
     case 5: open_window(Kind::Files, ""); break;
+    case 6: ask_run("/app0/wine/hello32.exe"); break;
     }
 }
 

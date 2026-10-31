@@ -1,7 +1,18 @@
-/* WinePS4's first test program: a 64-bit Windows console program touching the basics a game needs.
- * Its output goes to /data/WinePS4/wine.log. Build: tests/build.sh (mingw). */
+/* WinePS4's first test program: a Windows console program touching the basics a game needs, as a
+ * 64-bit program (hello.exe) and a 32-bit one (hello32.exe: WoW64). Its output goes to
+ * /data/WinePS4/wine.log. Build: tests/build.sh. */
 #include <windows.h>
 #include <stdio.h>
+
+#ifdef _WIN64
+#define BITS "64"
+#define IP Rip
+#define AX Rax
+#else
+#define BITS "32"
+#define IP Eip
+#define AX Eax
+#endif
 
 static int failures;
 
@@ -20,13 +31,13 @@ static LONG CALLBACK handler( EXCEPTION_POINTERS *e )
     if (e->ExceptionRecord->ExceptionCode == 0xE0000001) return EXCEPTION_CONTINUE_EXECUTION;
     if (e->ExceptionRecord->ExceptionCode == EXCEPTION_ILLEGAL_INSTRUCTION)
     {
-        e->ContextRecord->Rip += 2;  /* skip the ud2 */
-        e->ContextRecord->Rax = 0x1234;
+        e->ContextRecord->IP += 2;  /* skip the ud2 */
+        e->ContextRecord->AX = 0x1234;
         return EXCEPTION_CONTINUE_EXECUTION;
     }
     if (e->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION)
     {
-        e->ContextRecord->Rip += 3;  /* skip "mov (%rcx),%eax" (8b 01 + nop) */
+        e->ContextRecord->IP += 3;  /* skip "mov (%rcx),%eax" (8b 01 + nop) */
         return EXCEPTION_CONTINUE_EXECUTION;
     }
     return EXCEPTION_CONTINUE_SEARCH;
@@ -52,7 +63,7 @@ int main( int argc, char **argv )
     BYTE *block;
     LONG_PTR rax;
 
-    printf( "Hello from Windows on the PS4!\n" );
+    printf( "Hello from Windows on the PS4! (" BITS "-bit)\n" );
     printf( "command line: %s\n", GetCommandLineA() );
     GetModuleFileNameA( NULL, path, sizeof(path) );
     printf( "exe: %s\n", path );
@@ -114,7 +125,11 @@ int main( int argc, char **argv )
     check( veh_calls == 1, "RaiseException reaches a vectored handler and continues" );
     __asm__ volatile( "xor %%eax, %%eax\n\tud2" : "=a" (rax) );
     check( rax == 0x1234 && veh_calls == 2, "ud2 becomes EXCEPTION_ILLEGAL_INSTRUCTION, context change kept" );
+#ifdef _WIN64
     __asm__ volatile( "xor %%ecx, %%ecx\n\tmovl (%%rcx), %%eax\n\tnop" : : : "rax", "rcx", "memory" );
+#else
+    __asm__ volatile( "xor %%ecx, %%ecx\n\tmovl (%%ecx), %%eax\n\tnop" : : : "eax", "ecx", "memory" );
+#endif
     check( veh_calls == 3, "null read becomes EXCEPTION_ACCESS_VIOLATION and resumes" );
 
     printf( "== %s: %d failure(s)\n", failures ? "FAILED" : "ALL PASSED", failures );

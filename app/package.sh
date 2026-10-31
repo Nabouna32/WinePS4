@@ -47,6 +47,7 @@ dedupe() {  # dedupe <prefix folder> <lib folder>: the prefix's copies of builti
 dedupe system32 x86_64-windows
 dedupe syswow64 i386-windows
 cp "$ROOT/tests/hello.exe" "$STAGE/wine/hello.exe"
+cp "$ROOT/tests/hello32.exe" "$STAGE/wine/hello32.exe"   # the 32-bit test (WoW64)
 mkdir -p "$STAGE/fonts"
 cp "$ROOT"/app/fonts/* "$STAGE/fonts/"   # the desktop's (Roboto, OFL)
 echo "staged $(wc -l < "$STAGE/wine/system32-from-lib.txt") system32/syswow64 DLLs from lib, $(du -sh "$STAGE" | cut -f1) in all"
