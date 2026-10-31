@@ -1,6 +1,8 @@
 // WinePS4's input (input.h). The pointer moves with the left stick (faster the further it is
-// pushed), the touch pad (like a laptop's) and a USB mouse. libSceMouse is loaded when the desktop
-// starts, not linked: a module the system doesn't have would stop the app from starting at all.
+// pushed), the touch pad (like a laptop's) and a USB mouse. libSceMouse is linked, but its module
+// is loaded by the desktop (system module 0xa9, as shadPS4 lists it): a call into a system library
+// whose module isn't loaded ends the app (ps4-kit's ps4_modules.cpp), so the mouse is only used
+// once it is.
 #include "input.h"
 
 #include <algorithm>
@@ -14,7 +16,10 @@
 
 #include "screen.h"
 
-extern "C" void ps4_boot_trace(const char *line);
+extern "C" {
+void ps4_boot_trace(const char *line);
+int32_t sceSysmoduleLoadModule(uint16_t id);
+}
 
 namespace shell {
 namespace {
@@ -35,9 +40,13 @@ struct MouseData {
 };
 static_assert(sizeof(MouseData) == 40, "libSceMouse's data");
 
-int (*mouse_init)();
-int (*mouse_open)(int32_t user, int32_t type, int32_t index, const MouseOpenParam *param);
-int (*mouse_read)(int32_t handle, MouseData *data, int32_t count);
+constexpr uint16_t MOUSE_MODULE = 0xa9;
+extern "C" {
+int32_t sceMouseInit();
+int32_t sceMouseOpen(int32_t user, int32_t type, int32_t index, const MouseOpenParam *param);
+int32_t sceMouseRead(int32_t handle, MouseData *data, int32_t count);
+}
+bool mouse_loaded = false;
 
 Input state;
 int32_t user = -1;
@@ -57,21 +66,14 @@ void trace(const char *what, int value) {
 }
 
 void load_mouse() {
-    static const char *const paths[] = {"/system/common/lib/libSceMouse.sprx", "/system/priv/lib/libSceMouse.sprx"};
-    for (const char *path : paths) {
-        const int32_t module = static_cast<int32_t>(sceKernelLoadStartModule(path, 0, nullptr, 0, nullptr, nullptr));
-        if (module < 0)
-            continue;
-        sceKernelDlsym(module, "sceMouseInit", reinterpret_cast<void **>(&mouse_init));
-        sceKernelDlsym(module, "sceMouseOpen", reinterpret_cast<void **>(&mouse_open));
-        sceKernelDlsym(module, "sceMouseRead", reinterpret_cast<void **>(&mouse_read));
-        if (mouse_init && mouse_open && mouse_read) {
-            trace("mouse library loaded", module);
-            mouse_init();
-            return;
-        }
+    const int loaded = sceSysmoduleLoadModule(MOUSE_MODULE);
+    if (loaded != 0) {
+        trace("the mouse module did not load", loaded);
+        return;
     }
-    trace("no mouse library", 0);
+    const int init = sceMouseInit();
+    trace("mouse module loaded, sceMouseInit", init);
+    mouse_loaded = true;
 }
 
 void open_devices() {
@@ -87,12 +89,16 @@ void open_devices() {
         if (pad < 0)
             pad = -1;
     }
-    if (mouse < 0 && mouse_open) {
-        const MouseOpenParam param = {1, {}};
-        const int handle = mouse_open(user, 0, 0, &param);
+    if (mouse < 0 && mouse_loaded) {
+        static int last_error = 0;
+        const MouseOpenParam param = {1, {}};  // every mouse as one
+        const int handle = sceMouseOpen(user, 0, 0, &param);
         if (handle >= 0) {
             mouse = handle;
             trace("mouse opened", handle);
+        } else if (handle != last_error) {
+            last_error = handle;  // (once per answer: this is tried every second)
+            trace("sceMouseOpen failed", handle);
         }
     }
 }
@@ -116,7 +122,7 @@ void input_open() {
 
 const Input &input_poll(float dt) {
     static float reopen = 0;
-    if ((pad < 0 || (mouse < 0 && mouse_open)) && (reopen -= dt) <= 0) {
+    if ((pad < 0 || (mouse < 0 && mouse_loaded)) && (reopen -= dt) <= 0) {
         open_devices();
         reopen = 1.f;  // a controller or mouse connected later
     }
@@ -169,7 +175,12 @@ const Input &input_poll(float dt) {
     state.mouse = false;
     if (mouse >= 0) {
         MouseData events[8];
-        const int n = mouse_read(mouse, events, 8);
+        const int n = sceMouseRead(mouse, events, 8);
+        static int last_error = 0;
+        if (n < 0 && n != last_error) {
+            last_error = n;
+            trace("sceMouseRead failed", n);
+        }
         for (int i = 0; i < n; i++) {
             if (!events[i].connected)
                 continue;
