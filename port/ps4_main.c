@@ -33,6 +33,11 @@ PS4_DIAG_DATA_DIR( DATA_DIR );
 extern void __wine_main( int argc, char *argv[] );
 extern void ps4_thread_register( void );
 extern void ps4_start_hang_watch( void );
+extern void ps4_kit_set_min_thread_stack( size_t bytes );
+
+/* ntdll starts every thread on a 1 MiB stack of its own (kernel_stack_size, pthread_attr_setstack):
+ * ps4-kit's 2 MiB minimum would grow it past its end */
+#define WINE_KERNEL_STACK_SIZE 0x100000
 
 static void logf_( const char *fmt, ... ) __attribute__((format(printf, 1, 2)));
 static void logf_( const char *fmt, ... )
@@ -186,6 +191,7 @@ int main( void )
     int argc = 0;
     FILE *run;
 
+    ps4_kit_set_min_thread_stack( WINE_KERNEL_STACK_SIZE );
     open_log();
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );
 
