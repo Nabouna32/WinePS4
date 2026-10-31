@@ -255,6 +255,7 @@ static void setup_prefix( void )
  * (WINESERVERSOCKET). Either way it runs the program and ends; the desktop learns how from wait4. */
 
 extern int ps4_program_process;
+extern int ps4_wineserver_stopped;
 extern void ps4_start_wineserver_listening( void );
 
 static volatile int wine_ready;  /* the prefix is in place and wineserver listens */
@@ -335,8 +336,15 @@ static void *setup_thread( void *arg )
     ps4_shell_status( "setting up Windows" );
     setup_prefix();
     ps4_start_wineserver_listening();
-    /* (the socket appears in the server directory once the thread has opened it) */
-    usleep( 200000 );
+    /* (the socket appears in the server directory once the thread has opened it; a server that
+     * can't start ends at once) */
+    usleep( 500000 );
+    if (__atomic_load_n( &ps4_wineserver_stopped, __ATOMIC_SEQ_CST ))
+    {
+        ps4_shell_status( "did not start: wineserver stopped (see /data/WinePS4/wine.log)" );
+        logf_( "wineps4: wineserver did not start\n" );
+        return NULL;
+    }
     wine_ready = 1;
     ps4_shell_status( NULL );
     logf_( "wineps4: Windows is ready\n" );

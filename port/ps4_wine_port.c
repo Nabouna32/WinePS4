@@ -240,6 +240,7 @@ int ps4_foreign_signal( void *teb, int sig, siginfo_t *info, void *context )
 static long raw_syscall3( long number, long a, long b, long c );
 
 int ps4_program_process;   /* this process runs a Windows program (set by ps4_main) */
+int ps4_wineserver_stopped;  /* the desktop's wineserver ended (it failed to start) */
 static int program_ended;  /* the hang dump stops then */
 
 void ps4_wine_exit( int status )
@@ -251,6 +252,7 @@ void ps4_wine_exit( int status )
         for (;;) raw_syscall3( 1 /* SYS_exit */, status, 0, 0 );
     }
     fprintf( stderr, "wineps4: wineserver ended (%d)\n", status );
+    __atomic_store_n( &ps4_wineserver_stopped, 1, __ATOMIC_SEQ_CST );
     for (;;) sleep( 3600 );
 }
 

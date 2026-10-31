@@ -172,12 +172,49 @@ char *ps4_dlerror( void );
 
 /* --- Sockets ---------------------------------------------------------------------------------------
  * OpenOrbis keeps musl's (Linux) msghdr and cmsghdr layouts and MSG_ numbers; the kernel's are
- * FreeBSD's. wineserver passes every handle's descriptor through these. */
+ * FreeBSD's. wineserver passes every handle's descriptor through these. Its sockaddr_un,
+ * sockaddr_in6 and sockaddr_storage are musl's too: no length byte before the 1-byte family, so the
+ * kernel took AF_UNIX for a length of 1 and the path's '/' for the family (v00.20: wineserver's
+ * bind failed, "No such file or directory"). Its sockaddr and sockaddr_in are FreeBSD's already. */
 #define msghdr __musl_msghdr
 #define cmsghdr __musl_cmsghdr
+#define sockaddr_un __musl_sockaddr_un
+#define sockaddr_in6 __musl_sockaddr_in6
+#define sockaddr_storage __musl_sockaddr_storage
 #include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
 #undef msghdr
 #undef cmsghdr
+#undef sockaddr_un
+#undef sockaddr_in6
+#undef sockaddr_storage
+struct sockaddr_un
+{
+    unsigned char sun_len;
+    sa_family_t sun_family;
+    char sun_path[104];
+};
+struct sockaddr_in6
+{
+    unsigned char sin6_len;
+    sa_family_t sin6_family;
+    in_port_t sin6_port;
+    uint32_t sin6_flowinfo;
+    struct in6_addr sin6_addr;
+    uint32_t sin6_scope_id;
+};
+struct sockaddr_storage
+{
+    unsigned char ss_len;
+    sa_family_t ss_family;
+    char __ss_pad1[6];
+    long long __ss_align;
+    char __ss_pad2[112];
+};
+_Static_assert( sizeof(struct sockaddr_in6) == 28, "FreeBSD's sockaddr_in6" );
+_Static_assert( sizeof(struct sockaddr_storage) == 128, "FreeBSD's sockaddr_storage" );
+#define HAVE_STRUCT_SOCKADDR_UN_SUN_LEN 1
 struct msghdr
 {
     void         *msg_name;
