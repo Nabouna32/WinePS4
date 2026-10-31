@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 1/7] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 1/8] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 2/7] WinePS4: wineserver main fixes
+Subject: [PATCH 2/8] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 3/7] ntdll: set up the prefix (dosdevices) before starting the
+Subject: [PATCH 3/8] ntdll: set up the prefix (dosdevices) before starting the
  in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 4/7] server: send the first thread its request pipe in the
+Subject: [PATCH 4/8] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 5/7] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 5/8] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 6/7] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 6/8] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 7/7] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 7/8] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -670,6 +670,50 @@ index 4a49989..f4fb64c 100644
                     "movl 0xc4(%r13),%eax\n\t"   /* context->Esp */
                     "movq %rax,0x18(%rsp)\n\t"
                     "movl 0xc0(%r13),%eax\n\t"   /* context->EFlags */
+-- 
+2.53.0
+
+
+From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sun, 1 Nov 2026 01:05:56 +0300
+Subject: [PATCH 8/8] WinePS4: signal handlers installed with the kernel
+ sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
+ have)
+
+---
+ dlls/ntdll/unix/signal_x86_64.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/ntdll/unix/signal_x86_64.c b/dlls/ntdll/unix/signal_x86_64.c
+index dd223f7..d9600d2 100644
+--- a/dlls/ntdll/unix/signal_x86_64.c
++++ b/dlls/ntdll/unix/signal_x86_64.c
+@@ -519,6 +519,10 @@ C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct amd64_thread_data, mxc
+ C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct amd64_thread_data, wow_fsbase ) == 0x340 );
+ 
+ #ifdef __PS4_WINE__
++/* the handlers, without the C library's wrapper (it needs FS: ps4_wine_port.c) */
++extern int ps4_raw_sigaction( int sig, const struct sigaction *act, struct sigaction *old );
++#define sigaction( sig, act, old ) ps4_raw_sigaction( sig, act, old )
++
+ /* FS's base, with no C library in between (its errno is thread data FS may not reach yet) */
+ static inline void ps4_set_fsbase( void *const *base )
+ {
+@@ -920,12 +924,12 @@ __ASM_GLOBAL_FUNC( clear_alignment_flag,
+ static inline ucontext_t *init_handler( void *sigcontext )
+ {
+ #ifdef __PS4_WINE__
+-    amd64_set_gsbase( get_current_teb() );
+     if (fs32_sel)
+     {
+         struct amd64_thread_data *thread_data = (struct amd64_thread_data *)&get_current_teb()->GdiTebBatch;
+         if (thread_data->pthread_teb) ps4_set_fsbase( &thread_data->pthread_teb );
+     }
++    amd64_set_gsbase( get_current_teb() );
+ #endif
+     clear_alignment_flag();
+ #ifdef __linux__
 -- 
 2.53.0
 

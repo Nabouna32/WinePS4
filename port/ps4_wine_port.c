@@ -144,6 +144,29 @@ int ps4_start_wineserver( void )
     return fds[0];
 }
 
+/* --- Signal handlers, from the kernel -----------------------------------------------------------
+ * The C library (FreeBSD's libthr) wraps every handler its sigaction installs in one of its own,
+ * which finds its thread data through %fs; in 32-bit code %fs's base is the 32-bit TEB, and that
+ * wrapper crashed before Wine's handler ran (v00.15). The system call installs the handler itself:
+ * the kernel's trampoline calls it, and Wine's init_handler puts the C library's FS back first. */
+
+int ps4_raw_sigaction( int sig, const struct sigaction *act, struct sigaction *old )
+{
+    long ret;
+    unsigned char failed;
+
+    __asm__ volatile( "syscall\n\tsetc %1"
+                      : "=a" (ret), "=r" (failed)
+                      : "a" (416 /* SYS_sigaction */), "D" ((long)sig), "S" (act), "d" (old)
+                      : "rcx", "r8", "r9", "r10", "r11", "memory", "cc" );
+    if (failed)
+    {
+        errno = (int)ret;
+        return -1;
+    }
+    return 0;
+}
+
 /* --- The end of the program --------------------------------------------------------------------
  * Wine's exit and _exit (ps4_wine_compat.h): the first one (the program's) tells the desktop how
  * the program ended; every one then waits forever, so the desktop stays (wineserver's own exit
@@ -200,16 +223,22 @@ static int is_return_address( uint64_t addr )
     return 0;
 }
 
+/* Installed with the kernel's sigaction (ps4_raw_sigaction): it may interrupt 32-bit code, where %fs
+ * isn't the C library's, so it calls nothing that needs it there (the memory query is libkernel's) */
 static void dump_handler( int sig, siginfo_t *info, void *context )
 {
     ucontext_t *uc = context;
     uint64_t rsp = uc->uc_mcontext.mc_rsp & ~7ull, *p, *end = (uint64_t *)(rsp + 0x10000);
     void *start, *map_end;
     uint32_t prot;
+    unsigned short cs;
     int n = 0;
 
     dump_rip = uc->uc_mcontext.mc_rip;
-    if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
+    __asm__( "movw %%cs,%0" : "=r" (cs) );
+    if (uc->uc_mcontext.mc_cs != cs)
+        end = (uint64_t *)((rsp | 0x3fff) + 1);  /* 32-bit code: its 16 KiB page only */
+    else if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
         end = map_end;
     for (p = (uint64_t *)rsp; p < end && n < DUMP_FRAMES; p++)
         if (is_return_address( *p )) dump_frames[n++] = *p;
@@ -282,7 +311,7 @@ void ps4_start_hang_watch( void )
     memset( &sa, 0, sizeof(sa) );
     sa.sa_sigaction = dump_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
-    sigaction( SIGXCPU, &sa, NULL );
+    ps4_raw_sigaction( SIGXCPU, &sa, NULL );
     unlink( "/data/WinePS4/hang.log" );
     if (!pthread_create( &thread, NULL, hang_watch_thread, (void *)(long)seconds )) pthread_detach( thread );
 }
