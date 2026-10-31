@@ -265,6 +265,7 @@ void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
 int ps4_vm_munmap( void *addr, size_t len );
 int ps4_vm_mprotect( void *addr, size_t len, int prot );
 int ps4_vm_madvise( void *addr, size_t len, int advice );
+void *ps4_vm_address_limit( void );
 #define mmap ps4_vm_mmap
 #define munmap ps4_vm_munmap
 #define mprotect ps4_vm_mprotect

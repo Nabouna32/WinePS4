@@ -282,6 +282,34 @@ static void test_direct_exec( void )
     release_range( (uintptr_t)base, (uintptr_t)base + HOST_PAGE );
 }
 
+/* The top of the address space a reservation can have: the highest 1 GiB step below 1 TiB where a
+ * reservation lands where it was asked for. Wine's own probe (an address hint, halving) finds 1 TiB,
+ * and its top-down searches then try every 64 KiB below that, in vain. */
+static uintptr_t address_limit;
+static void vm_init( void );
+
+static void find_address_limit( void )
+{
+    uintptr_t top;
+
+    for (top = (uintptr_t)1 << 40; top > ((uintptr_t)1 << 36); top -= (uintptr_t)1 << 30)
+    {
+        void *want = (void *)(top - HOST_PAGE), *base = want;
+        if (sceKernelReserveVirtualRange( &base, HOST_PAGE, 0, HOST_PAGE )) continue;
+        sceKernelMunmap( base, HOST_PAGE );
+        if (base == want) break;
+    }
+    address_limit = top;
+    fprintf( stderr, "wineps4 vm: address space reservable up to %#llx\n", (unsigned long long)top );
+}
+
+/* for ntdll's get_host_addr_space_limit */
+void *ps4_vm_address_limit( void )
+{
+    pthread_once( &vm_once, vm_init );
+    return (void *)address_limit;
+}
+
 static void vm_init( void )
 {
     pthread_mutexattr_t attr;
@@ -298,6 +326,7 @@ static void vm_init( void )
     sceKernelAvailableDirectMemorySize( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, &start, &size );
     fprintf( stderr, "wineps4 vm: direct memory %zu MiB, largest free %zu MiB, %zu MiB kept for the app\n",
              sceKernelGetDirectMemorySize() >> 20, size >> 20, direct_reserve >> 20 );
+    find_address_limit();
     test_direct_exec();
 }
 
@@ -354,7 +383,8 @@ void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
     else
     {
         base = (void *)start;  /* a hint: Wine checks where it landed */
-        if (sceKernelReserveVirtualRange( &base, size, 0, HOST_PAGE )) { errno = ENOMEM; goto done; }
+        /* refused (above the console's address space, or taken): Wine looks further down */
+        if (sceKernelReserveVirtualRange( &base, size, 0, HOST_PAGE )) { errno = start ? EEXIST : ENOMEM; goto done; }
         if ((uintptr_t)base + size > ADDR_LIMIT)
         {
             sceKernelMunmap( base, size );
