@@ -147,10 +147,10 @@ std::mutex program_lock;
 std::deque<std::string> program_lines;
 std::string program_partial;
 std::string program_status;
-std::string program_name;
-bool program_running = false;
-bool program_done = false;
-int program_code = 0;
+std::map<int, std::string> programs_running;  // pid -> name
+std::string last_ended;                        // "<name> ended (exit code N)"
+int last_ended_code = 0;
+std::deque<std::string> ended_toasts;          // for the desktop's thread
 std::atomic<bool> program_changed{false};
 
 Input last_input;  // this frame's, for drawing
@@ -977,7 +977,7 @@ void show_message(const std::string &title, const std::string &text) {
 }
 
 void ask_run(const std::string &path) {
-    show_message("Run " + base_name(path) + "?", "WinePS4 restarts and runs it. A running program is closed first.");
+    show_message("Run " + base_name(path) + "?", "It runs next to the desktop and any other program. What it prints is in Terminal.");
     dialog.kind = DialogKind::Run;
     dialog.program = path;
 }
@@ -990,27 +990,45 @@ void ask_delete(const std::string &path) {
     dialog.paths = {path};
 }
 
-void run_program(const std::string &path) {
-    std::vector<std::string> launch;
-    if (ends_with(path, ".msi")) {
-        launch.push_back("C:\\windows\\system32\\msiexec.exe");
-        launch.push_back("/i");
+// Starts a program as a process of its own (port/ps4_main.c); "" when it started, else why not
+std::string launch(const std::vector<std::string> &args) {
+    std::vector<char *> argv;
+    for (const std::string &a : args)
+        argv.push_back(const_cast<char *>(a.c_str()));
+    argv.push_back(nullptr);
+    const int pid = ps4_launch_program(argv.data());
+    if (pid < 0)
+        return errno == EAGAIN ? "Windows is still being set up: try again in a moment." : std::string("It could not start: ") + std::strerror(errno);
+    {
+        std::lock_guard lock(program_lock);
+        // its name: the program's, or the installer's for msiexec /i <file>
+        const bool msi = args.size() > 2 && args[0].find("msiexec") != std::string::npos;
+        programs_running[pid] = base_name(msi ? args[2] : args[0]);
     }
-    launch.push_back(path);
-    write_lines(WINEPS4_LAUNCH_FILE, launch);
+    program_changed = true;
+    return {};
+}
+
+void run_program(const std::string &path) {
+    std::vector<std::string> args;
+    if (ends_with(path, ".msi")) {
+        args.push_back("C:\\windows\\system32\\msiexec.exe");
+        args.push_back("/i");
+    }
+    args.push_back(path);
     std::vector<std::string> recent = read_lines(RECENT_FILE), out{path};
     for (const std::string &r : recent)
         if (r != path && out.size() < 8)
             out.push_back(r);
     write_lines(RECENT_FILE, out);
-    std::fprintf(stderr, "shell: running %s: restarting the app\n", path.c_str());
-    ps4_boot_trace("shell: restarting into a program");
-    const int r = sceSystemServiceLoadExec("/app0/eboot.bin", nullptr);
-    char text[200];
-    std::snprintf(text, sizeof text,
-                  "WinePS4 could not restart itself (%08x). Close it and start it again: it runs %s then.",
-                  static_cast<unsigned>(r), base_name(path).c_str());
-    show_message("Restart WinePS4", text);
+    const std::string error = launch(args);
+    if (!error.empty()) {
+        show_message("Run " + base_name(path), error);
+        return;
+    }
+    toast = Toast{"Starting " + base_name(path), now_seconds() + 3};
+    if (Window *w = open_window(Kind::Terminal))
+        w->scroll = 0;
 }
 
 void open_entry(Window &w, const Entry &e) {
@@ -1982,14 +2000,19 @@ void draw_terminal(Canvas &c, Window &w) {
     // what runs, and how it went
     std::string head;
     Color head_col = rgb(0xc8c8c8);  // (the terminal is dark in both themes)
-    if (program_name.empty()) {
-        head = "No program is running. Open one from Files or the Start menu.";
-    } else if (program_done) {
-        head = program_name + " ended (exit code " + std::to_string(program_code) + ")";
-        head_col = program_code == 0 ? rgb(0x6ccb5f) : rgb(0xff99a4);
-    } else {
-        head = program_name + (program_status.empty() ? " is running" : " - " + program_status);
+    if (!program_status.empty()) {
+        head = "Windows: " + program_status;
         head_col = rgb(0x4cc2ff);
+    } else if (!programs_running.empty()) {
+        head = "Running:";
+        for (const auto &[pid, name] : programs_running)
+            head += " " + name + " (" + std::to_string(pid) + ")";
+        head_col = rgb(0x4cc2ff);
+    } else if (!last_ended.empty()) {
+        head = last_ended;
+        head_col = last_ended_code == 0 ? rgb(0x6ccb5f) : rgb(0xff99a4);
+    } else {
+        head = "No program is running. Open one from Files or the Start menu.";
     }
     c.text(w.x + 18, w.y + TITLE_H + 28, head, 15, head_col, Weight::Bold, w.w - 36);
     c.fill_rect(w.x + 12, w.y + TITLE_H + 42, w.w - 24, 1, rgb(0x333333));
@@ -2444,30 +2467,45 @@ extern "C" void ps4_shell_status(const char *text) {
     program_changed = true;
 }
 
-extern "C" void ps4_shell_program_ended(int status) {
+extern "C" void ps4_shell_program_exited(int pid, int code) {
     {
         std::lock_guard lock(program_lock);
-        program_done = true;
-        program_running = false;
-        program_code = status;
+        auto it = programs_running.find(pid);
+        if (it == programs_running.end())
+            return;  // (not one the desktop started)
+        last_ended = it->second + " ended (exit code " + std::to_string(code) + ")";
+        last_ended_code = code;
+        ended_toasts.push_back(last_ended);
+        programs_running.erase(it);
     }
     program_changed = true;
 }
 
-extern "C" void ps4_shell_run(const char *program) {
-    if (program) {
-        std::lock_guard lock(program_lock);
-        program_name = base_name(program);
-        program_running = true;
-    }
+// launch.txt, run.txt (from the port's setup thread): started on the desktop's thread
+std::mutex launch_lock;
+std::vector<std::vector<std::string>> launch_queue;
+
+extern "C" void ps4_shell_launch(char **args) {
+    std::vector<std::string> a;
+    for (int i = 0; args[i]; i++)
+        a.push_back(args[i]);
+    std::lock_guard lock(launch_lock);
+    launch_queue.push_back(a);
+}
+
+extern "C" void ps4_shell_run(const char *) {
     block_wine_signals();
     if (!screen_open()) {
-        // no screen: the program alone, as before the desktop
+        // no screen: nothing to show; programs from run.txt still run
         for (;;) {
             sleep(1);
-            std::lock_guard lock(program_lock);
-            if (program_done || !program)
-                exit(program_done ? program_code : 0);
+            std::vector<std::vector<std::string>> queue;
+            {
+                std::lock_guard lock(launch_lock);
+                queue.swap(launch_queue);
+            }
+            for (const auto &a : queue)
+                launch(a);
         }
     }
     input_open();
@@ -2476,12 +2514,7 @@ extern "C" void ps4_shell_run(const char *program) {
     const Image resize_ew = make_resize_pointer(1, 0), resize_ns = make_resize_pointer(0, 1);
     const Image resize_nwse = make_resize_pointer(1, 1), resize_nesw = make_resize_pointer(1, -1);
     Canvas scene(W, H);
-    if (program) {
-        Window *w = open_window(Kind::Terminal);
-        w->title = std::string("Terminal - ") + base_name(program);
-    }
     bool dirty = true;
-    bool ended_seen = false;
     int last_minute = -1;
     double last = now_seconds(), last_job_frame = 0;
     float last_px = -1, last_py = -1;
@@ -2516,9 +2549,23 @@ extern "C" void ps4_shell_run(const char *program) {
         if (program_changed.exchange(false)) {
             dirty = true;
             std::lock_guard lock(program_lock);
-            if (program_done && !ended_seen) {
-                ended_seen = true;
-                toast = Toast{program_name + " ended (exit code " + std::to_string(program_code) + ")", t + 5};
+            if (!ended_toasts.empty()) {
+                toast = Toast{ended_toasts.back(), t + 5};
+                ended_toasts.clear();
+            }
+        }
+        {
+            std::vector<std::vector<std::string>> queue;
+            {
+                std::lock_guard lock(launch_lock);
+                if (ps4_wine_ready())
+                    queue.swap(launch_queue);
+            }
+            for (const auto &a : queue) {
+                const std::string error = launch(a);
+                if (!error.empty())
+                    show_message("Run " + base_name(a.back()), error);
+                dirty = true;
             }
         }
         // a copy, move or delete: its progress a few times a second, its end

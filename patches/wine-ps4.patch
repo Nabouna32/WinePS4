@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/10] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/11] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/10] WinePS4: wineserver main fixes
+Subject: [PATCH 02/11] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/10] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/11] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/10] server: send the first thread its request pipe in the
+Subject: [PATCH 04/11] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/10] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/11] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/10] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/11] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/10] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/11] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/10] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/11] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/10] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/11] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/10] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/11] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -886,6 +886,161 @@ index a06aa83..81e8555 100644
      process->sigkill_delay *= 2;
      if (process->sigkill_delay >= TICKS_PER_SEC / 2)
          signal = SIGKILL;
+-- 
+2.53.0
+
+
+From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sun, 1 Nov 2026 02:21:33 +0300
+Subject: [PATCH 11/11] WinePS4: a process per program: wineserver listens
+ (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
+ thr_kill2 across processes
+
+---
+ dlls/ntdll/unix/loader.c | 13 +++++++++++++
+ dlls/ntdll/unix/server.c | 14 +++++---------
+ server/main.c            | 23 ++++++++++++++++-------
+ server/ptrace.c          |  2 +-
+ server/request.c         |  5 +++++
+ 5 files changed, 40 insertions(+), 17 deletions(-)
+
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index a499899..99abef8 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -531,6 +531,12 @@ static NTSTATUS loader_exec( char **argv, WORD machine )
+     static char noexec[] = "WINELOADERNOEXEC=1";
+ 
+     putenv( noexec );
++#ifdef __PS4_WINE__
++    /* the app is the loader: a program process of it (port/ps4_main.c, WINESERVERSOCKET) */
++    argv[1] = (char *)"/app0/wineps4.bin";
++    execv( argv[1], argv + 1 );
++    return STATUS_INVALID_IMAGE_FORMAT;
++#endif
+ 
+     if (((argv[1] = get_alternate_wineloader( machine )))) preloader_exec( argv );
+ 
+@@ -602,6 +608,13 @@ static int exec_wineserver( pid_t *pid, char **argv )
+  */
+ void start_server( BOOL debug )
+ {
++#ifdef __PS4_WINE__
++    /* the desktop process runs the server: a program can't start one */
++    static BOOL said;
++    if (!said) MESSAGE( "wine: wineserver is not running (WinePS4's desktop starts it)\n" );
++    said = TRUE;
++    return;
++#endif
+     static BOOL started;  /* we only try once */
+     char *argv[3];
+     static char debug_flag[] = "-d";
+diff --git a/dlls/ntdll/unix/server.c b/dlls/ntdll/unix/server.c
+index e9660ef..f988630 100644
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -1399,17 +1399,8 @@ static void server_connect_error( const char *serverdir )
+  *
+  * Attempt to connect to an existing server socket.
+  */
+-#ifdef __PS4_WINE__
+-extern int ps4_start_wineserver( void );
+-#endif
+ static int server_connect(void)
+ {
+-#ifdef __PS4_WINE__
+-    /* the prefix with its dosdevices links, then the server as a thread of this process */
+-    initial_cwd = setup_config_dir();
+-    fchdir( initial_cwd );
+-    return ps4_start_wineserver();
+-#endif
+     struct sockaddr_un addr;
+     struct stat st;
+     int s, slen, retry;
+@@ -1453,7 +1444,12 @@ static int server_connect(void)
+ 
+         /* try to connect to it */
+         addr.sun_family = AF_UNIX;
++#ifdef __PS4_WINE__
++        /* absolute: the PS4 kernel takes no relative names */
++        snprintf( addr.sun_path, sizeof(addr.sun_path), "%s/%s", server_dir, SOCKETNAME );
++#else
+         strcpy( addr.sun_path, SOCKETNAME );
++#endif
+         slen = sizeof(addr) - sizeof(addr.sun_path) + strlen(addr.sun_path) + 1;
+ #ifdef HAVE_STRUCT_SOCKADDR_UN_SUN_LEN
+         addr.sun_len = slen;
+diff --git a/server/main.c b/server/main.c
+index da7531c..b60f29b 100644
+--- a/server/main.c
++++ b/server/main.c
+@@ -257,19 +257,28 @@ int ps4_wineserver_main( int client_fd )
+     if (getenv( "WINEPS4_SERVER_DEBUG" )) debug_level = atoi( getenv( "WINEPS4_SERVER_DEBUG" ));
+     init_limits();
+     sock_init();
+-    ps4_server_dir_init();
++    if (client_fd < 0)
++    {
++        /* the app's server: every program connects to its socket; it stays when none runs */
++        master_socket_timeout = TIMEOUT_INFINITE;
++        open_master_socket();
++    }
++    else ps4_server_dir_init();
+     if (debug_level) fprintf( stderr, "wineserver: starting in-process\n" );
+     set_current_time();
+     init_memory();
+     init_directories( load_intl_file() );
+     init_threading();
+     init_registry();
+-    /* what master_socket_poll_event does for a client that connects */
+-    fcntl( client_fd, F_SETFL, O_NONBLOCK );
+-    if (!(process = create_process( client_fd, NULL, 0, NULL, NULL, NULL, 0, NULL )))
+-        fatal_error( "wineserver: could not create the first process\n" );
+-    create_thread( -1, process, NULL );  /* sends ntdll its request pipe and the protocol version */
+-    release_object( process );
++    if (client_fd >= 0)
++    {
++        /* what master_socket_poll_event does for a client that connects */
++        fcntl( client_fd, F_SETFL, O_NONBLOCK );
++        if (!(process = create_process( client_fd, NULL, 0, NULL, NULL, NULL, 0, NULL )))
++            fatal_error( "wineserver: could not create the first process\n" );
++        create_thread( -1, process, NULL );  /* sends ntdll its request pipe and the protocol version */
++        release_object( process );
++    }
+     main_loop();
+     return 0;
+ }
+diff --git a/server/ptrace.c b/server/ptrace.c
+index e266b53..1dd9287 100644
+--- a/server/ptrace.c
++++ b/server/ptrace.c
+@@ -228,7 +228,7 @@ static inline int tkill( int tgid, int pid, int sig )
+ #elif (defined(__FreeBSD__) || defined (__FreeBSD_kernel__)) && defined(HAVE_THR_KILL2)
+     return thr_kill2( tgid, pid, sig );
+ #elif defined(__PS4_WINE__)
+-    return ps4_thread_kill( pid, sig );
++    return ps4_thread_kill2( tgid, pid, sig );
+ #else
+     errno = ENOSYS;
+     return -1;
+diff --git a/server/request.c b/server/request.c
+index 122208b..44fcfa7 100644
+--- a/server/request.c
++++ b/server/request.c
+@@ -812,7 +812,12 @@ static void acquire_lock(void)
+ 
+     if ((fd = socket( AF_UNIX, SOCK_STREAM, 0 )) == -1) fatal_error( "socket: %s\n", strerror( errno ));
+     addr.sun_family = AF_UNIX;
++#ifdef __PS4_WINE__
++    /* absolute: the PS4 kernel takes no relative names */
++    snprintf( addr.sun_path, sizeof(addr.sun_path), "%s/%s", server_dir, server_socket_name );
++#else
+     strcpy( addr.sun_path, server_socket_name );
++#endif
+     slen = sizeof(addr) - sizeof(addr.sun_path) + strlen(addr.sun_path) + 1;
+ #ifdef HAVE_STRUCT_SOCKADDR_UN_SUN_LEN
+     addr.sun_len = slen;
 -- 
 2.53.0
 

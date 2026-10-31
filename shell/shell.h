@@ -1,6 +1,6 @@
-/* WinePS4's desktop (shell/): what the port (port/ps4_main.c) calls. The desktop runs on the main
- * thread; Wine runs one Windows program on a thread of its own, its output shown in the desktop's
- * Terminal. Picking another program restarts the app into it (one program per run of the app). */
+/* WinePS4's desktop (shell/): what the port (port/ps4_main.c) calls, and what the desktop calls in
+ * the port. The desktop process runs the desktop and wineserver; every Windows program is a process
+ * of its own (/app0/wineps4.bin), its output shown in the desktop's Terminal. */
 #ifndef WINEPS4_SHELL_H
 #define WINEPS4_SHELL_H
 
@@ -10,17 +10,22 @@
 extern "C" {
 #endif
 
-/* The desktop, until the user leaves the app. program: what Wine runs now (NULL: nothing). */
-void ps4_shell_run( const char *program );
+/* The desktop, until the user leaves the app */
+void ps4_shell_run( const char *unused );
 
-/* From the program's thread: the program's output (also in wine.log), its first-run progress,
- * and its end (Wine's exit, which then waits forever: the desktop stays). */
+/* From the port: programs' output (also in wine.log), the setup's progress (NULL: done), a program
+ * process's end, and a program to start (launch.txt, run.txt) */
 void ps4_shell_output( const char *text, size_t len );
 void ps4_shell_status( const char *text );
-void ps4_shell_program_ended( int status );
+void ps4_shell_program_exited( int pid, int code );
+void ps4_shell_launch( char **args );
 
-/* The program to run in the next run of the app: written by the desktop before it restarts the
- * app, read (and removed) by ps4_main at the start */
+/* From the desktop, in the port: whether wineserver is up, and starting a program (its Unix path or
+ * Windows command line, then its arguments, NULL-ended): its pid, or -1 (errno EAGAIN: not ready) */
+int ps4_wine_ready( void );
+int ps4_launch_program( char *const args[] );
+
+/* A program to start at the next start of the app (written by older versions; read and removed) */
 #define WINEPS4_LAUNCH_FILE "/data/WinePS4/launch.txt"
 
 #ifdef __cplusplus

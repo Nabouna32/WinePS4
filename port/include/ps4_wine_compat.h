@@ -159,6 +159,8 @@ int amd64_set_fsbase( void *base );
 int pthread_getthreadid_np( void );
 /* Signals to a thread by its pthread_getthreadid_np() id (wineserver's suspend and APC signals). */
 int ps4_thread_kill( int tid, int sig );
+/* ... of any process (thr_kill2 for the other program processes) */
+int ps4_thread_kill2( int pid, int tid, int sig );
 /* Records the calling thread for ps4_thread_kill (ntdll does it as each thread starts). */
 void ps4_thread_register( void );
 void ps4_thread_unregister( void );

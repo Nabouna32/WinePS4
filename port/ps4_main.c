@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -248,78 +249,147 @@ static void setup_prefix( void )
            (long)(time( NULL ) - start) );
 }
 
-static char *wine_argv[64];
-static int wine_argc;
+/* --- Programs: a process each -------------------------------------------------------------------
+ * The desktop starts /app0/wineps4.bin for a program (WINEPS4_PROGRAM is in the desktop's
+ * environment, so every process it starts has it); Wine's CreateProcess starts it too
+ * (WINESERVERSOCKET). Either way it runs the program and ends; the desktop learns how from wait4. */
 
-/* the program's arguments from launch.txt (removed: it runs once) or run.txt; false: none */
-static int read_program( const char *path, int remove_it )
+extern int ps4_program_process;
+extern void ps4_start_wineserver_listening( void );
+
+static volatile int wine_ready;  /* the prefix is in place and wineserver listens */
+
+int ps4_wine_ready( void ) { return wine_ready; }
+
+/* Starts a program (its Unix path or Windows command line, then its arguments): its pid, or -1. The
+ * child only execs (the desktop has threads: nothing that may lock after fork). */
+int ps4_launch_program( char *const args[] )
 {
-    char line[1024];
-    FILE *f = fopen( path, "r" );
+    char *argv[66];
+    int argc = 0, pid;
 
-    if (!f) return 0;
-    wine_argc = 0;
-    wine_argv[wine_argc++] = strdup( "wine" );  /* writable, as a real argv: Wine edits the strings in place */
-    while (wine_argc < 63 && fgets( line, sizeof(line), f ))
+    argv[argc++] = (char *)"/app0/wineps4.bin";
+    while (args[argc - 1] && argc < 65) argv[argc] = args[argc - 1], argc++;
+    argv[argc] = NULL;
+    if (!wine_ready)
     {
-        char *end = line + strlen( line );
-        while (end > line && (end[-1] == '\n' || end[-1] == '\r')) *--end = 0;
-        if (line[0] && line[0] != '#') wine_argv[wine_argc++] = strdup( line );
+        errno = EAGAIN;
+        return -1;
     }
-    fclose( f );
-    if (remove_it) unlink( path );
-    wine_argv[wine_argc] = NULL;
-    return wine_argc > 1;
+    pid = fork();
+    if (pid == 0)
+    {
+        execv( argv[0], argv );
+        _exit( 127 );  /* (the kernel's exit: not ps4-kit's, which would close the app) */
+    }
+    if (pid > 0) logf_( "wineps4: started %s (process %d)\n", args[0], pid );
+    return pid;
 }
 
-/* the program's thread: the prefix (copied on the first run), then Wine */
-static void *wine_thread( void *arg )
+/* the programs' ends, for the desktop */
+static void *reaper_thread( void *arg )
 {
-    ps4_shell_status( "setting up" );
-    setup_prefix();
-    ps4_shell_status( NULL );
-    ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
-    ps4_start_hang_watch();
-    logf_( "wineps4: running %s\n", wine_argv[1] );
-    __wine_main( wine_argc, wine_argv );
+    for (;;)
+    {
+        int status = 0;
+        const pid_t pid = waitpid( -1, &status, 0 );
+        if (pid > 0)
+        {
+            const int code = WIFEXITED( status ) ? WEXITSTATUS( status ) : 128 + WTERMSIG( status );
+            logf_( "wineps4: process %d ended (%s %d)\n", (int)pid, WIFEXITED( status ) ? "exit code" : "signal",
+                   WIFEXITED( status ) ? code : WTERMSIG( status ) );
+            ps4_shell_program_exited( pid, code );
+        }
+        else sleep( 1 );  /* none running */
+    }
     return NULL;
 }
 
-int main( void )
+/* the program's arguments from launch.txt (removed: it runs once) or run.txt, into args; false: none */
+static int read_program( const char *path, int remove_it, char **args, int max )
 {
-    const char *program = NULL;
+    char line[1024];
+    int n = 0;
+    FILE *f = fopen( path, "r" );
+
+    if (!f) return 0;
+    while (n < max - 1 && fgets( line, sizeof(line), f ))
+    {
+        char *end = line + strlen( line );
+        while (end > line && (end[-1] == '\n' || end[-1] == '\r')) *--end = 0;
+        if (line[0] && line[0] != '#') args[n++] = strdup( line );
+    }
+    fclose( f );
+    if (remove_it) unlink( path );
+    args[n] = NULL;
+    return n > 0;
+}
+
+/* the desktop's Windows: the prefix (copied on a version's first start), then wineserver; then what
+ * launch.txt or run.txt asks for */
+static void *setup_thread( void *arg )
+{
+    static char *args[64];
+    pthread_t reaper;
+
+    ps4_shell_status( "setting up Windows" );
+    setup_prefix();
+    ps4_start_wineserver_listening();
+    /* (the socket appears in the server directory once the thread has opened it) */
+    usleep( 200000 );
+    wine_ready = 1;
+    ps4_shell_status( NULL );
+    logf_( "wineps4: Windows is ready\n" );
+    if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
+    if (read_program( WINEPS4_LAUNCH_FILE, 1, args, 64 ) || read_program( DATA_DIR "/run.txt", 0, args, 64 ))
+        ps4_shell_launch( args );
+    return NULL;
+}
+
+/* A program process: Wine, on the main thread, for the program in argv[1] */
+static int program_main( int argc, char **argv )
+{
+    ps4_program_process = 1;
+    setvbuf( stdout, NULL, _IONBF, 0 );  /* (wine.log and the Terminal, through the desktop's pipe) */
+    setvbuf( stderr, NULL, _IONBF, 0 );
+    if (argc < 2)
+    {
+        logf_( "wineps4: process %d: no program\n", (int)getpid() );
+        return 1;
+    }
+    logf_( "wineps4: process %d: %s\n", (int)getpid(), argv[1] );
+    ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
+    ps4_start_hang_watch();
+    __wine_main( argc, argv );
+    return 0;
+}
+
+int main( int argc, char **argv )
+{
+    pthread_t thread;
+    pthread_attr_t attr;
 
     ps4_kit_set_min_thread_stack( WINE_KERNEL_STACK_SIZE );
+    if (getenv( "WINESERVERSOCKET" ) || getenv( "WINEPS4_PROGRAM" )) return program_main( argc, argv );
+
+    /* the desktop */
     open_log();
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );
-
     setenv( "HOME", DATA_DIR, 1 );
     setenv( "USER", "ps4", 1 );
     setenv( "WINEPREFIX", PREFIX_DIR, 1 );
     setenv( "WINELOADERNOEXEC", "1", 1 );  /* no re-exec through a preloader */
     setenv( "WINEDLLOVERRIDES", "winemenubuilder.exe=d", 0 );
-    /* 32-bit programs in this process (WoW64), not through a 32-bit Wine loader the PS4 doesn't have:
-     * without it Wine hands them to start.exe, which can't start another process */
+    /* 32-bit programs in their process (WoW64), not through a 32-bit Wine loader the PS4 doesn't have:
+     * without it Wine hands them to start.exe */
     setenv( "WINEARCH", "wow64", 0 );
     load_env_file();
+    setenv( "WINEPS4_PROGRAM", "1", 1 );  /* for the processes it starts (ps4_launch_program) */
 
-    if (read_program( WINEPS4_LAUNCH_FILE, 1 ) || read_program( DATA_DIR "/run.txt", 0 ))
-    {
-        pthread_attr_t attr;
-        pthread_t thread;
-
-        program = wine_argv[wine_argc - 1];
-        pthread_attr_init( &attr );
-        pthread_attr_setstacksize( &attr, 8 << 20 );
-        if (pthread_create( &thread, &attr, wine_thread, NULL ))
-        {
-            logf_( "wineps4: could not start the program's thread\n" );
-            program = NULL;
-        }
-        pthread_attr_destroy( &attr );
-    }
-    else logf_( "wineps4: no program to run: the desktop\n" );
-
-    ps4_shell_run( program );  /* does not return */
+    pthread_attr_init( &attr );
+    pthread_attr_setstacksize( &attr, 1 << 20 );
+    if (pthread_create( &thread, &attr, setup_thread, NULL )) logf_( "wineps4: could not start the setup thread\n" );
+    pthread_attr_destroy( &attr );
+    ps4_shell_run( NULL );  /* does not return */
     return 0;
 }

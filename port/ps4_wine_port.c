@@ -145,32 +145,21 @@ static void *wineserver_thread( void *arg )
     return NULL;
 }
 
-/* Called by ntdll's server_connect(): returns ntdll's end of the server socket. */
-int ps4_start_wineserver( void )
+/* The desktop process's wineserver: a thread listening on its socket in the server directory, which
+ * every program process (port/ps4_main.c) connects to. */
+void ps4_start_wineserver_listening( void )
 {
-    static int started;
     pthread_attr_t attr;
     pthread_t thread;
-    int fds[2];
 
-    if (started) return -1;
-    started = 1;
-    if (socketpair( AF_UNIX, SOCK_STREAM, 0, fds ) == -1)
-    {
-        fprintf( stderr, "wineps4: socketpair for wineserver failed: %s\n", strerror( errno ));
-        abort();
-    }
-    fcntl( fds[0], F_SETFD, FD_CLOEXEC );
-    fcntl( fds[1], F_SETFD, FD_CLOEXEC );
     pthread_attr_init( &attr );
     pthread_attr_setstacksize( &attr, 8 << 20 );
-    if (pthread_create( &thread, &attr, wineserver_thread, (void *)(long)fds[1] ))
+    if (pthread_create( &thread, &attr, wineserver_thread, (void *)(long)-1 ))
     {
         fprintf( stderr, "wineps4: could not start the wineserver thread\n" );
         abort();
     }
     pthread_attr_destroy( &attr );
-    return fds[0];
 }
 
 /* --- Signal handlers, from the kernel -----------------------------------------------------------
@@ -243,21 +232,25 @@ int ps4_foreign_signal( void *teb, int sig, siginfo_t *info, void *context )
 }
 
 /* --- The end of the program --------------------------------------------------------------------
- * Wine's exit and _exit (ps4_wine_compat.h): the first one (the program's) tells the desktop how
- * the program ended; every one then waits forever, so the desktop stays (wineserver's own exit
- * comes once the program is gone). The desktop closes the app when the user leaves it. */
+ * Wine's exit and _exit (ps4_wine_compat.h). A program process (port/ps4_main.c) ends with the
+ * exit system call: ps4-kit's exit() closes the whole app (sceSystemServiceLoadExec "exit"), and the
+ * desktop learns of the end from wait4. In the desktop process (wineserver's thread) it waits forever:
+ * the desktop closes the app when the user leaves it. */
 
-extern void ps4_shell_program_ended( int status );
+static long raw_syscall3( long number, long a, long b, long c );
 
+int ps4_program_process;   /* this process runs a Windows program (set by ps4_main) */
 static int program_ended;  /* the hang dump stops then */
 
 void ps4_wine_exit( int status )
 {
-    if (!__atomic_exchange_n( &program_ended, 1, __ATOMIC_SEQ_CST ))
+    __atomic_store_n( &program_ended, 1, __ATOMIC_SEQ_CST );
+    if (ps4_program_process)
     {
-        fprintf( stderr, "wineps4: the program ended (exit code %d)\n", status );
-        ps4_shell_program_ended( status );
+        fflush( NULL );
+        for (;;) raw_syscall3( 1 /* SYS_exit */, status, 0, 0 );
     }
+    fprintf( stderr, "wineps4: wineserver ended (%d)\n", status );
     for (;;) sleep( 3600 );
 }
 
@@ -387,7 +380,7 @@ void ps4_start_hang_watch( void )
     sa.sa_sigaction = dump_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
     ps4_raw_sigaction( SIGXCPU, &sa, NULL );
-    unlink( "/data/WinePS4/hang.log" );
+    /* (appended to: several program processes may write it; each dump says which) */
     if (!pthread_create( &thread, NULL, hang_watch_thread, (void *)(long)seconds )) pthread_detach( thread );
 }
 
@@ -475,7 +468,49 @@ int symlink( const char *target, const char *path )
 
 /* --- What the PS4 does not have ------------------------------------------------------------------ */
 
-pid_t fork( void ) { errno = ENOSYS; return -1; }
-int execv( const char *path, char *const argv[] ) { (void)path; (void)argv; errno = ENOSYS; return -1; }
-int execvp( const char *file, char *const argv[] ) { (void)file; (void)argv; errno = ENOSYS; return -1; }
+/* --- Processes: fork and exec (the process probe found both work) ------------------------------- */
+
+extern char **environ;
+
+/* FreeBSD's fork returns the other side's pid in both, with rdx = 1 in the child (libkernel has no
+ * fork for apps). Wine's children only exec /app0/wineps4.bin after it. */
+pid_t fork( void )
+{
+    long ret, child = 0;
+    unsigned char failed;
+
+    __asm__ volatile( "syscall\n\tsetc %2"
+                      : "=a" (ret), "+d" (child), "=r" (failed)
+                      : "a" (2 /* SYS_fork */)
+                      : "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory", "cc" );
+    if (failed)
+    {
+        errno = (int)ret;
+        return -1;
+    }
+    return child ? 0 : (pid_t)ret;
+}
+
+int execv( const char *path, char *const argv[] )
+{
+    char buf[1100];
+    long ret = raw_syscall3( 59 /* SYS_execve */, (long)absolute( path, buf, sizeof(buf) ), (long)argv, (long)environ );
+    return (int)ret;  /* (only on failure: errno is set) */
+}
+
+int execvp( const char *file, char *const argv[] )
+{
+    if (strchr( file, '/' )) return execv( file, argv );
+    errno = ENOENT;  /* no PATH on the PS4 */
+    return -1;
+}
+
 pid_t setsid( void ) { return getpid(); }
+
+/* A signal to a thread of any process (wineserver's tkill): in this one by the thread table, else
+ * the kernel's thr_kill2 */
+int ps4_thread_kill2( int pid, int tid, int sig )
+{
+    if (pid == getpid()) return ps4_thread_kill( tid, sig );
+    return (int)raw_syscall3( 481 /* SYS_thr_kill2 */, pid, tid, sig );
+}
