@@ -4,7 +4,8 @@
  *  /data/WinePS4/env.txt    optional KEY=VALUE lines put in the environment first (WINEDEBUG=+server)
  *  /data/WinePS4/run.txt    optional: the program to run and its arguments, one per line
  *                           (default: the packaged test program, /app0/wine/hello.exe)
- *  /data/WinePS4/prefix     the Wine prefix, copied from the package (/app0/wine/prefix) on first run */
+ *  /data/WinePS4/prefix     the Wine prefix, copied from the package (/app0/wine/prefix) on first run
+ *  /data/WinePS4/crash.log  ps4-kit's report of a crash (boot-trace.log: the start up to it) */
 #include <dirent.h>
 #include <stdarg.h>
 #include <errno.h>
@@ -16,12 +17,16 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "ps4_kit_diag.h"
+
 #ifndef WINEPS4_VERSION
 #define WINEPS4_VERSION "00.00"
 #endif
 
 #define DATA_DIR   "/data/WinePS4"
 #define PREFIX_DIR DATA_DIR "/prefix"
+
+PS4_DIAG_DATA_DIR( DATA_DIR );
 
 extern void __wine_main( int argc, char *argv[] );
 

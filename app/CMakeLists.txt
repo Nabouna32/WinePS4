@@ -60,7 +60,7 @@ add_custom_command(
 add_custom_target(wine_server_one DEPENDS ${SERVER_ONE})
 
 # --- The app -------------------------------------------------------------------------------------
-add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/unused_reals.c
+add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/unused_reals.c
     $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE})
 add_dependencies(wineps4 wine_server_one)
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include)

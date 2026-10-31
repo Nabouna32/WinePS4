@@ -254,15 +254,21 @@ struct cmsghdr
 /* --- Memory ------------------------------------------------------------------------------------------
  * MAP_NORESERVE (0x4000) and MAP_FIXED_NOREPLACE (0x100000) are Linux numbers in OpenOrbis' header;
  * the PS4 kernel reads those bits as something else. Wine works without either (an address hint,
- * then a check of where the mapping landed). Wine places every mapping itself, so its mmap calls go
- * to the kernel directly, not through ps4-kit's wrap (which moves large or executable mappings into
- * its own pools). */
+ * then a check of where the mapping landed). Wine's mappings go to port/ps4_wine_vm.c, not to
+ * ps4-kit's wrap: there inaccessible mappings only reserve address space and pages get direct memory
+ * when they become accessible (every PS4 mapping takes memory, accessible or not). */
 #include <sys/mman.h>
 #undef MAP_NORESERVE
 #define MAP_NORESERVE 0
 #undef MAP_FIXED_NOREPLACE
-void *__real_mmap( void *addr, size_t len, int prot, int flags, int fd, long long offset );
-#define mmap __real_mmap
+void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t offset );
+int ps4_vm_munmap( void *addr, size_t len );
+int ps4_vm_mprotect( void *addr, size_t len, int prot );
+int ps4_vm_madvise( void *addr, size_t len, int advice );
+#define mmap ps4_vm_mmap
+#define munmap ps4_vm_munmap
+#define mprotect ps4_vm_mprotect
+#define madvise ps4_vm_madvise
 
 /* --- ioctls and calls the PS4 kernel has with FreeBSD numbers, or does not have --------------------- */
 #include <sys/ioctl.h>
