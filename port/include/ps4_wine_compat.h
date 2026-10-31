@@ -270,6 +270,23 @@ int ps4_vm_madvise( void *addr, size_t len, int advice );
 #define mprotect ps4_vm_mprotect
 #define madvise ps4_vm_madvise
 
+/* --- Folders by descriptor ---------------------------------------------------------------------------
+ * The PS4 kernel takes only absolute paths: calls relative to a folder's descriptor go to
+ * port/ps4_wine_dirs.c, which remembers the path of every folder opened by name. */
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+int ps4_wine_open( const char *path, int flags, ... );
+int ps4_wine_openat( int dirfd, const char *name, int flags, ... );
+int ps4_wine_fstatat( int dirfd, const char *name, struct stat *st, int flags );
+int ps4_wine_fchdir( int fd );
+DIR *ps4_wine_fdopendir( int fd );
+#define open(...) ps4_wine_open( __VA_ARGS__ )
+#define openat ps4_wine_openat
+#define fstatat ps4_wine_fstatat
+#define fchdir ps4_wine_fchdir
+#define fdopendir ps4_wine_fdopendir
+
 /* --- ioctls and calls the PS4 kernel has with FreeBSD numbers, or does not have --------------------- */
 #include <sys/ioctl.h>
 #include <sys/statfs.h>
