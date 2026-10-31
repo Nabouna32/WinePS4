@@ -289,6 +289,15 @@ DIR *ps4_wine_fdopendir( int fd );
 #define fchdir ps4_wine_fchdir
 #define fdopendir ps4_wine_fdopendir
 
+/* --- The end of the program ---------------------------------------------------------------------------
+ * The desktop (shell/) shares the process: Wine's exit tells it the program ended and leaves the
+ * calling thread waiting, instead of closing the app (port/ps4_wine_port.c). */
+#include <stdlib.h>
+#include <unistd.h>
+void ps4_wine_exit( int status ) __attribute__((noreturn));
+#define exit(status) ps4_wine_exit( status )
+#define _exit(status) ps4_wine_exit( status )
+
 /* --- ioctls and calls the PS4 kernel has with FreeBSD numbers, or does not have --------------------- */
 #include <sys/ioctl.h>
 #include <sys/statfs.h>

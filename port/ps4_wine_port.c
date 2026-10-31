@@ -144,6 +144,25 @@ int ps4_start_wineserver( void )
     return fds[0];
 }
 
+/* --- The end of the program --------------------------------------------------------------------
+ * Wine's exit and _exit (ps4_wine_compat.h): the first one (the program's) tells the desktop how
+ * the program ended; every one then waits forever, so the desktop stays (wineserver's own exit
+ * comes once the program is gone). The desktop closes the app when the user leaves it. */
+
+extern void ps4_shell_program_ended( int status );
+
+void ps4_wine_exit( int status )
+{
+    static int ended;
+
+    if (!__atomic_exchange_n( &ended, 1, __ATOMIC_SEQ_CST ))
+    {
+        fprintf( stderr, "wineps4: the program ended (exit code %d)\n", status );
+        ps4_shell_program_ended( status );
+    }
+    for (;;) sleep( 3600 );
+}
+
 /* --- Hang dump ---------------------------------------------------------------------------------
  * ps4-kit's thread dump signals with SIGUSR1, which is Wine's (and blocked during every server
  * call), so Wine's threads are dumped here with SIGXCPU, which Wine neither uses nor blocks. When

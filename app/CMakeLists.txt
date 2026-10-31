@@ -59,11 +59,21 @@ add_custom_command(
     VERBATIM)
 add_custom_target(wine_server_one DEPENDS ${SERVER_ONE})
 
+# --- The desktop ---------------------------------------------------------------------------------
+# A Windows 11-style desktop on the CPU (shell/), with HENkaku's canvas (ps4_canvas.cpp).
+set(SHELL_DIR ${CMAKE_CURRENT_LIST_DIR}/../shell)
+add_library(wine_shell OBJECT ${SHELL_DIR}/desktop.cpp ${SHELL_DIR}/screen.cpp ${SHELL_DIR}/input.cpp
+    ${SHELL_DIR}/ps4_canvas.cpp ${SHELL_DIR}/stb_impl.c)
+target_include_directories(wine_shell BEFORE PRIVATE ${SHELL_DIR} ${SHELL_DIR}/compat ${SHELL_DIR}/third_party ${PS4_SYSROOT}/include)
+target_compile_definitions(wine_shell PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" FMT_HEADER_ONLY)
+target_compile_options(wine_shell PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++20> -O2)
+
 # --- The app -------------------------------------------------------------------------------------
 add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/ps4_wine_dirs.c ${PORT}/unused_reals.c
-    $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE})
+    $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} $<TARGET_OBJECTS:wine_shell>)
 add_dependencies(wineps4 wine_server_one)
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
+target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService)
 ps4_kit_app(wineps4)

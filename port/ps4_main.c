@@ -1,14 +1,19 @@
-/* WinePS4: the app's entry point - Wine's loader (loader/main.c) for the PS4.
+/* WinePS4: the app's entry point - the desktop (shell/) on the main thread, and Wine's loader
+ * (loader/main.c) on a thread of its own for the program picked there.
  *
  *  /data/WinePS4/wine.log   everything Wine writes to stdout/stderr, and the program's console output
- *  /data/WinePS4/env.txt    optional KEY=VALUE lines put in the environment first (WINEDEBUG=+server)
- *  /data/WinePS4/run.txt    optional: the program to run and its arguments, one per line
- *                           (default: the packaged test program, /app0/wine/hello.exe)
+ *                           (also shown in the desktop's Terminal)
+ *  /data/WinePS4/env.txt    optional KEY=VALUE lines put in the environment first (WINEDEBUG=+server);
+ *                           the desktop's Settings write its switches there
+ *  /data/WinePS4/launch.txt the program to run now (one argument per line): the desktop writes it,
+ *                           then restarts the app; removed once read
+ *  /data/WinePS4/run.txt    optional, for testing: a program to run at every start, like launch.txt
  *  /data/WinePS4/prefix     the Wine prefix, copied from the package (/app0/wine/prefix) on first run
  *  /data/WinePS4/crash.log  ps4-kit's report of a crash (boot-trace.log: the start up to it)
  *  /data/WinePS4/hang.log   where Wine's threads are when the program has not finished after 20 s
  *                           (WINEPS4_HANG_DUMP=<seconds>, 0 = off) */
 #include <dirent.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -20,6 +25,7 @@
 #include <unistd.h>
 
 #include "ps4_kit_diag.h"
+#include "../shell/shell.h"
 
 #ifndef WINEPS4_VERSION
 #define WINEPS4_VERSION "00.00"
@@ -48,16 +54,43 @@ static void logf_( const char *fmt, ... )
     va_end( args );
 }
 
+static int log_fd = -1;
+
+/* stdout and stderr through a pipe: into wine.log and the desktop's Terminal */
+static void *output_thread( void *arg )
+{
+    char buffer[4096];
+    ssize_t n;
+    int fd = (int)(long)arg;
+
+    while ((n = read( fd, buffer, sizeof(buffer) )) > 0)
+    {
+        if (log_fd >= 0) write( log_fd, buffer, n );
+        ps4_shell_output( buffer, n );
+    }
+    return NULL;
+}
+
 static void open_log( void )
 {
-    int fd;
+    int fds[2];
+    pthread_t thread;
 
     mkdir( DATA_DIR, 0777 );
-    fd = open( DATA_DIR "/wine.log", O_WRONLY | O_CREAT | O_TRUNC, 0666 );
-    if (fd < 0) return;
-    dup2( fd, 1 );
-    dup2( fd, 2 );
-    if (fd > 2) close( fd );
+    log_fd = open( DATA_DIR "/wine.log", O_WRONLY | O_CREAT | O_TRUNC, 0666 );
+    if (log_fd < 0) return;
+    if (pipe( fds ) || pthread_create( &thread, NULL, output_thread, (void *)(long)fds[0] ))
+    {
+        dup2( log_fd, 1 );  /* the log alone */
+        dup2( log_fd, 2 );
+    }
+    else
+    {
+        pthread_detach( thread );
+        dup2( fds[1], 1 );
+        dup2( fds[1], 2 );
+        close( fds[1] );
+    }
     setvbuf( stdout, NULL, _IONBF, 0 );
     setvbuf( stderr, NULL, _IONBF, 0 );
 }
@@ -184,12 +217,46 @@ static void setup_prefix( void )
            (long)(time( NULL ) - start) );
 }
 
+static char *wine_argv[64];
+static int wine_argc;
+
+/* the program's arguments from launch.txt (removed: it runs once) or run.txt; false: none */
+static int read_program( const char *path, int remove_it )
+{
+    char line[1024];
+    FILE *f = fopen( path, "r" );
+
+    if (!f) return 0;
+    wine_argc = 0;
+    wine_argv[wine_argc++] = strdup( "wine" );  /* writable, as a real argv: Wine edits the strings in place */
+    while (wine_argc < 63 && fgets( line, sizeof(line), f ))
+    {
+        char *end = line + strlen( line );
+        while (end > line && (end[-1] == '\n' || end[-1] == '\r')) *--end = 0;
+        if (line[0] && line[0] != '#') wine_argv[wine_argc++] = strdup( line );
+    }
+    fclose( f );
+    if (remove_it) unlink( path );
+    wine_argv[wine_argc] = NULL;
+    return wine_argc > 1;
+}
+
+/* the program's thread: the prefix (copied on the first run), then Wine */
+static void *wine_thread( void *arg )
+{
+    ps4_shell_status( "setting up" );
+    setup_prefix();
+    ps4_shell_status( NULL );
+    ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
+    ps4_start_hang_watch();
+    logf_( "wineps4: running %s\n", wine_argv[1] );
+    __wine_main( wine_argc, wine_argv );
+    return NULL;
+}
+
 int main( void )
 {
-    static char *argv[64];
-    char line[1024];
-    int argc = 0;
-    FILE *run;
+    const char *program = NULL;
 
     ps4_kit_set_min_thread_stack( WINE_KERNEL_STACK_SIZE );
     open_log();
@@ -201,25 +268,24 @@ int main( void )
     setenv( "WINELOADERNOEXEC", "1", 1 );  /* no re-exec through a preloader */
     setenv( "WINEDLLOVERRIDES", "winemenubuilder.exe=d", 0 );
     load_env_file();
-    setup_prefix();
 
-    argv[argc++] = strdup( "wine" );  /* writable, as a real argv: Wine edits the strings in place */
-    if ((run = fopen( DATA_DIR "/run.txt", "r" )))
+    if (read_program( WINEPS4_LAUNCH_FILE, 1 ) || read_program( DATA_DIR "/run.txt", 0 ))
     {
-        while (argc < 63 && fgets( line, sizeof(line), run ))
-        {
-            char *end = line + strlen( line );
-            while (end > line && (end[-1] == '\n' || end[-1] == '\r')) *--end = 0;
-            if (line[0] && line[0] != '#') argv[argc++] = strdup( line );
-        }
-        fclose( run );
-    }
-    if (argc == 1) argv[argc++] = strdup( WINE_APP_DIR "/hello.exe" );
-    argv[argc] = NULL;
+        pthread_attr_t attr;
+        pthread_t thread;
 
-    ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
-    ps4_start_hang_watch();
-    logf_( "wineps4: running %s\n", argv[1] );
-    __wine_main( argc, argv );
+        program = wine_argv[wine_argc - 1];
+        pthread_attr_init( &attr );
+        pthread_attr_setstacksize( &attr, 8 << 20 );
+        if (pthread_create( &thread, &attr, wine_thread, NULL ))
+        {
+            logf_( "wineps4: could not start the program's thread\n" );
+            program = NULL;
+        }
+        pthread_attr_destroy( &attr );
+    }
+    else logf_( "wineps4: no program to run: the desktop\n" );
+
+    ps4_shell_run( program );  /* does not return */
     return 0;
 }

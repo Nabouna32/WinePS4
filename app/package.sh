@@ -41,6 +41,8 @@ for f in "$SYS32"/*; do
     fi
 done
 cp "$ROOT/tests/hello.exe" "$STAGE/wine/hello.exe"
+mkdir -p "$STAGE/fonts"
+cp "$ROOT"/app/fonts/* "$STAGE/fonts/"   # the desktop's (Roboto, OFL)
 echo "staged $(wc -l < "$STAGE/wine/system32-from-lib.txt") system32 DLLs from lib, $(du -sh "$STAGE" | cut -f1) in all"
 
 PKG="$(NO_RIGHT_SPRX=1 bash "$PS4_KIT/scripts/make-pkg.sh" "$STAGE" WINE00002 "WinePS4" "$VERSION" WINEPS4 "$PSB/out" | tail -1)"
