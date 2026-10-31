@@ -34,14 +34,25 @@ int amd64_set_fsbase( void *base ) { return sysarch( AMD64_SET_FSBASE, &base ); 
 
 /* --- Threads by kernel id ---------------------------------------------------------------------- */
 
+/* Wine's threads (and the wineserver thread): their kernel id, pthread and TEB. A thread leaves the
+ * table when it ends (the key's destructor): a signal to a pthread that has ended may end the app
+ * (v00.16: the hang dump's, after the program was gone). */
 #define MAX_THREADS 1024
 static pthread_mutex_t threads_lock = PTHREAD_MUTEX_INITIALIZER;
-static struct { int tid; pthread_t thread; } threads[MAX_THREADS];
+static struct { int tid; pthread_t thread; void *teb; } threads[MAX_THREADS];
+static pthread_key_t thread_key;
+static pthread_once_t thread_key_once = PTHREAD_ONCE_INIT;
+
+void ps4_thread_unregister( void );
+static void thread_ended( void *arg ) { ps4_thread_unregister(); }
+static void make_thread_key( void ) { pthread_key_create( &thread_key, thread_ended ); }
 
 void ps4_thread_register( void )
 {
     int tid = pthread_getthreadid_np(), i, free_slot = -1;
 
+    pthread_once( &thread_key_once, make_thread_key );
+    pthread_setspecific( thread_key, (void *)1 );
     pthread_mutex_lock( &threads_lock );
     for (i = 0; i < MAX_THREADS; i++)
     {
@@ -50,8 +61,9 @@ void ps4_thread_register( void )
     }
     if (free_slot >= 0)
     {
-        threads[free_slot].tid = tid;
         threads[free_slot].thread = pthread_self();
+        __atomic_store_n( &threads[free_slot].teb, ps4_thread_teb, __ATOMIC_RELEASE );
+        threads[free_slot].tid = tid;
     }
     pthread_mutex_unlock( &threads_lock );
     if (free_slot < 0) fprintf( stderr, "wineps4: thread table full, thread %d cannot be signalled\n", tid );
@@ -62,8 +74,25 @@ void ps4_thread_unregister( void )
     int tid = pthread_getthreadid_np(), i;
 
     pthread_mutex_lock( &threads_lock );
-    for (i = 0; i < MAX_THREADS; i++) if (threads[i].tid == tid) threads[i].tid = 0;
+    for (i = 0; i < MAX_THREADS; i++)
+        if (threads[i].tid == tid)
+        {
+            threads[i].tid = 0;
+            __atomic_store_n( &threads[i].teb, NULL, __ATOMIC_RELEASE );
+        }
     pthread_mutex_unlock( &threads_lock );
+}
+
+/* Whether a TEB is a Wine thread's: no lock, no thread data (it runs first in a signal handler, where
+ * %fs may be the 32-bit TEB's) */
+static int is_wine_teb( void *teb )
+{
+    int i;
+
+    if (!teb) return 0;
+    for (i = 0; i < MAX_THREADS; i++)
+        if (__atomic_load_n( &threads[i].teb, __ATOMIC_ACQUIRE ) == teb) return 1;
+    return 0;
 }
 
 int ps4_thread_kill( int tid, int sig )
@@ -150,7 +179,10 @@ int ps4_start_wineserver( void )
  * wrapper crashed before Wine's handler ran (v00.15). The system call installs the handler itself:
  * the kernel's trampoline calls it, and Wine's init_handler puts the C library's FS back first. */
 
-int ps4_raw_sigaction( int sig, const struct sigaction *act, struct sigaction *old )
+static struct sigaction previous[64];  /* what each signal had before Wine's: ps4-kit's crash handler */
+static unsigned char have_previous[64];
+
+static int raw_sigaction( int sig, const struct sigaction *act, struct sigaction *old )
 {
     long ret;
     unsigned char failed;
@@ -167,6 +199,49 @@ int ps4_raw_sigaction( int sig, const struct sigaction *act, struct sigaction *o
     return 0;
 }
 
+int ps4_raw_sigaction( int sig, const struct sigaction *act, struct sigaction *old )
+{
+    struct sigaction before;
+
+    if (sig > 0 && sig < 64 && !have_previous[sig] && act && !raw_sigaction( sig, NULL, &before ))
+    {
+        previous[sig] = before;
+        have_previous[sig] = 1;
+    }
+    return raw_sigaction( sig, act, old );
+}
+
+/* A signal Wine's handler got on a thread that isn't Wine's (the desktop's, ps4-kit's): what was
+ * there before has it, so a crash there reaches ps4-kit's crash log instead of Wine's handler, which
+ * would look for a TEB the thread doesn't have. Called first in Wine's fault handlers, with the TEB
+ * the signal stack would belong to; true when the signal was handed on. */
+int ps4_foreign_signal( void *teb, int sig, siginfo_t *info, void *context )
+{
+    if (is_wine_teb( teb )) return 0;
+    if (sig > 0 && sig < 64 && have_previous[sig])
+    {
+        const struct sigaction *p = &previous[sig];
+        if ((p->sa_flags & SA_SIGINFO) && p->sa_sigaction)
+        {
+            p->sa_sigaction( sig, info, context );
+            return 1;
+        }
+        if (p->sa_handler != SIG_DFL && p->sa_handler != SIG_IGN)
+        {
+            p->sa_handler( sig );
+            return 1;
+        }
+    }
+    /* nothing to hand it to: the system's own action, when it comes again */
+    {
+        struct sigaction dfl;
+        memset( &dfl, 0, sizeof(dfl) );
+        dfl.sa_handler = SIG_DFL;
+        raw_sigaction( sig, &dfl, NULL );
+    }
+    return 1;
+}
+
 /* --- The end of the program --------------------------------------------------------------------
  * Wine's exit and _exit (ps4_wine_compat.h): the first one (the program's) tells the desktop how
  * the program ended; every one then waits forever, so the desktop stays (wineserver's own exit
@@ -174,11 +249,11 @@ int ps4_raw_sigaction( int sig, const struct sigaction *act, struct sigaction *o
 
 extern void ps4_shell_program_ended( int status );
 
+static int program_ended;  /* the hang dump stops then */
+
 void ps4_wine_exit( int status )
 {
-    static int ended;
-
-    if (!__atomic_exchange_n( &ended, 1, __ATOMIC_SEQ_CST ))
+    if (!__atomic_exchange_n( &program_ended, 1, __ATOMIC_SEQ_CST ))
     {
         fprintf( stderr, "wineps4: the program ended (exit code %d)\n", status );
         ps4_shell_program_ended( status );
@@ -286,7 +361,7 @@ static void *hang_watch_thread( void *arg )
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
     sleep( seconds );
-    for (n = 0; n < 3; n++)
+    for (n = 0; n < 3 && !__atomic_load_n( &program_ended, __ATOMIC_ACQUIRE ); n++)
     {
         snprintf( reason, sizeof(reason), "still running after %d s", seconds + 30 * n );
         dump_threads( reason );
