@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 1/9] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/10] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 2/9] WinePS4: wineserver main fixes
+Subject: [PATCH 02/10] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,8 +286,8 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 3/9] ntdll: set up the prefix (dosdevices) before starting the
- in-process server
+Subject: [PATCH 03/10] ntdll: set up the prefix (dosdevices) before starting
+ the in-process server
 
 ---
  dlls/ntdll/unix/server.c | 3 +++
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 4/9] server: send the first thread its request pipe in the
+Subject: [PATCH 04/10] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 5/9] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/10] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 6/9] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/10] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 7/9] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/10] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 8/9] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/10] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,8 +721,8 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 9/9] WinePS4: signals of threads that are not Wine's go to the
- handler before Wine's
+Subject: [PATCH 09/10] WinePS4: signals of threads that are not Wine's go to
+ the handler before Wine's
 
 ---
  dlls/ntdll/unix/signal_x86_64.c | 57 ++++++++++++++++++++++++++++-----
@@ -852,6 +852,40 @@ index d9600d2..515989c 100644
      struct syscall_frame *frame = get_syscall_frame();
  
      TRACE_(seh)("SIGSYS, rax %#llx, rip %#llx.\n", RAX_sig(ucontext), RIP_sig(ucontext));
+-- 
+2.53.0
+
+
+From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sun, 1 Nov 2026 01:29:00 +0300
+Subject: [PATCH 10/10] WinePS4: wineserver does not kill the app when a
+ program ends
+
+---
+ server/process.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/server/process.c b/server/process.c
+index a06aa83..81e8555 100644
+--- a/server/process.c
++++ b/server/process.c
+@@ -625,6 +625,15 @@ static void process_sigkill( void *private )
+     struct process *process = private;
+     int signal = 0;
+ 
++#ifdef __PS4_WINE__
++    /* the program ran in this process (a thread of it): nothing to wait for, nothing to kill */
++    if (process->unix_pid == getpid())
++    {
++        process->sigkill_timeout = NULL;
++        process_died( process );
++        return;
++    }
++#endif
+     process->sigkill_delay *= 2;
+     if (process->sigkill_delay >= TICKS_PER_SEC / 2)
+         signal = SIGKILL;
 -- 
 2.53.0
 
