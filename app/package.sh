@@ -4,6 +4,8 @@
 # (title WINE00002). Run in WSL.
 #   WINEPS4_VERSION=00.01 app/package.sh
 #
+# /app0/eboot.bin                      the launcher: starts /app0/wineps4.bin, the app (linked at
+#                                      0x60000000, off 0x400000: see app/launcher/main.c)
 # /app0/wine/lib/wine/x86_64-windows   Wine's 64-bit PE DLLs and programs (no import libraries)
 # /app0/wine/lib/wine/i386-windows     its 32-bit ones (WoW64: 32-bit programs in the 64-bit process)
 # /app0/wine/share/wine                nls files, wine.inf
@@ -26,7 +28,10 @@ PREFIX="$HOME/wine-ps4-build/prefix-wow64"
 STAGE="$B/stage"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/sce_sys" "$STAGE/wine/lib/wine/x86_64-windows" "$STAGE/wine/lib/wine/i386-windows" "$STAGE/wine/share"
-cp "$B/wineps4_eboot/eboot.bin" "$STAGE/eboot.bin"
+# eboot.bin: the launcher (app/launcher); wineps4.bin: the app, ET_SCE_EXEC at its link address
+cp "$PSB/build/wineps4-launcher/wineps4_launcher_eboot/eboot.bin" "$STAGE/eboot.bin"
+cp "$B/wineps4_eboot/eboot.bin" "$STAGE/wineps4.bin"
+python3 "$ROOT/scripts/set-exec-type.py" "$STAGE/wineps4.bin"
 cp "$ROOT/app/sce_sys/icon0.png" "$STAGE/sce_sys/"
 rsync -a --exclude '*.a' "$HOSTWINE/lib/wine/x86_64-windows/" "$STAGE/wine/lib/wine/x86_64-windows/"
 rsync -a --exclude '*.a' "$HOSTWINE/lib/wine/i386-windows/" "$STAGE/wine/lib/wine/i386-windows/"

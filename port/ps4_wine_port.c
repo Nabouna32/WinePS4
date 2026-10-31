@@ -168,10 +168,11 @@ void ps4_wine_exit( int status )
  * call), so Wine's threads are dumped here with SIGXCPU, which Wine neither uses nor blocks. When
  * the program has not finished after WINEPS4_HANG_DUMP seconds (default 20, 0 = off), every thread
  * registered above writes its instruction pointer and the return addresses into the eboot on its
- * stack to /data/WinePS4/hang.log; twice more 30 s apart. Eboot addresses are relative to .text
- * (0x400000), as in ps4-kit's crash.log: symbolize with llvm-symbolizer --obj=<elf>. */
+ * stack to /data/WinePS4/hang.log; twice more 30 s apart. Eboot addresses are as linked (the ELF
+ * vaddrs: the image is linked at its base): symbolize with llvm-symbolizer --obj=<elf>. */
 
-#define EBOOT_TEXT  0x400000
+extern char __text_start[];  /* the linker script's: where the image starts (0x60000000) */
+#define EBOOT_TEXT  ((uint64_t)__text_start)
 #define DUMP_FRAMES 40
 int32_t sceKernelQueryMemoryProtection( void *addr, void **start, void **end, uint32_t *prot );
 
@@ -211,7 +212,7 @@ static void dump_handler( int sig, siginfo_t *info, void *context )
     if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
         end = map_end;
     for (p = (uint64_t *)rsp; p < end && n < DUMP_FRAMES; p++)
-        if (is_return_address( *p )) dump_frames[n++] = *p - EBOOT_TEXT;
+        if (is_return_address( *p )) dump_frames[n++] = *p;
     dump_count = n;
     __atomic_store_n( &dump_done, 1, __ATOMIC_RELEASE );
 }
@@ -222,7 +223,7 @@ static void dump_threads( const char *reason )
     int i, j, waited;
 
     if (!f) return;
-    fprintf( f, "==== %s (eboot addresses relative to .text)\n", reason );
+    fprintf( f, "==== %s (eboot addresses as linked: llvm-symbolizer --obj=<elf>)\n", reason );
     for (i = 0; i < MAX_THREADS; i++)
     {
         pthread_t thread;
@@ -238,7 +239,7 @@ static void dump_threads( const char *reason )
         for (waited = 0; waited < 500 && !__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ); waited++) usleep( 1000 );
         if (!dump_done) { fprintf( f, "-- thread %d: no answer\n", tid ); continue; }
         if (in_eboot( dump_rip )) fprintf( f, "-- thread %d: rip elf 0x%llx\n   stack:", tid,
-                                           (unsigned long long)(dump_rip - EBOOT_TEXT) );
+                                           (unsigned long long)dump_rip );
         else fprintf( f, "-- thread %d: rip 0x%llx (outside the eboot)\n   stack:", tid, (unsigned long long)dump_rip );
         for (j = 0; j < dump_count; j++) fprintf( f, " 0x%llx", (unsigned long long)dump_frames[j] );
         fprintf( f, "\n" );

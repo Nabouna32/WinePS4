@@ -124,7 +124,11 @@ static int copy_file( const char *from, const char *to, mode_t mode )
     ssize_t n;
 
     if ((in = open( from, O_RDONLY )) < 0) return 0;
-    if ((out = open( to, O_WRONLY | O_CREAT | O_TRUNC, mode & 0777 ? mode & 0777 : 0666 )) < 0)
+    /* a copy from an earlier version may be read-only (the package's files are): replaced, not
+     * written into (v00.14 could not update the prefix); the copy is the user's to change */
+    unlink( to );
+    (void)mode;
+    if ((out = open( to, O_WRONLY | O_CREAT | O_TRUNC, 0666 )) < 0)
     {
         close( in );
         return 0;
@@ -294,6 +298,9 @@ int main( void )
     setenv( "WINEPREFIX", PREFIX_DIR, 1 );
     setenv( "WINELOADERNOEXEC", "1", 1 );  /* no re-exec through a preloader */
     setenv( "WINEDLLOVERRIDES", "winemenubuilder.exe=d", 0 );
+    /* 32-bit programs in this process (WoW64), not through a 32-bit Wine loader the PS4 doesn't have:
+     * without it Wine hands them to start.exe, which can't start another process */
+    setenv( "WINEARCH", "wow64", 0 );
     load_env_file();
 
     if (read_program( WINEPS4_LAUNCH_FILE, 1 ) || read_program( DATA_DIR "/run.txt", 0 ))

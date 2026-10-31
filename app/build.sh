@@ -18,3 +18,12 @@ grep -q "^WINEPS4_VERSION:STRING=$VERSION\$" "$B/CMakeCache.txt" \
     || { tail -30 "$PSB/logs/wineps4-configure.log"; exit 1; }
 ninja -C "$B" -k 0 -j"$JOBS" "$TARGET" > "$PSB/logs/wineps4-build.log" 2>&1 || { echo "build failed: $PSB/logs/wineps4-build.log"; exit 1; }
 echo "built $TARGET"
+
+# eboot.bin: the launcher that starts wineps4.bin (app/launcher), built on its own (its image stays
+# at the usual place)
+LB="$PSB/build/wineps4-launcher"
+[ -f "$LB/build.ninja" ] || ps4_cmake -S "$HERE/launcher" -B "$LB" -G Ninja > "$PSB/logs/wineps4-launcher-configure.log" 2>&1 \
+    || { tail -30 "$PSB/logs/wineps4-launcher-configure.log"; exit 1; }
+ninja -C "$LB" -j"$JOBS" > "$PSB/logs/wineps4-launcher-build.log" 2>&1 \
+    || { grep -E "error|undefined" "$PSB/logs/wineps4-launcher-build.log" | head -20; exit 1; }
+echo "built the launcher"

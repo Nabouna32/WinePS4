@@ -7,6 +7,22 @@ project(wineps4 C CXX ASM)
 include($ENV{HOME}/ps4-kit/ps4-kit.cmake)
 
 set(WINEPS4_VERSION "00.00" CACHE STRING "Version shown in the log")
+
+# Where the app's image starts: off 0x400000, which 32-bit programs without relocations need. The
+# kit's linker script starts there, and package.sh makes the eboot ET_SCE_EXEC (mapped where it was
+# linked; the eboot.bin launcher, app/launcher, starts it). Below 2 GiB: the kit's weak hooks
+# resolve to 0, which code higher up can't reach (R_X86_64_PC32).
+set(WINEPS4_IMAGE_BASE 0x60000000)
+file(READ ${PS4_LINK_SCRIPT} HIGH_SCRIPT)
+string(FIND "${HIGH_SCRIPT}" ". = ${WINEPS4_IMAGE_BASE};" HIGH_POS)
+if (HIGH_POS EQUAL -1)
+    string(REPLACE "SECTIONS\n{" "SECTIONS\n{\n\t. = ${WINEPS4_IMAGE_BASE};" HIGH_SCRIPT "${HIGH_SCRIPT}")
+    string(FIND "${HIGH_SCRIPT}" ". = ${WINEPS4_IMAGE_BASE};" HIGH_POS)
+    if (HIGH_POS EQUAL -1)
+        message(FATAL_ERROR "the linker script's SECTIONS { was not found")
+    endif ()
+    file(WRITE ${PS4_LINK_SCRIPT} "${HIGH_SCRIPT}")
+endif ()
 set(WINE_SRC $ENV{HOME}/wine-ps4-build/src/wine)
 set(PORT ${CMAKE_CURRENT_LIST_DIR}/../port)
 
