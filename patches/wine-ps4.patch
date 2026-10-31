@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 1/3] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 1/4] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 2/3] WinePS4: wineserver main fixes
+Subject: [PATCH 2/4] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 3/3] ntdll: set up the prefix (dosdevices) before starting the
+Subject: [PATCH 3/4] ntdll: set up the prefix (dosdevices) before starting the
  in-process server
 
 ---
@@ -307,6 +307,47 @@ index 3507172..e9660ef 100644
      return ps4_start_wineserver();
  #endif
      struct sockaddr_un addr;
+-- 
+2.53.0
+
+
+From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sat, 31 Oct 2026 21:00:06 +0300
+Subject: [PATCH 4/4] server: send the first thread its request pipe in the
+ in-process start
+
+---
+ server/main.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/server/main.c b/server/main.c
+index 4b4c083..da7531c 100644
+--- a/server/main.c
++++ b/server/main.c
+@@ -250,6 +250,8 @@ extern void ps4_server_dir_init(void);
+  * of its own). */
+ int ps4_wineserver_main( int client_fd )
+ {
++    struct process *process;
++
+     server_argv0 = "wineserver";
+     foreground = 1;
+     if (getenv( "WINEPS4_SERVER_DEBUG" )) debug_level = atoi( getenv( "WINEPS4_SERVER_DEBUG" ));
+@@ -262,8 +264,12 @@ int ps4_wineserver_main( int client_fd )
+     init_directories( load_intl_file() );
+     init_threading();
+     init_registry();
+-    if (!create_process( client_fd, NULL, 0, NULL, NULL, NULL, 0, NULL ))
++    /* what master_socket_poll_event does for a client that connects */
++    fcntl( client_fd, F_SETFL, O_NONBLOCK );
++    if (!(process = create_process( client_fd, NULL, 0, NULL, NULL, NULL, 0, NULL )))
+         fatal_error( "wineserver: could not create the first process\n" );
++    create_thread( -1, process, NULL );  /* sends ntdll its request pipe and the protocol version */
++    release_object( process );
+     main_loop();
+     return 0;
+ }
 -- 
 2.53.0
 
