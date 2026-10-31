@@ -169,22 +169,27 @@ static int copy_tree( const char *from, const char *to )
     return ok;
 }
 
-/* system32's copies of the builtin DLLs are packaged once, in Wine's lib folder: the package lists
- * them (app/package.sh) and they are copied from there. */
+/* system32's and syswow64's copies of the builtin DLLs are packaged once, in Wine's lib folders: the
+ * package lists them as system32/<name> and syswow64/<name> (app/package.sh) and they are copied
+ * from there (64-bit DLLs from x86_64-windows, 32-bit ones from i386-windows). */
 static int copy_system32_from_lib( void )
 {
-    char name[256];
+    char line[256];
     int ok = 1;
     FILE *list = fopen( WINE_APP_DIR "/system32-from-lib.txt", "r" );
 
     if (!list) return 0;
-    while (fgets( name, sizeof(name), list ))
+    while (fgets( line, sizeof(line), list ))
     {
         char src[512], dst[512];
-        name[strcspn( name, "\r\n" )] = 0;
-        if (!name[0]) continue;
-        snprintf( src, sizeof(src), WINE_APP_DIR "/lib/wine/x86_64-windows/%s", name );
-        snprintf( dst, sizeof(dst), PREFIX_DIR "/drive_c/windows/system32/%s", name );
+        const char *name = line, *lib = "x86_64-windows", *folder = "system32";
+
+        line[strcspn( line, "\r\n" )] = 0;
+        if (!line[0]) continue;
+        if (!strncmp( line, "syswow64/", 9 )) name = line + 9, lib = "i386-windows", folder = "syswow64";
+        else if (!strncmp( line, "system32/", 9 )) name = line + 9;
+        snprintf( src, sizeof(src), WINE_APP_DIR "/lib/wine/%s/%s", lib, name );
+        snprintf( dst, sizeof(dst), PREFIX_DIR "/drive_c/windows/%s/%s", folder, name );
         if (!copy_file( src, dst, 0644 ))
         {
             logf_( "wineps4: could not copy %s: %s\n", src, strerror( errno ));
@@ -195,16 +200,33 @@ static int copy_system32_from_lib( void )
     return ok;
 }
 
+/* Which prefix the console has: written once the copy is whole. A package with a newer one (v00.14:
+ * the 32-bit side, syswow64) copies it over the old one; files the user added stay. */
+#define PREFIX_VERSION "2 wow64"
+#define PREFIX_MARK    PREFIX_DIR "/.wineps4-prefix"
+
+static int prefix_current( void )
+{
+    char line[64] = "";
+    FILE *f = fopen( PREFIX_MARK, "r" );
+
+    if (!f) return 0;
+    if (!fgets( line, sizeof(line), f )) line[0] = 0;
+    fclose( f );
+    line[strcspn( line, "\r\n" )] = 0;
+    return !strcmp( line, PREFIX_VERSION );
+}
+
 /* The prefix made by the PC's Wine build, without dosdevices/ (symbolic links cannot be packaged;
- * ntdll creates c: and z: when the folder is missing). system.reg is copied last: it marks a
- * complete prefix. */
+ * ntdll creates c: and z: when the folder is missing). system.reg is copied last, then the mark. */
 static void setup_prefix( void )
 {
-    struct stat st;
     time_t start;
+    FILE *mark;
 
-    if (!stat( PREFIX_DIR "/system.reg", &st )) return;
-    logf_( "wineps4: first run: copying the prefix from " WINE_APP_DIR "/prefix\n" );
+    if (prefix_current()) return;
+    logf_( "wineps4: copying the prefix (" PREFIX_VERSION ") from " WINE_APP_DIR "/prefix\n" );
+    ps4_shell_status( "setting up Windows (first start of this version, about a minute)" );
     start = time( NULL );
     mkdir( PREFIX_DIR, 0777 );
     if (!copy_tree( WINE_APP_DIR "/prefix/drive_c", PREFIX_DIR "/drive_c" ) || !copy_system32_from_lib() ||
@@ -213,6 +235,11 @@ static void setup_prefix( void )
         !copy_file( WINE_APP_DIR "/prefix/.update-timestamp", PREFIX_DIR "/.update-timestamp", 0644 ) ||
         !copy_file( WINE_APP_DIR "/prefix/system.reg", PREFIX_DIR "/system.reg", 0644 ))
         logf_( "wineps4: the prefix copy had errors\n" );
+    else if ((mark = fopen( PREFIX_MARK, "w" )))
+    {
+        fprintf( mark, "%s\n", PREFIX_VERSION );
+        fclose( mark );
+    }
     logf_( "wineps4: copied %u files, %llu MiB in %ld s\n", copied_files, copied_bytes >> 20,
            (long)(time( NULL ) - start) );
 }

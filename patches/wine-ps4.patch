@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 1/6] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 1/7] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 2/6] WinePS4: wineserver main fixes
+Subject: [PATCH 2/7] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 3/6] ntdll: set up the prefix (dosdevices) before starting the
+Subject: [PATCH 3/7] ntdll: set up the prefix (dosdevices) before starting the
  in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 4/6] server: send the first thread its request pipe in the
+Subject: [PATCH 4/7] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 5/6] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 5/7] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 6/6] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 6/7] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -459,6 +459,217 @@ index 905d528..0f787a1 100644
                                      SEC_COMMIT, 0, FILE_READ_DATA | FILE_WRITE_DATA, sd ))) return NULL;
      ptr = mmap( NULL, mapping->size, PROT_WRITE, MAP_SHARED, get_unix_fd( mapping->fd ), 0 );
      if (ptr != MAP_FAILED) user_shared_data = ptr;
+-- 
+2.53.0
+
+
+From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sat, 31 Oct 2026 23:43:18 +0300
+Subject: [PATCH 7/7] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+ its base switched by sysarch at the Unix side boundaries; wow64cpu skips
+ reloading an unchanged fs
+
+---
+ dlls/ntdll/unix/signal_x86_64.c | 97 +++++++++++++++++++++++++++++++++
+ dlls/wow64cpu/cpu.c             |  6 +-
+ 2 files changed, 102 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/ntdll/unix/signal_x86_64.c b/dlls/ntdll/unix/signal_x86_64.c
+index 43068f9..dd223f7 100644
+--- a/dlls/ntdll/unix/signal_x86_64.c
++++ b/dlls/ntdll/unix/signal_x86_64.c
+@@ -507,6 +507,7 @@ struct amd64_thread_data
+     void                **instrumentation_callback; /* 0330 */
+     DWORD                 fs;            /* 0338 WOW TEB selector */
+     DWORD                 mxcsr;         /* 033c Unix-side mxcsr register */
++    void                 *wow_fsbase;    /* 0340 PS4: the 32-bit TEB, FS's base outside the Unix side */
+ };
+ 
+ C_ASSERT( sizeof(struct amd64_thread_data) <= sizeof(((struct ntdll_thread_data *)0)->cpu_data) );
+@@ -515,6 +516,17 @@ C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct amd64_thread_data, fra
+ C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct amd64_thread_data, instrumentation_callback ) == 0x330 );
+ C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct amd64_thread_data, fs ) == 0x338 );
+ C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct amd64_thread_data, mxcsr ) == 0x33c );
++C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct amd64_thread_data, wow_fsbase ) == 0x340 );
++
++#ifdef __PS4_WINE__
++/* FS's base, with no C library in between (its errno is thread data FS may not reach yet) */
++static inline void ps4_set_fsbase( void *const *base )
++{
++    long ret;
++    __asm__ volatile( "syscall" : "=a" (ret) : "a" (165 /* SYS_sysarch */), "D" (129 /* AMD64_SET_FSBASE */),
++                      "S" (base) : "rcx", "rdx", "r8", "r9", "r10", "r11", "memory", "cc" );
++}
++#endif
+ 
+ static inline struct amd64_thread_data *amd64_thread_data(void)
+ {
+@@ -909,6 +921,11 @@ static inline ucontext_t *init_handler( void *sigcontext )
+ {
+ #ifdef __PS4_WINE__
+     amd64_set_gsbase( get_current_teb() );
++    if (fs32_sel)
++    {
++        struct amd64_thread_data *thread_data = (struct amd64_thread_data *)&get_current_teb()->GdiTebBatch;
++        if (thread_data->pthread_teb) ps4_set_fsbase( &thread_data->pthread_teb );
++    }
+ #endif
+     clear_alignment_flag();
+ #ifdef __linux__
+@@ -950,6 +967,14 @@ static inline void leave_handler( ucontext_t *sigcontext )
+     if (!is_inside_signal_stack( (void *)RSP_sig(sigcontext )) &&
+         !is_inside_syscall( RSP_sig(sigcontext )))
+         _thread_set_tsd_base( (uint64_t)NtCurrentTeb() );
++#elif defined __PS4_WINE__
++    if (fs32_sel &&
++        !is_inside_signal_stack( (void *)RSP_sig(sigcontext )) &&
++        !is_inside_syscall( RSP_sig(sigcontext )))
++    {
++        struct amd64_thread_data *thread_data = (struct amd64_thread_data *)&get_current_teb()->GdiTebBatch;
++        if (thread_data->wow_fsbase) ps4_set_fsbase( &thread_data->wow_fsbase );
++    }
+ #endif
+     if (is_16bit( sigcontext )) return;
+ #ifdef DS_sig
+@@ -1817,6 +1842,16 @@ __ASM_GLOBAL_FUNC( call_user_mode_callback,
+                    "movl $0x3000003,%eax\n\t"  /* _thread_set_tsd_base */
+                    "syscall\n\t"
+                    "movq %r10,%rcx\n\t"
++#elif defined __PS4_WINE__
++                   "cmpq $0,0x340(%r13)\n\t"   /* amd64_thread_data()->wow_fsbase: 32-bit programs */
++                   "jz 1f\n\t"
++                   "movq %rcx,%r15\n\t"
++                   "movl $129,%edi\n\t"        /* AMD64_SET_FSBASE */
++                   "leaq 0x340(%r13),%rsi\n\t"
++                   "movl $165,%eax\n\t"        /* SYS_sysarch */
++                   "syscall\n\t"
++                   "movq %r15,%rcx\n"
++                   "1:\n\t"
+ #endif
+                    "movq 0x330(%r13),%r10\n\t" /* amd64_thread_data()->instrumentation_callback */
+                    "movq (%r10),%r10\n\t"
+@@ -2861,6 +2896,9 @@ void signal_init_process(void)
+ #ifdef __linux__
+         cs32_sel = 0x23;
+         fs32_sel = alloc_fs_sel( -1, wow_teb );
++#elif defined(__PS4_WINE__)
++        cs32_sel = 0x33;  /* the GDT's 32-bit user code */
++        fs32_sel = 0x13;  /* its 32-bit fs entry: what %fs always holds; the base is set (sysarch) */
+ #elif defined(__APPLE__)
+         cs32_sel = ldt_alloc_entry( ldt_make_cs32_entry() );
+ #endif
+@@ -2926,6 +2964,11 @@ void init_syscall_frame( LPTHREAD_START_ROUTINE entry, void *arg, BOOL suspend,
+     amd64_set_gsbase( teb );
+     ps4_thread_teb = teb;
+     ps4_thread_register();
++    if (fs32_sel && get_wow_teb( teb ))
++    {
++        amd64_get_fsbase( &thread_data->pthread_teb );
++        thread_data->wow_fsbase = get_wow_teb( teb );
++    }
+ #elif defined(__NetBSD__)
+     sysarch( X86_64_SET_GSBASE, &teb );
+ #elif defined (__APPLE__)
+@@ -3139,6 +3182,21 @@ __ASM_GLOBAL_FUNC( __wine_syscall_dispatcher,
+                    "syscall\n\t"
+                    "leaq -0x98(%rbp),%rcx\n"
+                    "2:\n\t"
++#elif defined __PS4_WINE__
++                   "cmpq $0,0x320(%r13)\n\t"       /* amd64_thread_data()->pthread_teb: 32-bit programs */
++                   "jz 2f\n\t"
++                   "pushq %r8\n\t"
++                   "pushq %r9\n\t"
++                   "pushq %r10\n\t"
++                   "movl $129,%edi\n\t"            /* AMD64_SET_FSBASE */
++                   "leaq 0x320(%r13),%rsi\n\t"
++                   "movl $165,%eax\n\t"            /* SYS_sysarch */
++                   "syscall\n\t"
++                   "popq %r10\n\t"
++                   "popq %r9\n\t"
++                   "popq %r8\n\t"
++                   "leaq -0x98(%rbp),%rcx\n"
++                   "2:\n\t"
+ #elif defined __APPLE__
+                    "movq 0x320(%r13),%rdi\n\t"     /* amd64_thread_data()->pthread_teb */
+                    "xorl %esi,%esi\n\t"
+@@ -3200,6 +3258,18 @@ __ASM_GLOBAL_FUNC( __wine_syscall_dispatcher,
+                    "syscall\n\t"
+                    "movq %rdx,%rcx\n\t"
+                    "movq %r8,%rax\n\t"
++#elif defined __PS4_WINE__
++                   "cmpq $0,0x340(%r13)\n\t"       /* amd64_thread_data()->wow_fsbase: 32-bit programs */
++                   "jz 1f\n\t"
++                   "movq %rax,%r14\n\t"
++                   "movq %rcx,%r15\n\t"
++                   "movl $129,%edi\n\t"            /* AMD64_SET_FSBASE */
++                   "leaq 0x340(%r13),%rsi\n\t"
++                   "movl $165,%eax\n\t"            /* SYS_sysarch */
++                   "syscall\n\t"
++                   "movq %r15,%rcx\n\t"
++                   "movq %r14,%rax\n"
++                   "1:\n\t"
+ #endif
+                    "movl 0xb4(%rcx),%edx\n\t"      /* frame->restore_flags */
+                    "testl $0x48,%edx\n\t"          /* CONTEXT_FLOATING_POINT | CONTEXT_XSTATE */
+@@ -3427,6 +3497,20 @@ __ASM_GLOBAL_FUNC( __wine_unix_call_dispatcher,
+                    "mov $158,%eax\n\t"             /* SYS_arch_prctl */
+                    "syscall\n\t"
+                    "2:\n\t"
++#elif defined __PS4_WINE__
++                   "cmpq $0,0x320(%r13)\n\t"       /* amd64_thread_data()->pthread_teb: 32-bit programs */
++                   "jz 2f\n\t"
++                   "pushq %r8\n\t"
++                   "pushq %r10\n\t"
++                   "pushq %rdx\n\t"
++                   "movl $129,%edi\n\t"            /* AMD64_SET_FSBASE */
++                   "leaq 0x320(%r13),%rsi\n\t"
++                   "movl $165,%eax\n\t"            /* SYS_sysarch */
++                   "syscall\n\t"
++                   "popq %rdx\n\t"
++                   "popq %r10\n\t"
++                   "popq %r8\n"
++                   "2:\n\t"
+ #elif defined __APPLE__
+                    "movq 0x320(%r13),%rdi\n\t"     /* amd64_thread_data()->pthread_teb */
+                    "xorl %esi,%esi\n\t"
+@@ -3469,6 +3553,19 @@ __ASM_GLOBAL_FUNC( __wine_unix_call_dispatcher,
+                    "movq %r14,%rcx\n\t"
+                    "movq %rdx,%rax\n\t"
+                    "movq 0x60(%rcx),%r14\n\t"
++#elif defined __PS4_WINE__
++                   "cmpq $0,0x340(%r13)\n\t"       /* amd64_thread_data()->wow_fsbase: 32-bit programs */
++                   "jz 1f\n\t"
++                   "leaq 0x340(%r13),%rsi\n\t"
++                   "movq %rax,%r13\n\t"
++                   "movq %rcx,%r14\n\t"
++                   "movl $129,%edi\n\t"            /* AMD64_SET_FSBASE */
++                   "movl $165,%eax\n\t"            /* SYS_sysarch */
++                   "syscall\n\t"
++                   "movq %r14,%rcx\n\t"
++                   "movq %r13,%rax\n\t"
++                   "movq 0x60(%rcx),%r14\n"
++                   "1:\n\t"
+ #endif
+                    "movq 0x58(%rcx),%r13\n\t"
+                    "movq 0x28(%rcx),%rdi\n\t"
+diff --git a/dlls/wow64cpu/cpu.c b/dlls/wow64cpu/cpu.c
+index 4a49989..f4fb64c 100644
+--- a/dlls/wow64cpu/cpu.c
++++ b/dlls/wow64cpu/cpu.c
+@@ -220,7 +220,11 @@ __ASM_GLOBAL_FUNC( syscall_32to64,
+                    "movq %rax,0x20(%rsp)\n\t"
+                    "mov %ax,%ds\n\t"
+                    "mov %ax,%es\n\t"
+-                   "mov 0x90(%r13),%fs\n\t"     /* context->SegFs */
++                   "movw %fs,%ax\n\t"
++                   "cmpw 0x90(%r13),%ax\n\t"    /* context->SegFs */
++                   "je 1f\n\t"                  /* (the PS4: a load would take the GDT entry's base) */
++                   "mov 0x90(%r13),%fs\n"
++                   "1:\n\t"
+                    "movl 0xc4(%r13),%eax\n\t"   /* context->Esp */
+                    "movq %rax,0x18(%rsp)\n\t"
+                    "movl 0xc0(%r13),%eax\n\t"   /* context->EFlags */
 -- 
 2.53.0
 
