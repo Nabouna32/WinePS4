@@ -403,6 +403,9 @@ void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
 done:
     LOG( "mmap %p+%#zx prot %d flags %#x = %p (direct %llu MiB, flexible %llu MiB)\n", addr, len, prot, flags,
          ret, backed_direct >> 6, backed_flexible >> 6 );
+    if (ret == MAP_FAILED && errno != EEXIST && !vm_log)  /* failures always (an address taken is Wine's search) */
+        fprintf( stderr, "wineps4 vm: mmap %p+%#zx prot %d flags %#x failed: %s\n", addr, len, prot, flags,
+                 strerror( errno ) );
     vm_leave();
     return ret;
 }
@@ -463,6 +466,7 @@ int ps4_vm_mprotect( void *addr, size_t len, int prot )
     }
     vm_leave();
     if (vm_log && (prot & PROT_ALL)) LOG( "mprotect %p+%#zx prot %d = %d\n", addr, len, prot, ret );
+    else if (ret) fprintf( stderr, "wineps4 vm: mprotect %p+%#zx prot %d failed: %s\n", addr, len, prot, strerror( errno ) );
     return ret;
 }
 
