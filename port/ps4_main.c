@@ -5,7 +5,9 @@
  *  /data/WinePS4/run.txt    optional: the program to run and its arguments, one per line
  *                           (default: the packaged test program, /app0/wine/hello.exe)
  *  /data/WinePS4/prefix     the Wine prefix, copied from the package (/app0/wine/prefix) on first run
- *  /data/WinePS4/crash.log  ps4-kit's report of a crash (boot-trace.log: the start up to it) */
+ *  /data/WinePS4/crash.log  ps4-kit's report of a crash (boot-trace.log: the start up to it)
+ *  /data/WinePS4/hang.log   where Wine's threads are when the program has not finished after 20 s
+ *                           (WINEPS4_HANG_DUMP=<seconds>, 0 = off) */
 #include <dirent.h>
 #include <stdarg.h>
 #include <errno.h>
@@ -29,6 +31,8 @@
 PS4_DIAG_DATA_DIR( DATA_DIR );
 
 extern void __wine_main( int argc, char *argv[] );
+extern void ps4_thread_register( void );
+extern void ps4_start_hang_watch( void );
 
 static void logf_( const char *fmt, ... ) __attribute__((format(printf, 1, 2)));
 static void logf_( const char *fmt, ... )
@@ -207,6 +211,8 @@ int main( void )
     if (argc == 1) argv[argc++] = WINE_APP_DIR "/hello.exe";
     argv[argc] = NULL;
 
+    ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
+    ps4_start_hang_watch();
     logf_( "wineps4: running %s\n", argv[1] );
     __wine_main( argc, argv );
     return 0;

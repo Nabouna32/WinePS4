@@ -5,13 +5,15 @@
  *  - FreeBSD's amd64_{get,set}_{gs,fs}base on sysarch
  *  - dlopen/dlsym for the Unix libraries, which are linked into the eboot
  *  - the FreeBSD system calls libkernel does not export (symlink, readlink), made directly
- *  - stubs for what has no PS4 equivalent (fork, exec, ptrace) */
+ *  - stubs for what has no PS4 equivalent (fork, exec, ptrace)
+ *  - a hang dump: where each Wine thread is when the program doesn't finish (hang.log) */
 #include "config.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,7 +108,9 @@ static void *wineserver_thread( void *arg )
     sigdelset( &all, SIGILL );
     sigdelset( &all, SIGFPE );
     sigdelset( &all, SIGTRAP );
+    sigdelset( &all, SIGXCPU );  /* the hang dump's */
     pthread_sigmask( SIG_BLOCK, &all, NULL );
+    ps4_thread_register();
     ps4_wineserver_main( (int)(long)arg );
     fprintf( stderr, "wineps4: wineserver's main loop returned\n" );
     return NULL;
@@ -138,6 +142,129 @@ int ps4_start_wineserver( void )
     }
     pthread_attr_destroy( &attr );
     return fds[0];
+}
+
+/* --- Hang dump ---------------------------------------------------------------------------------
+ * ps4-kit's thread dump signals with SIGUSR1, which is Wine's (and blocked during every server
+ * call), so Wine's threads are dumped here with SIGXCPU, which Wine neither uses nor blocks. When
+ * the program has not finished after WINEPS4_HANG_DUMP seconds (default 20, 0 = off), every thread
+ * registered above writes its instruction pointer and the return addresses into the eboot on its
+ * stack to /data/WinePS4/hang.log; twice more 30 s apart. Eboot addresses are relative to .text
+ * (0x400000), as in ps4-kit's crash.log: symbolize with llvm-symbolizer --obj=<elf>. */
+
+#define EBOOT_TEXT  0x400000
+#define DUMP_FRAMES 40
+int32_t sceKernelQueryMemoryProtection( void *addr, void **start, void **end, uint32_t *prot );
+
+static uint64_t text_end;  /* end of the eboot's code mapping */
+static volatile int dump_done;
+static uint64_t dump_rip, dump_frames[DUMP_FRAMES];
+static int dump_count;
+
+static int in_eboot( uint64_t addr )
+{
+    return addr >= EBOOT_TEXT + 8 && addr < text_end;
+}
+
+/* right after a call instruction: e8 rel32, or ff /2 with a 0, 1, 4 or 5 byte operand */
+static int is_return_address( uint64_t addr )
+{
+    const unsigned char *p = (const unsigned char *)addr;
+
+    if (!in_eboot( addr )) return 0;
+    if (p[-5] == 0xe8) return 1;
+    if (p[-2] == 0xff && (p[-1] & 0x38) == 0x10) return 1;
+    if (p[-3] == 0xff && (p[-2] & 0x38) == 0x10) return 1;
+    if (p[-6] == 0xff && (p[-5] & 0x38) == 0x10) return 1;
+    if (p[-7] == 0xff && (p[-6] & 0x38) == 0x10) return 1;
+    return 0;
+}
+
+static void dump_handler( int sig, siginfo_t *info, void *context )
+{
+    ucontext_t *uc = context;
+    uint64_t rsp = uc->uc_mcontext.mc_rsp & ~7ull, *p, *end = (uint64_t *)(rsp + 0x10000);
+    void *start, *map_end;
+    uint32_t prot;
+    int n = 0;
+
+    dump_rip = uc->uc_mcontext.mc_rip;
+    if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
+        end = map_end;
+    for (p = (uint64_t *)rsp; p < end && n < DUMP_FRAMES; p++)
+        if (is_return_address( *p )) dump_frames[n++] = *p - EBOOT_TEXT;
+    dump_count = n;
+    __atomic_store_n( &dump_done, 1, __ATOMIC_RELEASE );
+}
+
+static void dump_threads( const char *reason )
+{
+    FILE *f = fopen( "/data/WinePS4/hang.log", "a" );
+    int i, j, waited;
+
+    if (!f) return;
+    fprintf( f, "==== %s (eboot addresses relative to .text)\n", reason );
+    for (i = 0; i < MAX_THREADS; i++)
+    {
+        pthread_t thread;
+        int tid;
+
+        pthread_mutex_lock( &threads_lock );
+        tid = threads[i].tid;
+        thread = threads[i].thread;
+        pthread_mutex_unlock( &threads_lock );
+        if (!tid) continue;
+        dump_done = 0;
+        if (pthread_kill( thread, SIGXCPU )) { fprintf( f, "-- thread %d: gone\n", tid ); continue; }
+        for (waited = 0; waited < 500 && !__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ); waited++) usleep( 1000 );
+        if (!dump_done) { fprintf( f, "-- thread %d: no answer\n", tid ); continue; }
+        if (in_eboot( dump_rip )) fprintf( f, "-- thread %d: rip elf 0x%llx\n   stack:", tid,
+                                           (unsigned long long)(dump_rip - EBOOT_TEXT) );
+        else fprintf( f, "-- thread %d: rip 0x%llx (outside the eboot)\n   stack:", tid, (unsigned long long)dump_rip );
+        for (j = 0; j < dump_count; j++) fprintf( f, " 0x%llx", (unsigned long long)dump_frames[j] );
+        fprintf( f, "\n" );
+    }
+    fclose( f );
+    fprintf( stderr, "wineps4: %s: thread stacks in /data/WinePS4/hang.log\n", reason );
+}
+
+static void *hang_watch_thread( void *arg )
+{
+    int seconds = (int)(long)arg, n;
+    sigset_t set;
+    char reason[64];
+
+    sigfillset( &set );
+    pthread_sigmask( SIG_BLOCK, &set, NULL );
+    sleep( seconds );
+    for (n = 0; n < 3; n++)
+    {
+        snprintf( reason, sizeof(reason), "still running after %d s", seconds + 30 * n );
+        dump_threads( reason );
+        sleep( 30 );
+    }
+    return NULL;
+}
+
+void ps4_start_hang_watch( void )
+{
+    const char *env = getenv( "WINEPS4_HANG_DUMP" );
+    int seconds = env ? atoi( env ) : 20;
+    struct sigaction sa;
+    pthread_t thread;
+
+    void *start, *end;
+    uint32_t prot;
+
+    if (seconds <= 0) return;
+    if (sceKernelQueryMemoryProtection( (void *)EBOOT_TEXT, &start, &end, &prot )) return;
+    text_end = (uint64_t)end;
+    memset( &sa, 0, sizeof(sa) );
+    sa.sa_sigaction = dump_handler;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigaction( SIGXCPU, &sa, NULL );
+    unlink( "/data/WinePS4/hang.log" );
+    if (!pthread_create( &thread, NULL, hang_watch_thread, (void *)(long)seconds )) pthread_detach( thread );
 }
 
 /* --- Built-in Unix libraries ------------------------------------------------------------------- */
