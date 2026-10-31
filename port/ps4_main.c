@@ -197,7 +197,7 @@ int main( void )
     load_env_file();
     setup_prefix();
 
-    argv[argc++] = "wine";
+    argv[argc++] = strdup( "wine" );  /* writable, as a real argv: Wine edits the strings in place */
     if ((run = fopen( DATA_DIR "/run.txt", "r" )))
     {
         while (argc < 63 && fgets( line, sizeof(line), run ))
@@ -208,7 +208,7 @@ int main( void )
         }
         fclose( run );
     }
-    if (argc == 1) argv[argc++] = WINE_APP_DIR "/hello.exe";
+    if (argc == 1) argv[argc++] = strdup( WINE_APP_DIR "/hello.exe" );
     argv[argc] = NULL;
 
     ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
