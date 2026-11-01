@@ -394,11 +394,9 @@ struct ps4_unixlib
     const struct { const char *name; void *addr; } *symbols;
 };
 
-/* Unix libraries of builtin DLLs are added here as they are ported (win32u.so, winevulkan.so, ...). */
-static const struct ps4_unixlib unixlibs[] =
-{
-    { NULL, NULL }
-};
+/* the Unix libraries linked into the app (ps4_unixlibs.c) */
+extern const struct ps4_unixlib ps4_unixlibs[];
+#define unixlibs ps4_unixlibs
 
 static char dl_error[256];
 

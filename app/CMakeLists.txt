@@ -69,16 +69,56 @@ set(SERVER_ONE ${CMAKE_CURRENT_BINARY_DIR}/wineserver-one.o)
 add_custom_command(
     OUTPUT ${SERVER_ONE}
     COMMAND ld.lld-$ENV{CLANG_VER} -r -o ${SERVER_ONE}.tmp $<TARGET_OBJECTS:wine_server>
-    COMMAND llvm-objcopy-$ENV{CLANG_VER} --keep-global-symbol=ps4_wineserver_main ${SERVER_ONE}.tmp ${SERVER_ONE}
+    COMMAND llvm-objcopy-$ENV{CLANG_VER} --keep-global-symbol=ps4_wineserver_main --keep-global-symbol=ps4_server_input
+        ${SERVER_ONE}.tmp ${SERVER_ONE}
     DEPENDS $<TARGET_OBJECTS:wine_server>
     COMMAND_EXPAND_LISTS
     VERBATIM)
 add_custom_target(wine_server_one DEPENDS ${SERVER_ONE})
 
+# --- win32u's and the display driver's Unix halves -----------------------------------------------
+# Unix libraries (win32u.so, wineps4.so) on other systems: each is linked into one object whose
+# hidden symbols are made local (they share names with ntdll's), and whose __wine_unix_call_funcs
+# get names of their own, which the built-in table (port/ps4_unixlibs.c) gives ntdll's dlsym.
+set(WINEPS4_FREETYPE $ENV{HOME}/wineps4-build/freetype)
+# headers made from IDL files by the PC's Wine build (objidlbase.h, ...)
+set(WINE_GEN_INCLUDE $ENV{HOME}/wine-ps4-build/build/wine-wow64/include)
+file(GLOB WIN32U_UNIX ${WINE_SRC}/dlls/win32u/*.c ${WINE_SRC}/dlls/win32u/dibdrv/*.c)
+list(REMOVE_ITEM WIN32U_UNIX ${WINE_SRC}/dlls/win32u/main.c)  # the PE side
+add_library(wine_win32u_unix OBJECT ${WIN32U_UNIX})
+target_include_directories(wine_win32u_unix BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/dlls/win32u ${WINE_SRC}/include
+    ${WINE_GEN_INCLUDE} ${WINEPS4_FREETYPE}/include)
+target_compile_definitions(wine_win32u_unix PRIVATE ${WINE_UNIX_DEFS} _WIN32U_)
+target_compile_options(wine_win32u_unix PRIVATE ${WINE_UNIX_OPTS})
+
+file(GLOB PS4DRV_UNIX ${WINE_SRC}/dlls/wineps4.drv/*.c)
+list(REMOVE_ITEM PS4DRV_UNIX ${WINE_SRC}/dlls/wineps4.drv/dllmain.c)  # the PE side
+add_library(wine_ps4drv_unix OBJECT ${PS4DRV_UNIX})
+target_include_directories(wine_ps4drv_unix BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/dlls/wineps4.drv ${WINE_SRC}/include ${WINE_GEN_INCLUDE})
+target_compile_definitions(wine_ps4drv_unix PRIVATE ${WINE_UNIX_DEFS})
+target_compile_options(wine_ps4drv_unix PRIVATE ${WINE_UNIX_OPTS})
+
+function(wine_unixlib_one name target)
+    set(out ${CMAKE_CURRENT_BINARY_DIR}/${name}-one.o)
+    add_custom_command(
+        OUTPUT ${out}
+        COMMAND ld.lld-$ENV{CLANG_VER} -r -o ${out}.tmp $<TARGET_OBJECTS:${target}>
+        COMMAND llvm-objcopy-$ENV{CLANG_VER} --localize-hidden
+            --redefine-sym __wine_unix_call_funcs=${name}_unix_call_funcs
+            --redefine-sym __wine_unix_call_wow64_funcs=${name}_unix_call_wow64_funcs ${out}.tmp ${out}
+        DEPENDS $<TARGET_OBJECTS:${target}>
+        COMMAND_EXPAND_LISTS
+        VERBATIM)
+    add_custom_target(${name}_one DEPENDS ${out})
+    set(${name}_ONE ${out} PARENT_SCOPE)
+endfunction()
+wine_unixlib_one(win32u wine_win32u_unix)
+wine_unixlib_one(wineps4drv wine_ps4drv_unix)
+
 # --- The desktop ---------------------------------------------------------------------------------
 # A Windows 11-style desktop on the CPU (shell/), with HENkaku's canvas (ps4_canvas.cpp).
 set(SHELL_DIR ${CMAKE_CURRENT_LIST_DIR}/../shell)
-add_library(wine_shell OBJECT ${SHELL_DIR}/desktop.cpp ${SHELL_DIR}/screen.cpp ${SHELL_DIR}/input.cpp ${SHELL_DIR}/keyboard.cpp ${SHELL_DIR}/fileops.cpp ${SHELL_DIR}/picture.cpp
+add_library(wine_shell OBJECT ${SHELL_DIR}/desktop.cpp ${SHELL_DIR}/screen.cpp ${SHELL_DIR}/input.cpp ${SHELL_DIR}/keyboard.cpp ${SHELL_DIR}/fileops.cpp ${SHELL_DIR}/picture.cpp ${SHELL_DIR}/winwindows.cpp
     ${SHELL_DIR}/ps4_canvas.cpp ${SHELL_DIR}/stb_impl.c)
 # FFmpeg for the pictures stb can't read (WebP, HEIC, TIFF, ...): WinePS4's own build, image
 # decoders only (see NOTES.md)
@@ -89,9 +129,11 @@ target_compile_options(wine_shell PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++20> 
 
 # --- The app -------------------------------------------------------------------------------------
 add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/ps4_wine_dirs.c ${PORT}/unused_reals.c
-    $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} $<TARGET_OBJECTS:wine_shell>)
-add_dependencies(wineps4 wine_server_one)
-target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include)
+    ${PORT}/ps4_unixlibs.c
+    $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} $<TARGET_OBJECTS:wine_shell>)
+add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one)
+target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include ${WINEPS4_FREETYPE}/include)
+target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
 target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceImeDialog SceCommonDialog)

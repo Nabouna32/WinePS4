@@ -1,0 +1,10 @@
+MODULE    = wineps4.drv
+UNIXLIB   = wineps4.so
+UNIX_LIBS = -lwin32u $(PTHREAD_LIBS)
+IMPORTS   = win32u
+
+SOURCES = \
+	dllmain.c \
+	display.c \
+	ps4drv_main.c \
+	window.c

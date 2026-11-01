@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/13] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/15] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/13] WinePS4: wineserver main fixes
+Subject: [PATCH 02/15] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/13] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/15] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/13] server: send the first thread its request pipe in the
+Subject: [PATCH 04/15] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/13] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/15] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/13] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/15] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/13] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/15] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/13] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/15] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/13] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/15] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/13] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/15] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -893,7 +893,7 @@ index a06aa83..81e8555 100644
 From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:21:33 +0300
-Subject: [PATCH 11/13] WinePS4: a process per program: wineserver listens
+Subject: [PATCH 11/15] WinePS4: a process per program: wineserver listens
  (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
  thr_kill2 across processes
 
@@ -1048,7 +1048,7 @@ index 122208b..44fcfa7 100644
 From cc36d27af8fac614b7694b55514cd924bbb9c85f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:51:49 +0300
-Subject: [PATCH 12/13] WinePS4: the app wineserver never closes its socket
+Subject: [PATCH 12/15] WinePS4: the app wineserver never closes its socket
  (callers logged); no wineboot at program start
 
 ---
@@ -1094,7 +1094,7 @@ index 44fcfa7..e66524f 100644
 From 2651912be3a1aad91a90a2833e1312a0ec3eb967 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 03:11:50 +0300
-Subject: [PATCH 13/13] programs fill the shared data page themselves (wineboot
+Subject: [PATCH 13/15] programs fill the shared data page themselves (wineboot
  is skipped)
 
 ---
@@ -1117,6 +1117,964 @@ index f40d41f..41f5884 100644
  #endif
      static const WCHAR eventW[] = {'\\','K','e','r','n','e','l','O','b','j','e','c','t','s',
          '\\','_','_','w','i','n','e','b','o','o','t','_','e','v','e','n','t',0};
+-- 
+2.53.0
+
+
+From 90e29674410e9ad3ffc58dffb83a893ff33a1a5f Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sun, 1 Nov 2026 04:24:13 +0300
+Subject: [PATCH 14/15] wineps4.drv display driver + the desktop input pipe in
+ the server
+
+---
+ configure                      |   2 +
+ configure.ac                   |   1 +
+ dlls/wineps4.drv/Makefile.in   |  10 ++
+ dlls/wineps4.drv/display.c     |  49 ++++++++++
+ dlls/wineps4.drv/dllmain.c     |  20 ++++
+ dlls/wineps4.drv/ps4_display.h |  75 +++++++++++++++
+ dlls/wineps4.drv/ps4drv.h      |  43 +++++++++
+ dlls/wineps4.drv/ps4drv_main.c | 162 ++++++++++++++++++++++++++++++++
+ dlls/wineps4.drv/unixlib.h     |  26 ++++++
+ dlls/wineps4.drv/window.c      | 163 +++++++++++++++++++++++++++++++++
+ programs/explorer/desktop.c    |   2 +-
+ server/main.c                  |   2 +
+ server/ps4_display.h           |  75 +++++++++++++++
+ server/ps4_input.inc           | 139 ++++++++++++++++++++++++++++
+ server/queue.c                 |   4 +
+ 15 files changed, 772 insertions(+), 1 deletion(-)
+ create mode 100755 dlls/wineps4.drv/Makefile.in
+ create mode 100755 dlls/wineps4.drv/display.c
+ create mode 100755 dlls/wineps4.drv/dllmain.c
+ create mode 100755 dlls/wineps4.drv/ps4_display.h
+ create mode 100755 dlls/wineps4.drv/ps4drv.h
+ create mode 100755 dlls/wineps4.drv/ps4drv_main.c
+ create mode 100755 dlls/wineps4.drv/unixlib.h
+ create mode 100755 dlls/wineps4.drv/window.c
+ create mode 100755 server/ps4_display.h
+ create mode 100755 server/ps4_input.inc
+
+diff --git a/configure b/configure
+index df4c4a9..16b53f1 100755
+--- a/configure
++++ b/configure
+@@ -1549,6 +1549,7 @@ enable_winemac_drv
+ enable_winemapi
+ enable_wineoss_drv
+ enable_wineps_drv
++enable_wineps4_drv
+ enable_winepulse_drv
+ enable_wineusb_sys
+ enable_winevulkan
+@@ -23225,6 +23226,7 @@ wine_fn_config_makefile dlls/winemac.drv enable_winemac_drv
+ wine_fn_config_makefile dlls/winemapi enable_winemapi
+ wine_fn_config_makefile dlls/wineoss.drv enable_wineoss_drv
+ wine_fn_config_makefile dlls/wineps.drv enable_wineps_drv
++wine_fn_config_makefile dlls/wineps4.drv enable_wineps4_drv
+ wine_fn_config_makefile dlls/wineps16.drv16 enable_win16
+ wine_fn_config_makefile dlls/winepulse.drv enable_winepulse_drv
+ wine_fn_config_makefile dlls/wineusb.sys enable_wineusb_sys
+diff --git a/configure.ac b/configure.ac
+index b8ae3db..6788b24 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -3367,6 +3367,7 @@ WINE_CONFIG_MAKEFILE(dlls/winemac.drv)
+ WINE_CONFIG_MAKEFILE(dlls/winemapi)
+ WINE_CONFIG_MAKEFILE(dlls/wineoss.drv)
+ WINE_CONFIG_MAKEFILE(dlls/wineps.drv)
++WINE_CONFIG_MAKEFILE(dlls/wineps4.drv)
+ WINE_CONFIG_MAKEFILE(dlls/wineps16.drv16)
+ WINE_CONFIG_MAKEFILE(dlls/winepulse.drv)
+ WINE_CONFIG_MAKEFILE(dlls/wineusb.sys)
+diff --git a/dlls/wineps4.drv/Makefile.in b/dlls/wineps4.drv/Makefile.in
+new file mode 100755
+index 0000000..077c244
+--- /dev/null
++++ b/dlls/wineps4.drv/Makefile.in
+@@ -0,0 +1,10 @@
++MODULE    = wineps4.drv
++UNIXLIB   = wineps4.so
++UNIX_LIBS = -lwin32u $(PTHREAD_LIBS)
++IMPORTS   = win32u
++
++SOURCES = \
++	dllmain.c \
++	display.c \
++	ps4drv_main.c \
++	window.c
+diff --git a/dlls/wineps4.drv/display.c b/dlls/wineps4.drv/display.c
+new file mode 100755
+index 0000000..93fdcfb
+--- /dev/null
++++ b/dlls/wineps4.drv/display.c
+@@ -0,0 +1,49 @@
++/*
++ * wineps4.drv: the PS4's screen (WinePS4)
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#if 0
++#pragma makedep unix
++#endif
++
++#include "config.h"
++
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++#include "ps4drv.h"
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(ps4drv);
++
++/* one monitor: the desktop's screen; the taskbar at its bottom is not in the work area */
++#define TASKBAR_HEIGHT 48
++
++UINT PS4DRV_UpdateDisplayDevices( const struct gdi_device_manager *manager, void *param )
++{
++    DEVMODEW mode = { .dmSize = sizeof(mode) };
++    struct gdi_monitor monitor = { 0 };
++    struct pci_id pci_id = { 0 };
++
++    manager->add_gpu( "PlayStation 4", &pci_id, NULL, param );
++    manager->add_source( "PS4", DISPLAY_DEVICE_ATTACHED_TO_DESKTOP | DISPLAY_DEVICE_PRIMARY_DEVICE,
++                         NtUserGetSystemDpiForProcess( NULL ), param );
++
++    SetRect( &monitor.rc_monitor, 0, 0, PS4_DISPLAY_WIDTH, PS4_DISPLAY_HEIGHT );
++    SetRect( &monitor.rc_work, 0, 0, PS4_DISPLAY_WIDTH, PS4_DISPLAY_HEIGHT - TASKBAR_HEIGHT );
++    manager->add_monitor( &monitor, param );
++
++    mode.dmFields = DM_DISPLAYORIENTATION | DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT |
++                    DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY | DM_POSITION;
++    mode.dmDisplayOrientation = DMDO_DEFAULT;
++    mode.dmBitsPerPel = 32;
++    mode.dmPelsWidth = PS4_DISPLAY_WIDTH;
++    mode.dmPelsHeight = PS4_DISPLAY_HEIGHT;
++    mode.dmDisplayFrequency = 60;
++    manager->add_modes( &mode, 1, &mode, param );
++    return STATUS_SUCCESS;
++}
+diff --git a/dlls/wineps4.drv/dllmain.c b/dlls/wineps4.drv/dllmain.c
+new file mode 100755
+index 0000000..f0b63ac
+--- /dev/null
++++ b/dlls/wineps4.drv/dllmain.c
+@@ -0,0 +1,20 @@
++/*
++ * wineps4.drv entry point (WinePS4)
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#include "unixlib.h"
++#include "winbase.h"
++
++BOOL WINAPI DllMain( HINSTANCE instance, DWORD reason, void *reserved )
++{
++    if (reason != DLL_PROCESS_ATTACH) return TRUE;
++
++    DisableThreadLibraryCalls( instance );
++    if (__wine_init_unix_call()) return FALSE;
++    return !PS4DRV_UNIX_CALL( init, NULL );
++}
+diff --git a/dlls/wineps4.drv/ps4_display.h b/dlls/wineps4.drv/ps4_display.h
+new file mode 100755
+index 0000000..01f2482
+--- /dev/null
++++ b/dlls/wineps4.drv/ps4_display.h
+@@ -0,0 +1,75 @@
++/* WinePS4: how Windows programs' windows reach the desktop, and its input reaches them.
++ *
++ * Windows: every program process's display driver (wineps4.drv, dlls/wineps4.drv in the Wine tree)
++ * connects to the desktop's socket and sends its top-level windows: where they are, whether they
++ * show, their title, and the pixels that changed. The desktop keeps a copy of each window and draws
++ * them over its own (shell/winwindows.cpp).
++ *
++ * Input: the desktop writes the PS4's mouse, pad and keyboard as records into a pipe the wineserver
++ * reads in its own loop (server/queue.c), which queues them like a PC's hardware input: the server
++ * knows the windows, so it picks the one under the cursor or with the focus.
++ */
++#ifndef WINEPS4_DISPLAY_H
++#define WINEPS4_DISPLAY_H
++
++#include <stdint.h>
++
++#define PS4_DISPLAY_SOCKET "/data/WinePS4/.display"
++#define PS4_DISPLAY_WIDTH  1920
++#define PS4_DISPLAY_HEIGHT 1080
++
++/* --- program -> desktop (the socket) ------------------------------------------------------------- */
++
++enum ps4_display_msg
++{
++    PS4_DISPLAY_HELLO = 1,  /* pid: a program connected */
++    PS4_DISPLAY_WINDOW,     /* where a window is, if it shows */
++    PS4_DISPLAY_PIXELS,     /* changed pixels: rows of (right - left) * 4 bytes follow */
++    PS4_DISPLAY_TITLE,      /* UTF-8 title follows (size - header) */
++    PS4_DISPLAY_DESTROY,    /* the window is gone */
++    PS4_DISPLAY_RAISE,      /* the window was activated: on top */
++};
++
++#define PS4_WINDOW_VISIBLE  0x01
++#define PS4_WINDOW_TOPMOST  0x02
++#define PS4_WINDOW_LAYERED  0x04  /* pixels carry alpha */
++#define PS4_WINDOW_POPUP    0x08  /* menus, tooltips, ...: no taskbar button */
++
++struct ps4_display_header
++{
++    uint32_t type;
++    uint32_t size;      /* of the whole message, header included */
++    uint64_t hwnd;
++    int32_t  pid;
++    uint32_t flags;     /* PS4_WINDOW_* (WINDOW) */
++    int32_t  left, top, right, bottom;  /* WINDOW: the surface on the screen; PIXELS: the rect in it */
++    int32_t  width, height;             /* WINDOW: the surface size */
++};
++
++/* --- desktop -> wineserver (the pipe) ------------------------------------------------------------ */
++
++enum ps4_input_type
++{
++    PS4_INPUT_MOUSE = 1,  /* x, y in screen pixels (always absolute), flags = MOUSEEVENTF_*, data = wheel */
++    PS4_INPUT_KEY,        /* vkey + scan, flags = KEYEVENTF_* (KEYEVENTF_UNICODE: scan is the character) */
++};
++
++struct ps4_input_record
++{
++    uint32_t type;
++    int32_t  x, y;
++    uint32_t flags;
++    int32_t  data;
++    uint16_t vkey, scan;
++};
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++/* the desktop's side: queues a record for the wineserver (server/queue.c); 0 if it could not */
++int ps4_server_input( const struct ps4_input_record *record );
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/dlls/wineps4.drv/ps4drv.h b/dlls/wineps4.drv/ps4drv.h
+new file mode 100755
+index 0000000..bd21c7d
+--- /dev/null
++++ b/dlls/wineps4.drv/ps4drv.h
+@@ -0,0 +1,43 @@
++/*
++ * wineps4.drv Unix side (WinePS4)
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#ifndef __WINE_PS4DRV_H
++#define __WINE_PS4DRV_H
++
++#ifndef __WINE_CONFIG_H
++# error You must include config.h to use this header
++#endif
++
++#include <pthread.h>
++#include "windef.h"
++#include "winbase.h"
++#include "ntgdi.h"
++#include "ntuser.h"
++#include "wine/gdi_driver.h"
++
++#include "unixlib.h"
++#include "ps4_display.h"
++
++/* display.c */
++extern UINT PS4DRV_UpdateDisplayDevices( const struct gdi_device_manager *manager, void *param );
++
++/* window.c */
++extern BOOL PS4DRV_CreateWindowSurface( HWND hwnd, BOOL layered, const RECT *surface_rect,
++                                        struct window_surface **surface );
++extern void PS4DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UINT swp_flags,
++                                     const struct window_rects *new_rects, struct window_surface *surface );
++extern void PS4DRV_DestroyWindow( HWND hwnd );
++extern void PS4DRV_SetWindowText( HWND hwnd, LPCWSTR text );
++extern void PS4DRV_ActivateWindow( HWND hwnd, HWND previous );
++
++/* ps4drv_main.c: the desktop's socket */
++extern BOOL ps4drv_send( const struct ps4_display_header *header, const void *data, UINT data_size );
++extern BOOL ps4drv_send_rows( const struct ps4_display_header *header, const void *bits, UINT stride );
++
++#endif /* __WINE_PS4DRV_H */
+diff --git a/dlls/wineps4.drv/ps4drv_main.c b/dlls/wineps4.drv/ps4drv_main.c
+new file mode 100755
+index 0000000..114d9fb
+--- /dev/null
++++ b/dlls/wineps4.drv/ps4drv_main.c
+@@ -0,0 +1,162 @@
++/*
++ * wineps4.drv: the PS4 display driver (WinePS4)
++ *
++ * The windows of a Windows program are shown by the WinePS4 desktop, a separate process: this
++ * driver sends it each top-level window's place and pixels over a Unix socket (see
++ * port/include/ps4_display.h). Input does not come through here: the desktop gives it to the
++ * wineserver, which knows the windows.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#if 0
++#pragma makedep unix
++#endif
++
++#include "config.h"
++
++#include <errno.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++#include "ps4drv.h"
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(ps4drv);
++
++static pthread_mutex_t socket_mutex = PTHREAD_MUTEX_INITIALIZER;
++static int display_fd = -1;
++static BOOL display_failed;
++
++static BOOL write_all( const void *data, size_t size )
++{
++    const char *ptr = data;
++
++    while (size)
++    {
++        ssize_t ret = write( display_fd, ptr, size );
++        if (ret < 0 && errno == EINTR) continue;
++        if (ret <= 0) return FALSE;
++        ptr += ret;
++        size -= ret;
++    }
++    return TRUE;
++}
++
++/* with socket_mutex held */
++static BOOL connect_display(void)
++{
++    struct sockaddr_un addr;
++    struct ps4_display_header hello = { .type = PS4_DISPLAY_HELLO, .size = sizeof(hello) };
++
++    if (display_fd != -1) return TRUE;
++    if (display_failed) return FALSE;
++    if ((display_fd = socket( AF_UNIX, SOCK_STREAM, 0 )) == -1) goto failed;
++    memset( &addr, 0, sizeof(addr) );
++    addr.sun_family = AF_UNIX;
++    strcpy( addr.sun_path, PS4_DISPLAY_SOCKET );
++#ifdef HAVE_STRUCT_SOCKADDR_UN_SUN_LEN
++    addr.sun_len = sizeof(addr);
++#endif
++    if (connect( display_fd, (struct sockaddr *)&addr, sizeof(addr) ) == -1) goto failed;
++    hello.pid = getpid();
++    if (!write_all( &hello, sizeof(hello) )) goto failed;
++    TRACE( "connected to the desktop\n" );
++    return TRUE;
++
++failed:
++    ERR( "cannot reach the WinePS4 desktop at %s: %s\n", PS4_DISPLAY_SOCKET, strerror( errno ));
++    if (display_fd != -1) close( display_fd );
++    display_fd = -1;
++    display_failed = TRUE;  /* windows stay unseen, the program goes on */
++    return FALSE;
++}
++
++static void lost_display(void)
++{
++    ERR( "lost the WinePS4 desktop: %s\n", strerror( errno ));
++    close( display_fd );
++    display_fd = -1;
++    display_failed = TRUE;
++}
++
++BOOL ps4drv_send( const struct ps4_display_header *header, const void *data, UINT data_size )
++{
++    struct ps4_display_header msg = *header;
++    BOOL ret = FALSE;
++
++    msg.size = sizeof(msg) + data_size;
++    msg.pid = getpid();
++    pthread_mutex_lock( &socket_mutex );
++    if (connect_display())
++    {
++        if (write_all( &msg, sizeof(msg) ) && (!data_size || write_all( data, data_size ))) ret = TRUE;
++        else lost_display();
++    }
++    pthread_mutex_unlock( &socket_mutex );
++    return ret;
++}
++
++/* PIXELS: the rows of header->left..right, top..bottom from a top-down 32-bit bitmap */
++BOOL ps4drv_send_rows( const struct ps4_display_header *header, const void *bits, UINT stride )
++{
++    struct ps4_display_header msg = *header;
++    UINT row_size = (header->right - header->left) * 4;
++    const char *row = (const char *)bits + header->top * stride + header->left * 4;
++    BOOL ret = FALSE;
++    int y;
++
++    msg.size = sizeof(msg) + row_size * (header->bottom - header->top);
++    msg.pid = getpid();
++    pthread_mutex_lock( &socket_mutex );
++    if (connect_display())
++    {
++        ret = write_all( &msg, sizeof(msg) );
++        for (y = header->top; ret && y < header->bottom; y++, row += stride) ret = write_all( row, row_size );
++        if (!ret) lost_display();
++    }
++    pthread_mutex_unlock( &socket_mutex );
++    return ret;
++}
++
++static const struct user_driver_funcs ps4drv_funcs =
++{
++    .pActivateWindow = PS4DRV_ActivateWindow,
++    .pCreateWindowSurface = PS4DRV_CreateWindowSurface,
++    .pDestroyWindow = PS4DRV_DestroyWindow,
++    .pSetWindowText = PS4DRV_SetWindowText,
++    .pUpdateDisplayDevices = PS4DRV_UpdateDisplayDevices,
++    .pWindowPosChanged = PS4DRV_WindowPosChanged,
++};
++
++static NTSTATUS ps4drv_unix_init( void *arg )
++{
++    __wine_set_user_driver( &ps4drv_funcs, WINE_GDI_DRIVER_VERSION );
++    return STATUS_SUCCESS;
++}
++
++const unixlib_entry_t __wine_unix_call_funcs[] =
++{
++    ps4drv_unix_init,
++};
++
++C_ASSERT( ARRAYSIZE(__wine_unix_call_funcs) == ps4drv_unix_func_count );
++
++#ifdef _WIN64
++
++const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
++{
++    ps4drv_unix_init,
++};
++
++C_ASSERT( ARRAYSIZE(__wine_unix_call_wow64_funcs) == ps4drv_unix_func_count );
++
++#endif /* _WIN64 */
+diff --git a/dlls/wineps4.drv/unixlib.h b/dlls/wineps4.drv/unixlib.h
+new file mode 100755
+index 0000000..79855b6
+--- /dev/null
++++ b/dlls/wineps4.drv/unixlib.h
+@@ -0,0 +1,26 @@
++/*
++ * wineps4.drv: the PS4 display driver (WinePS4)
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#ifndef __WINE_PS4DRV_UNIXLIB_H
++#define __WINE_PS4DRV_UNIXLIB_H
++
++#include <stdarg.h>
++#include "windef.h"
++#include "winternl.h"
++#include "wine/unixlib.h"
++
++enum ps4drv_unix_func
++{
++    ps4drv_unix_func_init,
++    ps4drv_unix_func_count,
++};
++
++#define PS4DRV_UNIX_CALL(func, params) WINE_UNIX_CALL(ps4drv_unix_func_ ## func, params)
++
++#endif /* __WINE_PS4DRV_UNIXLIB_H */
+diff --git a/dlls/wineps4.drv/window.c b/dlls/wineps4.drv/window.c
+new file mode 100755
+index 0000000..0eb78b9
+--- /dev/null
++++ b/dlls/wineps4.drv/window.c
+@@ -0,0 +1,163 @@
++/*
++ * wineps4.drv: windows (WinePS4)
++ *
++ * Every top-level window gets a surface of its own; what is drawn on it goes to the desktop when
++ * win32u flushes it. Child windows draw on their top-level's surface.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#if 0
++#pragma makedep unix
++#endif
++
++#include "config.h"
++
++#include <stdlib.h>
++#include <string.h>
++
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++#include "ps4drv.h"
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(ps4drv);
++
++static BOOL is_toplevel( HWND hwnd )
++{
++    HWND desktop = NtUserGetDesktopWindow();
++    return hwnd != desktop && NtUserGetAncestor( hwnd, GA_PARENT ) == desktop;
++}
++
++/* --- surfaces ------------------------------------------------------------------------------------ */
++
++static BOOL ps4_surface_flush( struct window_surface *surface, const RECT *rect, const RECT *dirty,
++                               const BITMAPINFO *color_info, const void *color_bits, BOOL shape_changed,
++                               const BITMAPINFO *shape_info, const void *shape_bits )
++{
++    struct ps4_display_header msg = { .type = PS4_DISPLAY_PIXELS, .hwnd = (UINT_PTR)surface->hwnd };
++    int width = color_info->bmiHeader.biWidth, height = abs( color_info->bmiHeader.biHeight );
++
++    msg.left   = max( rect->left + dirty->left, 0 );
++    msg.top    = max( rect->top + dirty->top, 0 );
++    msg.right  = min( rect->left + dirty->right, width );
++    msg.bottom = min( rect->top + dirty->bottom, height );
++    msg.width  = width;
++    msg.height = height;
++    if (msg.left >= msg.right || msg.top >= msg.bottom) return TRUE;
++    TRACE( "hwnd %p rows %d-%d cols %d-%d\n", surface->hwnd, msg.top, msg.bottom, msg.left, msg.right );
++    ps4drv_send_rows( &msg, color_bits, width * 4 );
++    return TRUE;
++}
++
++static void ps4_surface_set_clip( struct window_surface *surface, const RECT *rects, UINT count )
++{
++}
++
++static void ps4_surface_destroy( struct window_surface *surface )
++{
++}
++
++static const struct window_surface_funcs ps4_surface_funcs =
++{
++    ps4_surface_set_clip,
++    ps4_surface_flush,
++    ps4_surface_destroy
++};
++
++BOOL PS4DRV_CreateWindowSurface( HWND hwnd, BOOL layered, const RECT *surface_rect,
++                                 struct window_surface **surface )
++{
++    char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    struct window_surface *previous = *surface;
++    int width = surface_rect->right - surface_rect->left, height = surface_rect->bottom - surface_rect->top;
++
++    TRACE( "hwnd %p layered %u rect %s\n", hwnd, layered, wine_dbgstr_rect( surface_rect ));
++
++    /* the same size as before (create_window_surface passes it only then) */
++    if (previous && previous->funcs == &ps4_surface_funcs) return TRUE;
++    if (previous) window_surface_release( previous );
++    *surface = NULL;
++    /* the desktop window, message-only windows: nothing to show */
++    if (!is_toplevel( hwnd )) return TRUE;
++
++    memset( info, 0, sizeof(*info) );
++    info->bmiHeader.biSize        = sizeof(info->bmiHeader);
++    info->bmiHeader.biWidth       = width;
++    info->bmiHeader.biHeight      = -height;  /* top-down */
++    info->bmiHeader.biPlanes      = 1;
++    info->bmiHeader.biBitCount    = 32;
++    info->bmiHeader.biSizeImage   = width * height * 4;
++    info->bmiHeader.biCompression = BI_RGB;
++    *surface = window_surface_create( sizeof(**surface), &ps4_surface_funcs, hwnd, surface_rect, info, 0 );
++    return TRUE;
++}
++
++/* --- windows ------------------------------------------------------------------------------------- */
++
++static void send_title( HWND hwnd, const WCHAR *text )
++{
++    struct ps4_display_header msg = { .type = PS4_DISPLAY_TITLE, .hwnd = (UINT_PTR)hwnd };
++    WCHAR buffer[256];
++    char utf8[1024];
++    DWORD len = 0;
++
++    if (!text)
++    {
++        NtUserInternalGetWindowText( hwnd, buffer, ARRAY_SIZE(buffer) );
++        text = buffer;
++    }
++    RtlUnicodeToUTF8N( utf8, sizeof(utf8) - 1, &len, text, wcslen( text ) * sizeof(WCHAR) );
++    ps4drv_send( &msg, utf8, len );
++}
++
++void PS4DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UINT swp_flags,
++                              const struct window_rects *new_rects, struct window_surface *surface )
++{
++    struct ps4_display_header msg = { .type = PS4_DISPLAY_WINDOW, .hwnd = (UINT_PTR)hwnd };
++    DWORD style, ex_style;
++
++    TRACE( "hwnd %p rects %s flags %08x surface %p\n", hwnd, debugstr_window_rects( new_rects ), swp_flags, surface );
++    if (!is_toplevel( hwnd )) return;
++
++    style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
++    ex_style = NtUserGetWindowLongW( hwnd, GWL_EXSTYLE );
++    if ((style & WS_VISIBLE) && surface) msg.flags |= PS4_WINDOW_VISIBLE;
++    if (ex_style & WS_EX_TOPMOST) msg.flags |= PS4_WINDOW_TOPMOST;
++    if (ex_style & WS_EX_LAYERED) msg.flags |= PS4_WINDOW_LAYERED;
++    if ((ex_style & WS_EX_TOOLWINDOW) || (!(style & WS_CAPTION) && (style & WS_POPUP)) ||
++        NtUserGetWindowRelative( hwnd, GW_OWNER ))
++        msg.flags |= PS4_WINDOW_POPUP;
++    msg.left   = new_rects->visible.left;
++    msg.top    = new_rects->visible.top;
++    msg.right  = new_rects->visible.right;
++    msg.bottom = new_rects->visible.bottom;
++    if (surface)
++    {
++        msg.width  = surface->rect.right - surface->rect.left;
++        msg.height = surface->rect.bottom - surface->rect.top;
++    }
++    if (swp_flags & SWP_SHOWWINDOW) send_title( hwnd, NULL );
++    ps4drv_send( &msg, NULL, 0 );
++}
++
++void PS4DRV_SetWindowText( HWND hwnd, LPCWSTR text )
++{
++    if (is_toplevel( hwnd )) send_title( hwnd, text );
++}
++
++void PS4DRV_ActivateWindow( HWND hwnd, HWND previous )
++{
++    struct ps4_display_header msg = { .type = PS4_DISPLAY_RAISE, .hwnd = (UINT_PTR)hwnd };
++    if (is_toplevel( hwnd )) ps4drv_send( &msg, NULL, 0 );
++}
++
++void PS4DRV_DestroyWindow( HWND hwnd )
++{
++    struct ps4_display_header msg = { .type = PS4_DISPLAY_DESTROY, .hwnd = (UINT_PTR)hwnd };
++    if (is_toplevel( hwnd )) ps4drv_send( &msg, NULL, 0 );
++}
+diff --git a/programs/explorer/desktop.c b/programs/explorer/desktop.c
+index ce70c5d..0dc8e2b 100644
+--- a/programs/explorer/desktop.c
++++ b/programs/explorer/desktop.c
+@@ -40,7 +40,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(explorer);
+ #define DESKTOP_CLASS_ATOM ((LPCWSTR)MAKEINTATOM(32769))
+ #define DESKTOP_ALL_ACCESS 0x01ff
+ 
+-static const WCHAR default_driver[] = L"mac,x11,wayland";
++static const WCHAR default_driver[] = L"ps4,mac,x11,wayland";
+ 
+ static BOOL using_root = TRUE;
+ 
+diff --git a/server/main.c b/server/main.c
+index b60f29b..92a9239 100644
+--- a/server/main.c
++++ b/server/main.c
+@@ -260,8 +260,10 @@ int ps4_wineserver_main( int client_fd )
+     if (client_fd < 0)
+     {
+         /* the app's server: every program connects to its socket; it stays when none runs */
++        extern void ps4_input_init(void);
+         master_socket_timeout = TIMEOUT_INFINITE;
+         open_master_socket();
++        ps4_input_init();
+     }
+     else ps4_server_dir_init();
+     if (debug_level) fprintf( stderr, "wineserver: starting in-process\n" );
+diff --git a/server/ps4_display.h b/server/ps4_display.h
+new file mode 100755
+index 0000000..01f2482
+--- /dev/null
++++ b/server/ps4_display.h
+@@ -0,0 +1,75 @@
++/* WinePS4: how Windows programs' windows reach the desktop, and its input reaches them.
++ *
++ * Windows: every program process's display driver (wineps4.drv, dlls/wineps4.drv in the Wine tree)
++ * connects to the desktop's socket and sends its top-level windows: where they are, whether they
++ * show, their title, and the pixels that changed. The desktop keeps a copy of each window and draws
++ * them over its own (shell/winwindows.cpp).
++ *
++ * Input: the desktop writes the PS4's mouse, pad and keyboard as records into a pipe the wineserver
++ * reads in its own loop (server/queue.c), which queues them like a PC's hardware input: the server
++ * knows the windows, so it picks the one under the cursor or with the focus.
++ */
++#ifndef WINEPS4_DISPLAY_H
++#define WINEPS4_DISPLAY_H
++
++#include <stdint.h>
++
++#define PS4_DISPLAY_SOCKET "/data/WinePS4/.display"
++#define PS4_DISPLAY_WIDTH  1920
++#define PS4_DISPLAY_HEIGHT 1080
++
++/* --- program -> desktop (the socket) ------------------------------------------------------------- */
++
++enum ps4_display_msg
++{
++    PS4_DISPLAY_HELLO = 1,  /* pid: a program connected */
++    PS4_DISPLAY_WINDOW,     /* where a window is, if it shows */
++    PS4_DISPLAY_PIXELS,     /* changed pixels: rows of (right - left) * 4 bytes follow */
++    PS4_DISPLAY_TITLE,      /* UTF-8 title follows (size - header) */
++    PS4_DISPLAY_DESTROY,    /* the window is gone */
++    PS4_DISPLAY_RAISE,      /* the window was activated: on top */
++};
++
++#define PS4_WINDOW_VISIBLE  0x01
++#define PS4_WINDOW_TOPMOST  0x02
++#define PS4_WINDOW_LAYERED  0x04  /* pixels carry alpha */
++#define PS4_WINDOW_POPUP    0x08  /* menus, tooltips, ...: no taskbar button */
++
++struct ps4_display_header
++{
++    uint32_t type;
++    uint32_t size;      /* of the whole message, header included */
++    uint64_t hwnd;
++    int32_t  pid;
++    uint32_t flags;     /* PS4_WINDOW_* (WINDOW) */
++    int32_t  left, top, right, bottom;  /* WINDOW: the surface on the screen; PIXELS: the rect in it */
++    int32_t  width, height;             /* WINDOW: the surface size */
++};
++
++/* --- desktop -> wineserver (the pipe) ------------------------------------------------------------ */
++
++enum ps4_input_type
++{
++    PS4_INPUT_MOUSE = 1,  /* x, y in screen pixels (always absolute), flags = MOUSEEVENTF_*, data = wheel */
++    PS4_INPUT_KEY,        /* vkey + scan, flags = KEYEVENTF_* (KEYEVENTF_UNICODE: scan is the character) */
++};
++
++struct ps4_input_record
++{
++    uint32_t type;
++    int32_t  x, y;
++    uint32_t flags;
++    int32_t  data;
++    uint16_t vkey, scan;
++};
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++/* the desktop's side: queues a record for the wineserver (server/queue.c); 0 if it could not */
++int ps4_server_input( const struct ps4_input_record *record );
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/server/ps4_input.inc b/server/ps4_input.inc
+new file mode 100755
+index 0000000..9408763
+--- /dev/null
++++ b/server/ps4_input.inc
+@@ -0,0 +1,139 @@
++/* WinePS4: the desktop's input (port/include/ps4_display.h), included at the end of queue.c.
++ *
++ * The app's wineserver runs as a thread of the desktop process: the desktop writes the PS4's mouse,
++ * pad and keyboard into a pipe as records, and the server reads them in its own loop and queues
++ * them like a PC's hardware input (as send_hardware_message does), so the window under the cursor or
++ * with the focus gets them. No thread of the server is "current" here: hardware input from the
++ * system has no sender. */
++
++#include <fcntl.h>
++#include <string.h>
++#include "ps4_display.h"
++
++struct ps4_input
++{
++    struct object obj;
++    struct fd    *fd;
++};
++
++static void ps4_input_dump( struct object *obj, int verbose )
++{
++    fprintf( stderr, "WinePS4 input pipe\n" );
++}
++
++static void ps4_input_destroy( struct object *obj )
++{
++    struct ps4_input *input = (struct ps4_input *)obj;
++    release_object( input->fd );
++}
++
++static const struct object_ops ps4_input_ops =
++{
++    sizeof(struct ps4_input),      /* size */
++    &no_type,                      /* type */
++    ps4_input_dump,                /* dump */
++    no_add_queue,                  /* add_queue */
++    NULL,                          /* remove_queue */
++    NULL,                          /* signaled */
++    NULL,                          /* satisfied */
++    no_signal,                     /* signal */
++    no_get_fd,                     /* get_fd */
++    default_get_sync,              /* get_sync */
++    default_map_access,            /* map_access */
++    default_get_sd,                /* get_sd */
++    default_set_sd,                /* set_sd */
++    no_get_full_name,              /* get_full_name */
++    no_lookup_name,                /* lookup_name */
++    no_link_name,                  /* link_name */
++    NULL,                          /* unlink_name */
++    no_open_file,                  /* open_file */
++    no_kernel_obj_list,            /* get_kernel_obj_list */
++    no_close_handle,               /* close_handle */
++    ps4_input_destroy              /* destroy */
++};
++
++static int ps4_input_pipe[2] = { -1, -1 };
++
++static void ps4_input_queue( const struct ps4_input_record *record )
++{
++    struct desktop *desktop;
++    union hw_input input;
++
++    /* none before the first program made the window station */
++    if (!(desktop = get_hardware_input_desktop( 0 ))) return;
++    if (!set_input_desktop( desktop->winstation, desktop ))
++    {
++        release_object( desktop );
++        return;
++    }
++    memset( &input, 0, sizeof(input) );
++    switch (record->type)
++    {
++    case PS4_INPUT_MOUSE:
++        input.type        = INPUT_MOUSE;
++        input.mouse.x     = record->x;
++        input.mouse.y     = record->y;
++        input.mouse.data  = record->data;
++        input.mouse.flags = record->flags | MOUSEEVENTF_ABSOLUTE;
++        queue_mouse_message( desktop, 0, &input, IMO_HARDWARE, NULL );
++        break;
++    case PS4_INPUT_KEY:
++        input.type       = INPUT_KEYBOARD;
++        input.kbd.vkey   = record->vkey;
++        input.kbd.scan   = record->scan;
++        input.kbd.flags  = record->flags;
++        queue_keyboard_message( desktop, 0, &input, IMO_HARDWARE, NULL, 0 );
++        break;
++    }
++    release_object( desktop );
++}
++
++static void ps4_input_poll_event( struct fd *fd, int event )
++{
++    struct ps4_input_record records[64];
++    ssize_t got;
++    int i;
++
++    if (event & (POLLERR | POLLHUP))
++    {
++        set_fd_events( fd, -1 );
++        return;
++    }
++    while ((got = read( ps4_input_pipe[0], records, sizeof(records) )) > 0)
++        for (i = 0; i < got / (ssize_t)sizeof(records[0]); i++) ps4_input_queue( &records[i] );
++}
++
++static const struct fd_ops ps4_input_fd_ops =
++{
++    NULL,                          /* get_poll_events */
++    ps4_input_poll_event,          /* poll_event */
++    NULL,                          /* flush */
++    NULL,                          /* get_fd_type */
++    NULL,                          /* ioctl */
++    NULL,                          /* queue_async */
++    NULL                           /* reselect_async */
++};
++
++/* called by ps4_wineserver_main for the app's server */
++void ps4_input_init(void)
++{
++    struct ps4_input *input;
++
++    if (pipe( ps4_input_pipe )) return;
++    fcntl( ps4_input_pipe[0], F_SETFL, O_NONBLOCK );
++    if (!(input = alloc_object( &ps4_input_ops ))) return;
++    if (!(input->fd = create_anonymous_fd( &ps4_input_fd_ops, ps4_input_pipe[0], &input->obj, 0 )))
++    {
++        release_object( input );
++        return;
++    }
++    set_fd_events( input->fd, POLLIN );
++    make_object_permanent( &input->obj );
++}
++
++/* the desktop's thread: records are small, a pipe write of one is atomic */
++int ps4_server_input( const struct ps4_input_record *record )
++{
++    if (ps4_input_pipe[1] < 0) return 0;
++    return write( ps4_input_pipe[1], record, sizeof(*record) ) == sizeof(*record);
++}
+diff --git a/server/queue.c b/server/queue.c
+index 3e8ab2e..3048ccf 100644
+--- a/server/queue.c
++++ b/server/queue.c
+@@ -4215,3 +4215,7 @@ DECL_HANDLER(set_keyboard_repeat)
+ 
+     release_object( desktop );
+ }
++
++#ifdef __PS4_WINE__
++#include "ps4_input.inc"
++#endif
+-- 
+2.53.0
+
+
+From 6b5c634711a7fbcdc1e41eb6abd45444b9921f57 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sun, 1 Nov 2026 04:34:30 +0300
+Subject: [PATCH 15/15] wineps4.drv: work area above the 60 px taskbar
+
+---
+ dlls/wineps4.drv/display.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dlls/wineps4.drv/display.c b/dlls/wineps4.drv/display.c
+index 93fdcfb..e947d31 100755
+--- a/dlls/wineps4.drv/display.c
++++ b/dlls/wineps4.drv/display.c
+@@ -21,7 +21,7 @@
+ WINE_DEFAULT_DEBUG_CHANNEL(ps4drv);
+ 
+ /* one monitor: the desktop's screen; the taskbar at its bottom is not in the work area */
+-#define TASKBAR_HEIGHT 48
++#define TASKBAR_HEIGHT 60
+ 
+ UINT PS4DRV_UpdateDisplayDevices( const struct gdi_device_manager *manager, void *param )
+ {
 -- 
 2.53.0
 

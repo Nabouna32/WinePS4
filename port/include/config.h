@@ -47,6 +47,10 @@
 #define HAVE_UNISTD_H 1
 #define HAVE___BUILTIN_POPCOUNT 1
 
+/* FreeType is linked into the app; win32u "dlopens" it from the built-in table (ps4_unixlibs.c) */
+#define HAVE_FT2BUILD_H 1
+#define SONAME_LIBFREETYPE "libfreetype.so.6"
+
 #define PACKAGE_BUGREPORT "wine-devel@winehq.org"
 #define PACKAGE_NAME "Wine"
 #define PACKAGE_STRING "Wine 11.0"

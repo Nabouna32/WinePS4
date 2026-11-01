@@ -34,6 +34,7 @@
 #include "picture.h"
 #include "ps4_canvas.h"
 #include "screen.h"
+#include "winwindows.h"
 
 #ifndef WINEPS4_VERSION
 #define WINEPS4_VERSION "00.00"
@@ -851,7 +852,7 @@ struct Clipboard {
 Clipboard clipboard;
 
 // What the keyboard's text is for
-enum class TextFor { None, Rename, Color };
+enum class TextFor { None, Rename, Color, Wine };  // Wine: typed into the program window with the focus
 struct TextRequest {
     TextFor what = TextFor::None;
     std::string path;  // the entry to rename
@@ -878,6 +879,7 @@ std::string pressed_on;
 double last_click_time = 0;
 std::string last_click_key;
 int dragging = 0;  // a window being moved by its title bar
+uint32_t wine_buttons = 0;  // buttons pressed over a Windows program's window, not let go yet
 float drag_dx = 0, drag_dy = 0;
 
 Window *find_window(int id) {
@@ -1119,6 +1121,10 @@ void finish_text(const std::string &text) {
         b.kind = BgKind::Color;
         b.color = static_cast<uint32_t>(std::strtoul(hex.c_str(), nullptr, 16));
         use_background(b);
+        return;
+    }
+    if (request.what == TextFor::Wine) {
+        winwin_text(text);
         return;
     }
     if (request.what != TextFor::Rename)
@@ -1379,6 +1385,7 @@ struct Pin {
 const Pin PINS[] = {
     {"Files", Icon::Folder, 0}, {"Terminal", Icon::Terminal, 1}, {"Settings", Icon::Settings, 2},
     {"C: drive", Icon::Drive, 3}, {"Wine test", Icon::Program, 4}, {"32-bit test", Icon::Program, 6},
+    {"Window test", Icon::Program, 7},
 };
 Rect pin_rect(int i) {
     const Rect m = start_menu_rect();
@@ -1416,6 +1423,7 @@ void start_action(int action) {
     case 4: ask_run("/app0/wine/hello.exe"); break;
     case 5: open_window(Kind::Files, ""); break;
     case 6: ask_run("/app0/wine/hello32.exe"); break;
+    case 7: ask_run("/app0/wine/window.exe"); break;
     }
 }
 
@@ -2354,6 +2362,7 @@ void draw_scene(Canvas &c) {
     for (Window &w : windows)
         if (!w.minimized)
             draw_window(c, w, &w == top && popup == Popup::None);
+    winwin_draw(c);  // Windows programs' windows: over the desktop's own
     draw_taskbar(c);
     if (popup != Popup::None)
         draw_start_menu(c);
@@ -2509,6 +2518,7 @@ extern "C" void ps4_shell_run(const char *) {
         }
     }
     input_open();
+    winwin_start();
     load_desktop();
     const Image pointer = make_pointer();
     const Image resize_ew = make_resize_pointer(1, 0), resize_ns = make_resize_pointer(0, 1);
@@ -2523,7 +2533,7 @@ extern "C" void ps4_shell_run(const char *) {
         const double t = now_seconds();
         const float dt = static_cast<float>(std::min(0.1, t - last));
         last = t;
-        const Input &in = input_poll(dt);
+        Input in = input_poll(dt);
         last_input = in;
 
         // the system keyboard: the desktop waits while it's open, then takes its text
@@ -2584,7 +2594,40 @@ extern "C" void ps4_shell_run(const char *) {
             dirty = true;
         }
 
-        const std::string now_hover = hit(in.x, in.y);
+        // over a Windows program's window (and nothing of the desktop's open over it): the pointer,
+        // its buttons and the wheel go to the program; a button pressed there goes on to it until
+        // it's let go. Triangle opens the system keyboard for it.
+        if (winwin_changed())
+            dirty = true;
+        const bool desktop_busy = menu.open || dialog.open || popup != Popup::None || dragging || resizing;
+        const uint64_t over_wine = desktop_busy ? 0 : winwin_at(in.x, in.y);
+        if (live && (over_wine || wine_buttons)) {
+            constexpr uint32_t MOVE = 0x0001, LEFTDOWN = 0x0002, LEFTUP = 0x0004, RIGHTDOWN = 0x0008,
+                               RIGHTUP = 0x0010, WHEEL = 0x0800;
+            uint32_t flags = in.moved ? MOVE : 0;
+            if (over_wine && (in.pressed & BTN_CLICK))
+                flags |= LEFTDOWN, wine_buttons |= BTN_CLICK;
+            if ((in.released & BTN_CLICK) && (wine_buttons & BTN_CLICK))
+                flags |= LEFTUP, wine_buttons &= ~BTN_CLICK;
+            if (over_wine && (in.pressed & BTN_MENU))
+                flags |= RIGHTDOWN, wine_buttons |= BTN_MENU;
+            if ((in.released & BTN_MENU) && (wine_buttons & BTN_MENU))
+                flags |= RIGHTUP, wine_buttons &= ~BTN_MENU;
+            if (flags)
+                winwin_mouse(in.x, in.y, flags);
+            if (over_wine && in.scroll != 0)
+                winwin_mouse(in.x, in.y, WHEEL, static_cast<int>(-in.scroll * 120));
+            if (over_wine && (in.pressed & BTN_SWITCH) && !keyboard_active()) {
+                if (keyboard_open("Type into the program", "")) {
+                    text_request = TextRequest{};
+                    text_request.what = TextFor::Wine;
+                }
+            }
+            in.pressed &= ~(BTN_CLICK | BTN_MENU | BTN_SWITCH);
+            in.released &= ~(BTN_CLICK | BTN_MENU);
+            in.scroll = 0;
+        }
+        const std::string now_hover = over_wine ? std::string() : hit(in.x, in.y);
         if (now_hover != hover) {
             hover = now_hover;
             dirty = true;
