@@ -13,8 +13,10 @@
  *  /data/WinePS4/hang.log   where Wine's threads are when the program has not finished after 20 s
  *                           (WINEPS4_HANG_DUMP=<seconds>, 0 = off)
  *
- * The programs are processes of their own, which the PS4 doesn't end with the app: each one ends
- * itself when the desktop is gone (the lifeline, below). */
+ * The programs are processes of their own, which the PS4 doesn't end with the app. All of them are
+ * the desktop's children (the ones programs start too: port/ps4_spawn_desk.c), which it ends and
+ * collects before it exits (ps4_end_programs); each one ends itself when the desktop is gone (the
+ * lifeline, below). */
 #include <dirent.h>
 #include <pthread.h>
 #include <signal.h>
@@ -342,6 +344,45 @@ static volatile int wine_ready;  /* the prefix is in place and wineserver listen
 static volatile int wine_booted; /* wineboot has run (services.exe started), or gave up */
 static volatile int boot_pid = -1;
 
+extern pthread_mutex_t ps4_spawn_lock;
+extern int ps4_spawn_broker_start( void );
+
+/* the desktop's children that have not been collected yet (the reaper's) */
+#define MAX_CHILDREN 256
+static pthread_mutex_t children_lock = PTHREAD_MUTEX_INITIALIZER;
+static int children[MAX_CHILDREN], child_count;
+
+void ps4_child_started( int pid )
+{
+    pthread_mutex_lock( &children_lock );
+    if (child_count < MAX_CHILDREN) children[child_count++] = pid;
+    pthread_mutex_unlock( &children_lock );
+}
+
+static void child_ended( int pid )
+{
+    int i;
+
+    pthread_mutex_lock( &children_lock );
+    for (i = 0; i < child_count; i++)
+        if (children[i] == pid)
+        {
+            children[i] = children[--child_count];
+            break;
+        }
+    pthread_mutex_unlock( &children_lock );
+}
+
+static int children_left( void )
+{
+    int n;
+
+    pthread_mutex_lock( &children_lock );
+    n = child_count;
+    pthread_mutex_unlock( &children_lock );
+    return n;
+}
+
 int ps4_wine_ready( void ) { return wine_ready && wine_booted; }
 
 /* Starts /app0/wineps4.bin for args (a Unix path or Windows command line, then its arguments), with
@@ -369,12 +410,15 @@ static int launch( char *const args[], const char *extra_env )
         envp[count] = (char *)extra_env;
         envp[count + 1] = NULL;
     }
+    pthread_mutex_lock( &ps4_spawn_lock );
     pid = fork();
     if (pid == 0)
     {
         execve( argv[0], argv, envp );
         _exit( 127 );  /* (the kernel's exit: not ps4-kit's, which would close the app) */
     }
+    if (pid > 0) ps4_child_started( pid );
+    pthread_mutex_unlock( &ps4_spawn_lock );
     if (envp != environ) free( envp );
     if (pid > 0) logf_( "wineps4: started %s (process %d)\n", args[0], pid );
     return pid;
@@ -385,34 +429,36 @@ int ps4_launch_program( char *const args[] )
     return launch( args, NULL );
 }
 
-/* Before the desktop ends or restarts: the wineserver kills every program process, and this waits
- * (3 s at most) for them to be gone; the PS4 wouldn't end them with the app */
+/* Before the desktop ends or restarts: the wineserver kills every Windows process it knows, the
+ * desktop every child it has left (the ones that never got to the wineserver too), and this waits
+ * (3 s at most) for the reaper to have collected them all: the PS4 doesn't end them with the app,
+ * and froze closing it while one was there */
 void ps4_end_programs( void )
 {
-    extern int ps4_ended_pids[], ps4_ended_count, ps4_end_done;
+    extern int ps4_ended_count, ps4_end_done;
     const struct ps4_input_record record = { PS4_INPUT_END_PROGRAMS };
-    int i, waited, left = 0;
+    int i, waited, total;
 
-    if (!wine_ready || __atomic_load_n( &ps4_wineserver_stopped, __ATOMIC_SEQ_CST )) return;
-    if (!ps4_server_input( &record ))
-    {
+    if (!wine_ready) return;
+    if (__atomic_load_n( &ps4_wineserver_stopped, __ATOMIC_SEQ_CST ))
+        logf_( "wineps4: wineserver has stopped\n" );
+    else if (!ps4_server_input( &record ))
         logf_( "wineps4: could not ask wineserver to end the programs\n" );
-        return;
-    }
-    for (waited = 0; waited < 100 && !__atomic_load_n( &ps4_end_done, __ATOMIC_ACQUIRE ); waited++) usleep( 10000 );
-    if (!ps4_end_done)
+    else
     {
-        logf_( "wineps4: wineserver did not end the programs\n" );
-        return;
+        for (waited = 0; waited < 100 && !__atomic_load_n( &ps4_end_done, __ATOMIC_ACQUIRE ); waited++) usleep( 10000 );
+        if (!ps4_end_done) logf_( "wineps4: wineserver did not end the programs\n" );
+        else logf_( "wineps4: wineserver ended %d processes\n", ps4_ended_count );
     }
-    for (waited = 0; waited < 300; waited++)
-    {
-        for (i = left = 0; i < ps4_ended_count; i++)
-            if (!kill( ps4_ended_pids[i], 0 )) left++;
-        if (!left) break;
-        usleep( 10000 );
-    }
-    logf_( "wineps4: %d program processes ended%s\n", ps4_ended_count, left ? " (some still there after 3 s)" : "" );
+    pthread_mutex_lock( &ps4_spawn_lock );  /* (none starts from here on) */
+    pthread_mutex_lock( &children_lock );
+    total = child_count;
+    for (i = 0; i < child_count; i++) kill( children[i], SIGKILL );
+    pthread_mutex_unlock( &children_lock );
+    for (waited = 0; waited < 300 && children_left(); waited++) usleep( 10000 );
+    if (children_left()) logf_( "wineps4: %d of %d processes still there after 3 s\n", children_left(), total );
+    else logf_( "wineps4: all %d processes ended and collected\n", total );
+    usleep( 200000 );  /* (the log's thread writes it out) */
 }
 
 /* The prefix's .update-timestamp says "disable": wineboot then never redoes the prefix's setup
@@ -472,6 +518,7 @@ static void *reaper_thread( void *arg )
             const int code = WIFEXITED( status ) ? WEXITSTATUS( status ) : 128 + WTERMSIG( status );
             logf_( "wineps4: process %d ended (%s %d)\n", (int)pid, WIFEXITED( status ) ? "exit code" : "signal",
                    WIFEXITED( status ) ? code : WTERMSIG( status ) );
+            child_ended( pid );
             if (pid == boot_pid) wine_booted = 1;
             else ps4_shell_program_exited( pid, code );
         }
@@ -519,6 +566,7 @@ static void *setup_thread( void *arg )
         logf_( "wineps4: wineserver did not start\n" );
         return NULL;
     }
+    if (!ps4_spawn_broker_start()) logf_( "wineps4: programs start their processes themselves\n" );
     wine_ready = 1;
     if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
     boot_windows();
