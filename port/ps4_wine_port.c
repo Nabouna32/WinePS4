@@ -504,6 +504,75 @@ pid_t fork( void )
     return child ? 0 : (pid_t)ret;
 }
 
+/* --- Starting a program process from a program ------------------------------------------------ */
+
+/* A system call that leaves errno alone: the child of a fork below runs nothing else */
+static long raw_call3( long number, long a, long b, long c )
+{
+    long ret;
+    __asm__ volatile( "syscall"
+                      : "=a" (ret)
+                      : "a" (number), "D" (a), "S" (b), "d" (c)
+                      : "rcx", "r8", "r9", "r10", "r11", "memory", "cc" );
+    return ret;
+}
+
+struct spawn_request
+{
+    const char *path;
+    char      **argv, **envp;
+    int         fd0, fd1;
+    pid_t       pid;
+    int         error;
+};
+
+static void *spawn_thread( void *arg )
+{
+    static const char failed_text[] = "wineps4: spawn: exec failed\n";
+    struct spawn_request *req = arg;
+    sigset_t all, none;
+    long ret, child = 0;
+    unsigned char failed;
+
+    sigfillset( &all );
+    sigemptyset( &none );
+    pthread_sigmask( SIG_SETMASK, &all, NULL );  /* nothing runs in the child before its exec */
+    __asm__ volatile( "syscall\n\tsetc %2"
+                      : "=a" (ret), "+d" (child), "=r" (failed)
+                      : "a" (2 /* SYS_fork */)
+                      : "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory", "cc" );
+    if (!failed && child)
+    {
+        if (req->fd0 >= 0 && req->fd0 != 0) raw_call3( 90 /* SYS_dup2 */, req->fd0, 0, 0 );
+        if (req->fd1 >= 0 && req->fd1 != 1) raw_call3( 90 /* SYS_dup2 */, req->fd1, 1, 0 );
+        raw_call3( 340 /* SYS_sigprocmask */, 3 /* SIG_SETMASK */, (long)&none, 0 );
+        raw_call3( 59 /* SYS_execve */, (long)req->path, (long)req->argv, (long)req->envp );
+        raw_call3( 4 /* SYS_write */, 2, (long)failed_text, sizeof(failed_text) - 1 );
+        raw_call3( 1 /* SYS_exit */, 127, 0, 0 );
+    }
+    req->pid = failed ? -1 : (pid_t)ret;
+    req->error = failed ? (int)ret : 0;
+    return NULL;
+}
+
+/* Forks and execs path from a thread of its own: Wine's threads run on stacks in direct memory,
+ * which a forked child does not get (it died at once, before running anything: v00.29), and the
+ * child touches nothing but what the request holds (made by the caller in malloc'd memory). */
+pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 )
+{
+    struct spawn_request req = { path, argv, envp, fd0, fd1, -1, 0 };
+    pthread_t thread;
+
+    if (pthread_create( &thread, NULL, spawn_thread, &req ))
+    {
+        errno = EAGAIN;
+        return -1;
+    }
+    pthread_join( thread, NULL );
+    if (req.pid == -1) errno = req.error;
+    return req.pid;
+}
+
 int execv( const char *path, char *const argv[] )
 {
     char buf[1100];
