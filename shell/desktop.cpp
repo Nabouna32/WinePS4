@@ -1011,6 +1011,10 @@ std::string launch(const std::vector<std::string> &args) {
     return {};
 }
 
+// programs to start once Windows is ready: launch.txt, run.txt, and what's run while it's set up
+std::mutex launch_lock;
+std::vector<std::vector<std::string>> launch_queue;
+
 void run_program(const std::string &path) {
     std::vector<std::string> args;
     if (ends_with(path, ".msi")) {
@@ -1023,6 +1027,13 @@ void run_program(const std::string &path) {
         if (r != path && out.size() < 8)
             out.push_back(r);
     write_lines(RECENT_FILE, out);
+    if (!ps4_wine_ready()) {
+        // (the first start after an update copies Windows' files): it starts when that's done
+        std::lock_guard lock(launch_lock);
+        launch_queue.push_back(args);
+        toast = Toast{base_name(path) + " starts when Windows is set up", now_seconds() + 6};
+        return;
+    }
     const std::string error = launch(args);
     if (!error.empty()) {
         show_message("Run " + base_name(path), error);
@@ -1387,9 +1398,11 @@ const Pin PINS[] = {
     {"C: drive", Icon::Drive, 3}, {"Wine test", Icon::Program, 4}, {"32-bit test", Icon::Program, 6},
     {"Window test", Icon::Program, 7},
 };
+// the pins share one row (narrower as there are more), so "Recent programs" below stays clear
 Rect pin_rect(int i) {
     const Rect m = start_menu_rect();
-    return Rect{m.x + 32 + (i % 6) * 103, m.y + 130 + (i / 6) * 104, 100, 96};
+    const int n = static_cast<int>(std::size(PINS)), step = (m.w - 64) / std::max(6, n);
+    return Rect{m.x + 32 + i * step, m.y + 130, step - 3, 96};
 }
 Rect recent_rect(int i) {
     const Rect m = start_menu_rect();
@@ -2490,9 +2503,7 @@ extern "C" void ps4_shell_program_exited(int pid, int code) {
     program_changed = true;
 }
 
-// launch.txt, run.txt (from the port's setup thread): started on the desktop's thread
-std::mutex launch_lock;
-std::vector<std::vector<std::string>> launch_queue;
+// launch.txt, run.txt (from the port's setup thread): started on the desktop's thread (launch_queue)
 
 extern "C" void ps4_shell_launch(char **args) {
     std::vector<std::string> a;

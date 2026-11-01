@@ -409,8 +409,14 @@ void *ps4_dlopen( const char *name, int flags )
     if (!name) return (void *)unixlibs;  /* the main program */
     base = strrchr( name, '/' );
     base = base ? base + 1 : name;
-    for (lib = unixlibs; lib->name; lib++) if (!strcmp( lib->name, base )) return (void *)lib;
+    for (lib = unixlibs; lib->name; lib++)
+        if (!strcmp( lib->name, base ))
+        {
+            fprintf( stderr, "wineps4: library %s (built in)\n", base );
+            return (void *)lib;
+        }
     snprintf( dl_error, sizeof(dl_error), "%s: not built into WinePS4", base );
+    fprintf( stderr, "wineps4: library %s: not built in\n", name );
     return NULL;
 }
 
@@ -423,6 +429,8 @@ void *ps4_dlsym( void *handle, const char *name )
         for (i = 0; lib->symbols[i].name; i++)
             if (!strcmp( lib->symbols[i].name, name )) return lib->symbols[i].addr;
     snprintf( dl_error, sizeof(dl_error), "%s: no such symbol", name );
+    if (lib && lib != unixlibs)
+        fprintf( stderr, "wineps4: library %s has no %s\n", lib->name, name );
     return NULL;
 }
 
