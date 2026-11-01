@@ -279,15 +279,19 @@ extern int ps4_wineserver_stopped;
 extern void ps4_start_wineserver_listening( void );
 
 static volatile int wine_ready;  /* the prefix is in place and wineserver listens */
+static volatile int wine_booted; /* wineboot has run (services.exe started), or gave up */
+static volatile int boot_pid = -1;
 
-int ps4_wine_ready( void ) { return wine_ready; }
+int ps4_wine_ready( void ) { return wine_ready && wine_booted; }
 
-/* Starts a program (its Unix path or Windows command line, then its arguments): its pid, or -1. The
- * child only execs (the desktop has threads: nothing that may lock after fork). */
-int ps4_launch_program( char *const args[] )
+/* Starts /app0/wineps4.bin for args (a Unix path or Windows command line, then its arguments), with
+ * extra_env added to the environment when it isn't NULL: its pid, or -1. The child only execs (the
+ * desktop has threads: nothing that may lock after fork). */
+static int launch( char *const args[], const char *extra_env )
 {
-    char *argv[66];
-    int argc = 0, pid;
+    extern char **environ;
+    char *argv[66], **envp = environ;
+    int argc = 0, pid, count = 0;
 
     argv[argc++] = (char *)"/app0/wineps4.bin";
     while (args[argc - 1] && argc < 65) argv[argc] = args[argc - 1], argc++;
@@ -297,14 +301,72 @@ int ps4_launch_program( char *const args[] )
         errno = EAGAIN;
         return -1;
     }
+    if (extra_env)
+    {
+        while (environ[count]) count++;
+        if (!(envp = malloc( (count + 2) * sizeof(*envp) ))) return -1;
+        memcpy( envp, environ, count * sizeof(*envp) );
+        envp[count] = (char *)extra_env;
+        envp[count + 1] = NULL;
+    }
     pid = fork();
     if (pid == 0)
     {
-        execv( argv[0], argv );
+        execve( argv[0], argv, envp );
         _exit( 127 );  /* (the kernel's exit: not ps4-kit's, which would close the app) */
     }
+    if (envp != environ) free( envp );
     if (pid > 0) logf_( "wineps4: started %s (process %d)\n", args[0], pid );
     return pid;
+}
+
+int ps4_launch_program( char *const args[] )
+{
+    return launch( args, NULL );
+}
+
+/* The prefix's .update-timestamp says "disable": wineboot then never redoes the prefix's setup
+ * from wine.inf (the package's wine.inf has another date than the PC's, which made the prefix) */
+static void disable_prefix_update( void )
+{
+    char line[16] = "";
+    FILE *f = fopen( PREFIX_DIR "/.update-timestamp", "r" );
+
+    if (f)
+    {
+        if (!fgets( line, sizeof(line), f )) line[0] = 0;
+        fclose( f );
+    }
+    if (!strncmp( line, "disable", 7 )) return;
+    if ((f = fopen( PREFIX_DIR "/.update-timestamp", "w" )))
+    {
+        fputs( "disable\n", f );
+        fclose( f );
+    }
+}
+
+/* Wine's startup, once per app start: wineboot --init (this machine's registry keys, then
+ * services.exe, which stays). The programs wait for it (ps4_wine_ready). */
+static void boot_windows( void )
+{
+    static char *const args[] = { (char *)"C:\\windows\\system32\\wineboot.exe", (char *)"--init", NULL };
+    const time_t start = time( NULL );
+
+    disable_prefix_update();
+    ps4_shell_status( "starting Windows services" );
+    boot_pid = launch( args, "WINEPS4_BOOT=1" );
+    if (boot_pid == -1) logf_( "wineps4: wineboot did not start: %s\n", strerror( errno ) );
+    while (!wine_booted && boot_pid != -1)
+    {
+        if (time( NULL ) - start > 120)
+        {
+            logf_( "wineps4: wineboot still running after 120 s; programs start anyway\n" );
+            break;
+        }
+        usleep( 100000 );
+    }
+    if (wine_booted) logf_( "wineps4: wineboot done in %ld s\n", (long)(time( NULL ) - start) );
+    wine_booted = 1;
 }
 
 /* the programs' ends, for the desktop */
@@ -319,7 +381,8 @@ static void *reaper_thread( void *arg )
             const int code = WIFEXITED( status ) ? WEXITSTATUS( status ) : 128 + WTERMSIG( status );
             logf_( "wineps4: process %d ended (%s %d)\n", (int)pid, WIFEXITED( status ) ? "exit code" : "signal",
                    WIFEXITED( status ) ? code : WTERMSIG( status ) );
-            ps4_shell_program_exited( pid, code );
+            if (pid == boot_pid) wine_booted = 1;
+            else ps4_shell_program_exited( pid, code );
         }
         else sleep( 1 );  /* none running */
     }
@@ -366,9 +429,10 @@ static void *setup_thread( void *arg )
         return NULL;
     }
     wine_ready = 1;
+    if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
+    boot_windows();
     ps4_shell_status( NULL );
     logf_( "wineps4: Windows is ready\n" );
-    if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
     if (read_program( WINEPS4_LAUNCH_FILE, 1, args, 64 ) || read_program( DATA_DIR "/run.txt", 0, args, 64 ))
         ps4_shell_launch( args );
     return NULL;
