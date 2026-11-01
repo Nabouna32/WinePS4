@@ -54,10 +54,18 @@ static const struct object_ops ps4_input_ops =
 
 static int ps4_input_pipe[2] = { -1, -1 };
 
+extern void ps4_end_programs_now(void);
+
 static void ps4_input_queue( const struct ps4_input_record *record )
 {
     struct desktop *desktop;
     union hw_input input;
+
+    if (record->type == PS4_INPUT_END_PROGRAMS)
+    {
+        ps4_end_programs_now();
+        return;
+    }
 
     /* none before the first program made the window station */
     if (!(desktop = get_hardware_input_desktop( 0 ))) return;

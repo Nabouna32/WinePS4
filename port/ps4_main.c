@@ -32,6 +32,7 @@
 #include "ps4_kit_diag.h"
 #include "ps4_kit.h"
 #include "../shell/shell.h"
+#include "include/ps4_display.h"
 
 /* The C heap of a program process comes from direct memory: the system's flexible memory is one
  * pool for the whole app, and 256 MiB heaps for the desktop and two programs left none for the
@@ -382,6 +383,36 @@ static int launch( char *const args[], const char *extra_env )
 int ps4_launch_program( char *const args[] )
 {
     return launch( args, NULL );
+}
+
+/* Before the desktop ends or restarts: the wineserver kills every program process, and this waits
+ * (3 s at most) for them to be gone; the PS4 wouldn't end them with the app */
+void ps4_end_programs( void )
+{
+    extern int ps4_ended_pids[], ps4_ended_count, ps4_end_done;
+    const struct ps4_input_record record = { PS4_INPUT_END_PROGRAMS };
+    int i, waited, left = 0;
+
+    if (!wine_ready || __atomic_load_n( &ps4_wineserver_stopped, __ATOMIC_SEQ_CST )) return;
+    if (!ps4_server_input( &record ))
+    {
+        logf_( "wineps4: could not ask wineserver to end the programs\n" );
+        return;
+    }
+    for (waited = 0; waited < 100 && !__atomic_load_n( &ps4_end_done, __ATOMIC_ACQUIRE ); waited++) usleep( 10000 );
+    if (!ps4_end_done)
+    {
+        logf_( "wineps4: wineserver did not end the programs\n" );
+        return;
+    }
+    for (waited = 0; waited < 300; waited++)
+    {
+        for (i = left = 0; i < ps4_ended_count; i++)
+            if (!kill( ps4_ended_pids[i], 0 )) left++;
+        if (!left) break;
+        usleep( 10000 );
+    }
+    logf_( "wineps4: %d program processes ended%s\n", ps4_ended_count, left ? " (some still there after 3 s)" : "" );
 }
 
 /* The prefix's .update-timestamp says "disable": wineboot then never redoes the prefix's setup

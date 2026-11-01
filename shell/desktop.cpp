@@ -1328,8 +1328,8 @@ void menu_action(const std::string &action) {
     else if (action == "terminal") open_window(Kind::Terminal);
     else if (action == "settings") open_window(Kind::Settings);
     else if (action == "refresh-all") refresh_all({});
-    else if (action == "restart") sceSystemServiceLoadExec("/app0/eboot.bin", nullptr);
-    else if (action == "exit") { ps4_boot_trace("shell: exit to the PS4 menu"); exit(0); }
+    else if (action == "restart") { ps4_end_programs(); sceSystemServiceLoadExec("/app0/eboot.bin", nullptr); }
+    else if (action == "exit") { ps4_boot_trace("shell: exit to the PS4 menu"); ps4_end_programs(); exit(0); }
     else if (action == "icon-open") open_desktop_icon(number_after(target, "icon:"));
     else if (action == "close-kind") {
         const int i = number_after(target, "taskbar:");
@@ -1785,12 +1785,14 @@ void click(const std::string &key, bool twice, float px, float py) {
         const int i = number_after(key, "power:");
         popup = Popup::None;
         if (i == 0) {
+            ps4_end_programs();
             const int r = sceSystemServiceLoadExec("/app0/eboot.bin", nullptr);
             char text[120];
             std::snprintf(text, sizeof text, "WinePS4 could not restart itself (%08x).", static_cast<unsigned>(r));
             show_message("Restart WinePS4", text);
         } else {
             ps4_boot_trace("shell: exit to the PS4 menu");
+            ps4_end_programs();
             exit(0);
         }
         return;

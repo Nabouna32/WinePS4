@@ -24,6 +24,8 @@ void ps4_shell_launch( char **args );
  * Windows command line, then its arguments, NULL-ended): its pid, or -1 (errno EAGAIN: not ready) */
 int ps4_wine_ready( void );
 int ps4_launch_program( char *const args[] );
+/* ends every program process, before the desktop exits or restarts */
+void ps4_end_programs( void );
 
 /* A program to start at the next start of the app (written by older versions; read and removed) */
 #define WINEPS4_LAUNCH_FILE "/data/WinePS4/launch.txt"

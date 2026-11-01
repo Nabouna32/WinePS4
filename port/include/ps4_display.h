@@ -52,6 +52,7 @@ enum ps4_input_type
 {
     PS4_INPUT_MOUSE = 1,  /* x, y in screen pixels (always absolute), flags = MOUSEEVENTF_*, data = wheel */
     PS4_INPUT_KEY,        /* vkey + scan, flags = KEYEVENTF_* (KEYEVENTF_UNICODE: scan is the character) */
+    PS4_INPUT_END_PROGRAMS, /* the desktop is ending: every program process is killed (ps4_end_programs) */
 };
 
 struct ps4_input_record
