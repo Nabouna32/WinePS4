@@ -506,71 +506,114 @@ pid_t fork( void )
 
 /* --- Starting a program process from a program ------------------------------------------------ */
 
-/* A system call that leaves errno alone: the child of a fork below runs nothing else */
-static long raw_call3( long number, long a, long b, long c )
-{
-    long ret;
-    __asm__ volatile( "syscall"
-                      : "=a" (ret)
-                      : "a" (number), "D" (a), "S" (b), "d" (c)
-                      : "rcx", "r8", "r9", "r10", "r11", "memory", "cc" );
-    return ret;
-}
-
+/* What the child of ps4_spawn reads: all of it in malloc'd memory, which a forked child has (Wine's
+ * thread stacks are in direct memory, which it doesn't: v00.29/30) */
 struct spawn_request
 {
-    const char *path;
-    char      **argv, **envp;
-    int         fd0, fd1;
-    pid_t       pid;
-    int         error;
+    const char *path;          /* 0 */
+    char      **argv;          /* 8 */
+    char      **envp;          /* 16 */
+    int         fd0, fd1;      /* 24, 28 */
+    const void *mask;          /* 32: the signal mask the program starts with (none blocked) */
+    const char *text;          /* 40: said when the exec fails */
+    long        text_len;      /* 48 */
+    unsigned char empty_mask[16];
 };
 
-static void *spawn_thread( void *arg )
+/* vfork (or fork) and exec, the child running only this code: no stack, nothing but system calls
+ * on the request (FreeBSD 9 on the PS4 clobbers rcx, r8-r11 in a syscall; rbx survives) */
+static long fork_exec( long syscall_number, struct spawn_request *req, long *child_pid )
 {
-    static const char failed_text[] = "wineps4: spawn: exec failed\n";
-    struct spawn_request *req = arg;
-    sigset_t all, none;
-    long ret, child = 0;
-    unsigned char failed;
+    long ret, flag;
 
-    sigfillset( &all );
-    sigemptyset( &none );
-    pthread_sigmask( SIG_SETMASK, &all, NULL );  /* nothing runs in the child before its exec */
-    __asm__ volatile( "syscall\n\tsetc %2"
-                      : "=a" (ret), "+d" (child), "=r" (failed)
-                      : "a" (2 /* SYS_fork */)
+    __asm__ volatile( "syscall\n\t"
+                      "jnc 1f\n\t"
+                      "movq $-1,%%rdx\n\t"          /* failed: rax = errno */
+                      "jmp 9f\n"
+                      "1:\ttestq %%rdx,%%rdx\n\t"   /* rdx: 0 in the parent, 1 in the child */
+                      "jz 9f\n\t"
+                      /* the child */
+                      "movl 24(%%rbx),%%edi\n\t"    /* dup2( fd0, 0 ) unless it is 0 or none */
+                      "testl %%edi,%%edi\n\t"
+                      "jle 2f\n\t"
+                      "xorl %%esi,%%esi\n\t"
+                      "movl $90,%%eax\n\t"
+                      "syscall\n"
+                      "2:\tmovl 28(%%rbx),%%edi\n\t" /* dup2( fd1, 1 ) unless it is 1 or none */
+                      "cmpl $1,%%edi\n\t"
+                      "je 3f\n\t"
+                      "testl %%edi,%%edi\n\t"
+                      "js 3f\n\t"
+                      "movl $1,%%esi\n\t"
+                      "movl $90,%%eax\n\t"
+                      "syscall\n"
+                      "3:\tmovl $3,%%edi\n\t"         /* sigprocmask( SIG_SETMASK, mask, NULL ) */
+                      "movq 32(%%rbx),%%rsi\n\t"
+                      "xorl %%edx,%%edx\n\t"
+                      "movl $340,%%eax\n\t"
+                      "syscall\n\t"
+                      "movq 0(%%rbx),%%rdi\n\t"     /* execve( path, argv, envp ) */
+                      "movq 8(%%rbx),%%rsi\n\t"
+                      "movq 16(%%rbx),%%rdx\n\t"
+                      "movl $59,%%eax\n\t"
+                      "syscall\n\t"
+                      "movl $2,%%edi\n\t"           /* it failed: write( 2, text, len ), exit( 127 ) */
+                      "movq 40(%%rbx),%%rsi\n\t"
+                      "movq 48(%%rbx),%%rdx\n\t"
+                      "movl $4,%%eax\n\t"
+                      "syscall\n\t"
+                      "movl $127,%%edi\n\t"
+                      "movl $1,%%eax\n\t"
+                      "syscall\n"
+                      "9:"
+                      : "=a" (ret), "=d" (flag)
+                      : "a" (syscall_number), "b" (req)
                       : "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory", "cc" );
-    if (!failed && child)
-    {
-        if (req->fd0 >= 0 && req->fd0 != 0) raw_call3( 90 /* SYS_dup2 */, req->fd0, 0, 0 );
-        if (req->fd1 >= 0 && req->fd1 != 1) raw_call3( 90 /* SYS_dup2 */, req->fd1, 1, 0 );
-        raw_call3( 340 /* SYS_sigprocmask */, 3 /* SIG_SETMASK */, (long)&none, 0 );
-        raw_call3( 59 /* SYS_execve */, (long)req->path, (long)req->argv, (long)req->envp );
-        raw_call3( 4 /* SYS_write */, 2, (long)failed_text, sizeof(failed_text) - 1 );
-        raw_call3( 1 /* SYS_exit */, 127, 0, 0 );
-    }
-    req->pid = failed ? -1 : (pid_t)ret;
-    req->error = failed ? (int)ret : 0;
-    return NULL;
+    if (flag < 0) return -(int)ret;
+    *child_pid = ret;
+    return 0;
 }
 
-/* Forks and execs path from a thread of its own: Wine's threads run on stacks in direct memory,
- * which a forked child does not get (it died at once, before running anything: v00.29), and the
- * child touches nothing but what the request holds (made by the caller in malloc'd memory). */
+/* Starts path (the app) as a new process: vfork, which the PS4 may not have (then fork). envp,
+ * argv and their strings must be malloc'd (see struct spawn_request). */
 pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 )
 {
-    struct spawn_request req = { path, argv, envp, fd0, fd1, -1, 0 };
-    pthread_t thread;
+    static const char failed_text[] = "wineps4: spawn: exec failed\n";
+    static int no_vfork;
+    struct spawn_request *req = calloc( 1, sizeof(*req) );
+    sigset_t all, old;
+    long err, pid = -1;
 
-    if (pthread_create( &thread, NULL, spawn_thread, &req ))
+    if (!req)
     {
-        errno = EAGAIN;
+        errno = ENOMEM;
         return -1;
     }
-    pthread_join( thread, NULL );
-    if (req.pid == -1) errno = req.error;
-    return req.pid;
+    req->path = path;
+    req->argv = argv;
+    req->envp = envp;
+    req->fd0 = fd0;
+    req->fd1 = fd1;
+    req->mask = req->empty_mask;
+    req->text = failed_text;
+    req->text_len = sizeof(failed_text) - 1;
+    sigfillset( &all );
+    pthread_sigmask( SIG_SETMASK, &all, &old );  /* nothing runs in the child before its exec */
+    err = no_vfork ? ENOSYS : -fork_exec( 66 /* SYS_vfork */, req, &pid );
+    if (err == ENOSYS)
+    {
+        if (!no_vfork) fprintf( stderr, "wineps4: no vfork, fork instead\n" );
+        no_vfork = 1;
+        err = -fork_exec( 2 /* SYS_fork */, req, &pid );
+    }
+    pthread_sigmask( SIG_SETMASK, &old, NULL );
+    free( req );
+    if (err)
+    {
+        errno = (int)err;
+        return -1;
+    }
+    return (pid_t)pid;
 }
 
 int execv( const char *path, char *const argv[] )
