@@ -11,9 +11,13 @@
  *  /data/WinePS4/prefix     the Wine prefix, copied from the package (/app0/wine/prefix) on first run
  *  /data/WinePS4/crash.log  ps4-kit's report of a crash (boot-trace.log: the start up to it)
  *  /data/WinePS4/hang.log   where Wine's threads are when the program has not finished after 20 s
- *                           (WINEPS4_HANG_DUMP=<seconds>, 0 = off) */
+ *                           (WINEPS4_HANG_DUMP=<seconds>, 0 = off)
+ *
+ * The programs are processes of their own, which the PS4 doesn't end with the app: each one ends
+ * itself when the desktop is gone (the lifeline, below). */
 #include <dirent.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -61,6 +65,7 @@ extern void __wine_main( int argc, char *argv[] );
 extern void ps4_thread_register( void );
 extern void ps4_start_hang_watch( void );
 extern void ps4_kit_set_min_thread_stack( size_t bytes );
+extern void ps4_process_exit_now( int status ) __attribute__((noreturn));
 
 /* ntdll starts every thread on a 1 MiB stack of its own (kernel_stack_size, pthread_attr_setstack):
  * ps4-kit's 2 MiB minimum would grow it past its end */
@@ -278,6 +283,60 @@ extern int ps4_program_process;
 extern int ps4_wineserver_stopped;
 extern void ps4_start_wineserver_listening( void );
 
+/* The lifeline: a pipe whose write end only the desktop holds (close-on-exec), its read end
+ * inherited by every process started from it, and theirs (WINEPS4_LIFELINE = its number). Nothing is
+ * ever written: the read returns when the desktop has ended, however it ended (closed from the PS4
+ * menu, crashed), and the process ends at once. Left running, a program kept its direct memory and
+ * its CPU time after the app was closed (a stuck wineboot spun on a core: a slow PS4, then a kernel
+ * panic). */
+static void make_lifeline( void )
+{
+    char value[16];
+    int fds[2];
+
+    if (pipe( fds ))
+    {
+        logf_( "wineps4: no lifeline pipe: %s\n", strerror( errno ) );
+        return;
+    }
+    fcntl( fds[1], F_SETFD, FD_CLOEXEC );
+    snprintf( value, sizeof(value), "%d", fds[0] );
+    setenv( "WINEPS4_LIFELINE", value, 1 );
+}
+
+static void *lifeline_thread( void *arg )
+{
+    const int fd = (int)(long)arg;
+    sigset_t set;
+    char c;
+
+    sigfillset( &set );
+    pthread_sigmask( SIG_BLOCK, &set, NULL );
+    while (read( fd, &c, 1 ) == -1 && errno == EINTR) ;
+    ps4_process_exit_now( 1 );  /* (nothing that may lock: the other threads may hold anything) */
+}
+
+static void watch_lifeline( void )
+{
+    const char *value = getenv( "WINEPS4_LIFELINE" );
+    pthread_attr_t attr;
+    pthread_t thread;
+    int fd;
+
+    if (!value || (fd = atoi( value )) <= 2 || fcntl( fd, F_GETFD ) == -1)
+    {
+        logf_( "wineps4: process %d: no lifeline (%s)\n", (int)getpid(), value ? value : "not set" );
+        return;
+    }
+    fcntl( fd, F_SETFD, 0 );  /* (kept across exec: the processes it starts watch it too) */
+    pthread_attr_init( &attr );
+    pthread_attr_setstacksize( &attr, 64 << 10 );
+    if (pthread_create( &thread, &attr, lifeline_thread, (void *)(long)fd ))
+        logf_( "wineps4: process %d: lifeline thread did not start\n", (int)getpid() );
+    else pthread_detach( thread );
+    pthread_attr_destroy( &attr );
+}
+
 static volatile int wine_ready;  /* the prefix is in place and wineserver listens */
 static volatile int wine_booted; /* wineboot has run (services.exe started), or gave up */
 static volatile int boot_pid = -1;
@@ -360,7 +419,8 @@ static void boot_windows( void )
     {
         if (time( NULL ) - start > 120)
         {
-            logf_( "wineps4: wineboot still running after 120 s; programs start anyway\n" );
+            logf_( "wineps4: wineboot still running after 120 s: ended; programs start anyway\n" );
+            kill( boot_pid, SIGKILL );
             break;
         }
         usleep( 100000 );
@@ -444,16 +504,17 @@ static int program_main( int argc, char **argv )
     ps4_program_process = 1;
     setvbuf( stdout, NULL, _IONBF, 0 );  /* (wine.log and the Terminal, through the desktop's pipe) */
     setvbuf( stderr, NULL, _IONBF, 0 );
+    watch_lifeline();
     if (argc < 2)
     {
         logf_( "wineps4: process %d: no program\n", (int)getpid() );
-        return 1;
+        ps4_process_exit_now( 1 );
     }
     logf_( "wineps4: process %d: %s\n", (int)getpid(), argv[1] );
     ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
     ps4_start_hang_watch();
     __wine_main( argc, argv );
-    return 0;
+    ps4_process_exit_now( 0 );  /* (returning from main would be ps4-kit's exit: the whole app) */
 }
 
 int main( int argc, char **argv )
@@ -476,6 +537,7 @@ int main( int argc, char **argv )
      * without it Wine hands them to start.exe */
     setenv( "WINEARCH", "wow64", 0 );
     load_env_file();
+    make_lifeline();
     setenv( "WINEPS4_PROGRAM", "1", 1 );  /* for the processes it starts (ps4_launch_program) */
 
     pthread_attr_init( &attr );
