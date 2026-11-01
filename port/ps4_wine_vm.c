@@ -11,8 +11,10 @@
  *    when they get PROT_EXEC (the probe ran code from there)
  *  - file mappings at fixed addresses are refused with ENODEV, which makes Wine read the file into
  *    memory instead: code can't run from file mappings on the PS4 (the probe faulted there), and
- *    that read is what PE images need. Writable shared mappings and the user shared data page stay
- *    real file mappings, so do mappings at an address of the kernel's choosing (session memory).
+ *    that read is what PE images need. Shared mappings (MAP_SHARED, without code) stay real file
+ *    mappings: the user shared data page, writable sections, and the wineserver's session memory,
+ *    which programs map read-only and must see change (a copy made them miss every window class,
+ *    v00.27); so do mappings at an address of the kernel's choosing.
  *
  * Pages are tracked per 16 KiB host page in a two-level table: 0 = not ours (passed to the kernel),
  * reserved, backed by flexible memory, or the index of the direct memory page behind it.
@@ -353,7 +355,7 @@ void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
     if (fd != -1 || !(flags & MAP_ANON))
     {
         if (!(flags & MAP_FIXED)) return __real_mmap( addr, len, prot, flags, fd, offset );
-        if (!((flags & MAP_SHARED) && ((prot & PROT_WRITE) || start == USD_ADDRESS)))
+        if (!(flags & MAP_SHARED) || ((prot & PROT_EXEC) && start != USD_ADDRESS))
         {
             LOG( "file mapping %p-%p refused: Wine reads it\n", addr, (char *)addr + len );
             errno = ENODEV;
