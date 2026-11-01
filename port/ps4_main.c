@@ -36,23 +36,49 @@
 #include "../shell/shell.h"
 #include "include/ps4_display.h"
 
-/* The C heap of a program process comes from direct memory: the system's flexible memory is one
- * pool for the whole app, and 256 MiB heaps for the desktop and two programs left none for the
- * explorer.exe they started, which never got going (v00.32 froze). The desktop keeps its heap
- * there (it forks: a forked child has flexible memory, not direct memory). Called before main and
- * any allocation: it only reads the environment. */
+#define DESKTOP_PID_FILE "/data/WinePS4/.desktop-pid"  /* the desktop's pid, written at its start */
+
+/* a system call before anything is set up: no errno, no libc (-1 when it failed) */
+static long early_syscall3( long number, long a, long b, long c )
+{
+    long ret;
+    unsigned char failed;
+
+    __asm__ volatile( "syscall\n\tsetc %1"
+                      : "=a" (ret), "=qm" (failed)
+                      : "a" (number), "D" (a), "S" (b), "d" (c)
+                      : "rcx", "r8", "r9", "r10", "r11", "memory", "cc" );
+    return failed ? -1 : ret;
+}
+
+/* a program process: its parent is the desktop (every program process is the desktop's child) */
+static int started_by_desktop( void )
+{
+    char text[16];
+    long fd, n, i, pid = 0;
+
+    if ((fd = early_syscall3( 5 /* SYS_open */, (long)DESKTOP_PID_FILE, 0 /* O_RDONLY */, 0 )) < 0) return 0;
+    n = early_syscall3( 3 /* SYS_read */, fd, (long)text, sizeof(text) - 1 );
+    early_syscall3( 6 /* SYS_close */, fd, 0, 0 );
+    for (i = 0; i < n && text[i] >= '0' && text[i] <= '9'; i++) pid = pid * 10 + text[i] - '0';
+    return pid > 0 && pid == early_syscall3( 39 /* SYS_getppid */, 0, 0, 0 );
+}
+
+/* The C heap of a program process comes from direct memory. The system's flexible memory is one
+ * pool shared by every process of the app, and the PS4 itself takes from it: the desktop's 256 MiB
+ * and 128 MiB for each program used it all up (v00.40: winedevice.exe, the 4th, got nothing and
+ * hung, and the PS4 froze; v00.32's explorer.exe the same). The desktop keeps its heap there.
+ * Called in static init, before main and any allocation: the environment is still empty then (the
+ * WINEPS4_PROGRAM test never matched), so the parent is what tells. */
 void ps4_kit_configure_heap( ps4_kit_heap_options *options )
 {
-    extern char **environ;
-    char **env;
-
-    for (env = environ; env && *env; env++)
-        if (!strncmp( *env, "WINESERVERSOCKET=", 17 ) || !strncmp( *env, "WINEPS4_PROGRAM=", 16 ))
-        {
-            options->source_order = PS4_KIT_HEAP_DIRECT_FIRST;
-            options->direct_max = 256u << 20;
-            return;
-        }
+    if (!started_by_desktop()) return;
+    options->source_order = PS4_KIT_HEAP_DIRECT_FIRST;
+    options->direct_max = 256u << 20;
+    /* no fallback into the flexible pools either (a child reads a nonsense amount of it free, and
+     * tried 512 GiB, 256 GiB, ...): the kit's last resort is direct memory again */
+    options->system_pool_max = 0;
+    options->regular_reserve = (size_t)-1 - (32u << 20);
 }
 
 #ifndef WINEPS4_VERSION
@@ -605,6 +631,14 @@ int main( int argc, char **argv )
     if (getenv( "WINESERVERSOCKET" ) || getenv( "WINEPS4_PROGRAM" )) return program_main( argc, argv );
 
     /* the desktop */
+    {
+        FILE *f = fopen( DESKTOP_PID_FILE, "w" );  /* (its children's heaps: ps4_kit_configure_heap) */
+        if (f)
+        {
+            fprintf( f, "%d\n", (int)getpid() );
+            fclose( f );
+        }
+    }
     open_log();
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );
     setenv( "HOME", DATA_DIR, 1 );
