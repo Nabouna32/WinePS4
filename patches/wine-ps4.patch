@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/23] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/24] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/23] WinePS4: wineserver main fixes
+Subject: [PATCH 02/24] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/23] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/24] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/23] server: send the first thread its request pipe in the
+Subject: [PATCH 04/24] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/23] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/24] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/23] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/24] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/23] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/24] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/23] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/24] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/23] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/24] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/23] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/24] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -893,7 +893,7 @@ index a06aa83..81e8555 100644
 From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:21:33 +0300
-Subject: [PATCH 11/23] WinePS4: a process per program: wineserver listens
+Subject: [PATCH 11/24] WinePS4: a process per program: wineserver listens
  (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
  thr_kill2 across processes
 
@@ -1048,7 +1048,7 @@ index 122208b..44fcfa7 100644
 From cc36d27af8fac614b7694b55514cd924bbb9c85f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:51:49 +0300
-Subject: [PATCH 12/23] WinePS4: the app wineserver never closes its socket
+Subject: [PATCH 12/24] WinePS4: the app wineserver never closes its socket
  (callers logged); no wineboot at program start
 
 ---
@@ -1094,7 +1094,7 @@ index 44fcfa7..e66524f 100644
 From 2651912be3a1aad91a90a2833e1312a0ec3eb967 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 03:11:50 +0300
-Subject: [PATCH 13/23] programs fill the shared data page themselves (wineboot
+Subject: [PATCH 13/24] programs fill the shared data page themselves (wineboot
  is skipped)
 
 ---
@@ -1124,7 +1124,7 @@ index f40d41f..41f5884 100644
 From 90e29674410e9ad3ffc58dffb83a893ff33a1a5f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:24:13 +0300
-Subject: [PATCH 14/23] wineps4.drv display driver + the desktop input pipe in
+Subject: [PATCH 14/24] wineps4.drv display driver + the desktop input pipe in
  the server
 
 ---
@@ -2056,7 +2056,7 @@ index 3e8ab2e..3048ccf 100644
 From 6b5c634711a7fbcdc1e41eb6abd45444b9921f57 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:34:30 +0300
-Subject: [PATCH 15/23] wineps4.drv: work area above the 60 px taskbar
+Subject: [PATCH 15/24] wineps4.drv: work area above the 60 px taskbar
 
 ---
  dlls/wineps4.drv/display.c | 2 +-
@@ -2082,7 +2082,7 @@ index 93fdcfb..e947d31 100755
 From af0965aa6bc9f2a34ff5586844a0660da1f53b2a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:12:22 +0300
-Subject: [PATCH 16/23] programs start programs with one fork (an orphan cannot
+Subject: [PATCH 16/24] programs start programs with one fork (an orphan cannot
  exec on the PS4); exec failures logged
 
 ---
@@ -2152,7 +2152,7 @@ index 4c2e7eb..67836bb 100644
 From e522bb1370611936c26405c3b984e0e2e9009f29 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:37:29 +0300
-Subject: [PATCH 17/23] spawn steps and failed children logged
+Subject: [PATCH 17/24] spawn steps and failed children logged
 
 ---
  dlls/ntdll/unix/process.c | 26 ++++++++++++++++++++++++++
@@ -2230,7 +2230,7 @@ index 67836bb..3007370 100644
 From ea3cbbf972e23f2ee73cabc6cfe3f2795c620466 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:45:16 +0300
-Subject: [PATCH 18/23] programs start processes from an app thread with an
+Subject: [PATCH 18/24] programs start processes from an app thread with an
  ordinary stack (ps4_spawn)
 
 ---
@@ -2326,7 +2326,7 @@ index 3007370..1bd8aee 100644
 From 491ce5e30e62e7650c69a8ab3ee8d50cb070cc3a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 06:06:53 +0300
-Subject: [PATCH 19/23] the new process environment strings in malloc memory
+Subject: [PATCH 19/24] the new process environment strings in malloc memory
 
 ---
  dlls/ntdll/unix/process.c | 11 +++++++----
@@ -2368,7 +2368,7 @@ index 1bd8aee..88d28c6 100644
 From 892873489067b68defd34126bf97af98365560ab Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 09:28:47 +0300
-Subject: [PATCH 20/23] WinePS4: wineboot runs once per app start (the desktop
+Subject: [PATCH 20/24] WinePS4: wineboot runs once per app start (the desktop
  starts it with WINEPS4_BOOT); programs wait for its event
 
 ---
@@ -2415,7 +2415,7 @@ index 88d28c6..9b07ec0 100644
 From b13ad1ef3a4578b1ff346c0643100095216d0473 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:13:44 +0300
-Subject: [PATCH 21/23] PS4: programs never run wineboot (the desktop does,
+Subject: [PATCH 21/24] PS4: programs never run wineboot (the desktop does,
  once); spawned processes logged
 
 ---
@@ -2449,7 +2449,7 @@ index e0d4c6d..9a22128 100644
 From 947f88752bee92f5fc6d1713481c88db741cf0d8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:14:01 +0300
-Subject: [PATCH 22/23] PS4: processes started from programs are logged
+Subject: [PATCH 22/24] PS4: processes started from programs are logged
 
 ---
  dlls/ntdll/unix/process.c | 1 +
@@ -2474,7 +2474,7 @@ index 9b07ec0..8460cd3 100644
 From 8d9d4ac998d9294c83655eed440a04ae1893e3df Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:36:46 +0300
-Subject: [PATCH 23/23] PS4: the desktop can have the server kill every program
+Subject: [PATCH 23/24] PS4: the desktop can have the server kill every program
  process; unwinding skips addresses outside the app
 
 ---
@@ -2593,6 +2593,61 @@ index 9408763..ccca2bd 100755
      /* none before the first program made the window station */
      if (!(desktop = get_hardware_input_desktop( 0 ))) return;
      if (!set_input_desktop( desktop->winstation, desktop ))
+-- 
+2.53.0
+
+
+From 4fca7680a58381e89d92907a71ea7cdcc408d85d Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sun, 1 Nov 2026 19:45:19 +0300
+Subject: [PATCH 24/24] PS4: a new process keeps the shared syscall dispatcher
+ pointer instead of writing back its own 0
+
+---
+ dlls/ntdll/unix/signal_x86_64.c | 4 ++++
+ dlls/ntdll/unix/virtual.c       | 7 +++++--
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/ntdll/unix/signal_x86_64.c b/dlls/ntdll/unix/signal_x86_64.c
+index 69acaa1..ebacf69 100644
+--- a/dlls/ntdll/unix/signal_x86_64.c
++++ b/dlls/ntdll/unix/signal_x86_64.c
+@@ -2943,6 +2943,10 @@ void signal_init_process(void)
+     /* 16 KiB host pages: this page is part of the USD's, already mapped; a mapping of its own would
+      * replace the USD too. virtual_map_user_shared_data() puts the pointer back after its remap. */
+     mprotect( user_shared_data, PS4_HOST_PAGE_SIZE, PROT_READ | PROT_WRITE );
++    /* (shared by every process: the app is at the same address in all of them) */
++    if (*(void **)ptr && *(void **)ptr != (void *)__wine_syscall_dispatcher)
++        MESSAGE( "wineps4: syscall dispatcher %p here, %p in the shared page\n",
++                 (void *)__wine_syscall_dispatcher, *(void **)ptr );
+ #else
+     anon_mmap_fixed( ptr, page_size, PROT_READ | PROT_WRITE, 0 );
+ #endif
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index 6d01de4..ccb9716 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -4408,7 +4408,10 @@ void virtual_map_user_shared_data(void)
+     }
+ #ifdef __PS4_WINE__
+     /* 16 KiB host pages: the server's file is one host page (create_user_data_mapping), mapped whole,
+-     * so it covers the syscall dispatcher pointer at 7ffe1000 too (signal_init_process): put it back */
++     * so it covers the syscall dispatcher pointer at 7ffe1000 too (signal_init_process), which every
++     * process shares. A new process has none yet here (signal_init_process comes later): the one in
++     * the file is kept. (v00.38: its 0 was written back, and wineboot's next system call went to
++     * address 0 when winemenubuilder, switched off, ended before setting its own.) */
+     void *dispatcher = *(void **)((char *)user_shared_data + page_size);
+ 
+     if ((res = server_get_unix_fd( section, 0, &fd, &needs_close, NULL, NULL )) ||
+@@ -4418,7 +4421,7 @@ void virtual_map_user_shared_data(void)
+         ERR( "failed to remap the process USD: %d\n", res );
+         exit(1);
+     }
+-    *(void **)((char *)user_shared_data + page_size) = dispatcher;
++    if (dispatcher) *(void **)((char *)user_shared_data + page_size) = dispatcher;
+ #else
+     if ((res = server_get_unix_fd( section, 0, &fd, &needs_close, NULL, NULL )) ||
+         (user_shared_data != mmap( user_shared_data, page_size, PROT_READ, MAP_SHARED|MAP_FIXED, fd, 0 )))
 -- 
 2.53.0
 
