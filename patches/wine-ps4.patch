@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/15] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/16] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/15] WinePS4: wineserver main fixes
+Subject: [PATCH 02/16] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/15] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/16] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/15] server: send the first thread its request pipe in the
+Subject: [PATCH 04/16] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/15] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/16] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/15] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/16] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/15] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/16] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/15] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/16] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/15] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/16] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/15] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/16] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -893,7 +893,7 @@ index a06aa83..81e8555 100644
 From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:21:33 +0300
-Subject: [PATCH 11/15] WinePS4: a process per program: wineserver listens
+Subject: [PATCH 11/16] WinePS4: a process per program: wineserver listens
  (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
  thr_kill2 across processes
 
@@ -1048,7 +1048,7 @@ index 122208b..44fcfa7 100644
 From cc36d27af8fac614b7694b55514cd924bbb9c85f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:51:49 +0300
-Subject: [PATCH 12/15] WinePS4: the app wineserver never closes its socket
+Subject: [PATCH 12/16] WinePS4: the app wineserver never closes its socket
  (callers logged); no wineboot at program start
 
 ---
@@ -1094,7 +1094,7 @@ index 44fcfa7..e66524f 100644
 From 2651912be3a1aad91a90a2833e1312a0ec3eb967 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 03:11:50 +0300
-Subject: [PATCH 13/15] programs fill the shared data page themselves (wineboot
+Subject: [PATCH 13/16] programs fill the shared data page themselves (wineboot
  is skipped)
 
 ---
@@ -1124,7 +1124,7 @@ index f40d41f..41f5884 100644
 From 90e29674410e9ad3ffc58dffb83a893ff33a1a5f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:24:13 +0300
-Subject: [PATCH 14/15] wineps4.drv display driver + the desktop input pipe in
+Subject: [PATCH 14/16] wineps4.drv display driver + the desktop input pipe in
  the server
 
 ---
@@ -2056,7 +2056,7 @@ index 3e8ab2e..3048ccf 100644
 From 6b5c634711a7fbcdc1e41eb6abd45444b9921f57 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:34:30 +0300
-Subject: [PATCH 15/15] wineps4.drv: work area above the 60 px taskbar
+Subject: [PATCH 15/16] wineps4.drv: work area above the 60 px taskbar
 
 ---
  dlls/wineps4.drv/display.c | 2 +-
@@ -2075,6 +2075,76 @@ index 93fdcfb..e947d31 100755
  
  UINT PS4DRV_UpdateDisplayDevices( const struct gdi_device_manager *manager, void *param )
  {
+-- 
+2.53.0
+
+
+From af0965aa6bc9f2a34ff5586844a0660da1f53b2a Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Sun, 1 Nov 2026 05:12:22 +0300
+Subject: [PATCH 16/16] programs start programs with one fork (an orphan cannot
+ exec on the PS4); exec failures logged
+
+---
+ dlls/ntdll/unix/loader.c  |  1 +
+ dlls/ntdll/unix/process.c | 14 ++++++++++++++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index 99abef8..ca40aa2 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -535,6 +535,7 @@ static NTSTATUS loader_exec( char **argv, WORD machine )
+     /* the app is the loader: a program process of it (port/ps4_main.c, WINESERVERSOCKET) */
+     argv[1] = (char *)"/app0/wineps4.bin";
+     execv( argv[1], argv + 1 );
++    MESSAGE( "wineps4: exec %s for %s failed: %s\n", argv[1], argv[2] ? argv[2] : "?", strerror( errno ));
+     return STATUS_INVALID_IMAGE_FORMAT;
+ #endif
+ 
+diff --git a/dlls/ntdll/unix/process.c b/dlls/ntdll/unix/process.c
+index 4c2e7eb..67836bb 100644
+--- a/dlls/ntdll/unix/process.c
++++ b/dlls/ntdll/unix/process.c
+@@ -416,10 +416,18 @@ static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int so
+         isatty(1) && is_unix_console_handle( params->hStdOutput ))
+         stdout_fd = 1;
+ 
++#ifdef __PS4_WINE__
++    /* one fork: an orphaned grandchild can't exec on the PS4 */
++    if (!(pid = fork()))  /* child */
++    {
++        if (1)
++        {
++#else
+     if (!(pid = fork()))  /* child */
+     {
+         if (!(pid = fork()))  /* grandchild */
+         {
++#endif
+             if ((peb->ProcessParameters && params->ProcessGroupId != peb->ProcessParameters->ProcessGroupId) ||
+                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC ||
+                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC_NO_WINDOW ||
+@@ -448,6 +456,11 @@ static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int so
+         _exit(pid == -1);
+     }
+ 
++#ifdef __PS4_WINE__
++    /* the child is the new process: reap the ones that ended since */
++    if (pid == -1) status = STATUS_NO_MEMORY;
++    while (waitpid( -1, NULL, WNOHANG ) > 0) ;
++#else
+     if (pid != -1)
+     {
+         /* reap child */
+@@ -457,6 +470,7 @@ static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int so
+         } while (wret < 0 && errno == EINTR);
+     }
+     else status = STATUS_NO_MEMORY;
++#endif
+ 
+     if (stdin_fd != -1 && stdin_fd != 0) close( stdin_fd );
+     if (stdout_fd != -1 && stdout_fd != 1) close( stdout_fd );
 -- 
 2.53.0
 

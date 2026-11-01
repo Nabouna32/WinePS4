@@ -14,18 +14,31 @@ import sys
 root = sys.argv[1]
 
 
-def edit(path, old, new, count=1):
+def edit(path, old, new, count=1, within=None):
+    """within: (start, end) markers of the part of the file to edit (fork_and_exec forks the same way)"""
     p = root + '/' + path
     s = open(p).read()
-    n = s.count(old)
+    a, b = 0, len(s)
+    if within:
+        a = s.index(within[0])
+        b = s.index(within[1], a)
+    part = s[a:b]
+    n = part.count(old)
     assert n == count, '%s: %d matches for %r' % (path, n, old[:70])
-    open(p, 'w').write(s.replace(old, new))
+    open(p, 'w').write(s[:a] + part.replace(old, new) + s[b:])
 
 
-edit('dlls/ntdll/unix/process.c', '''    if (!(pid = fork()))  /* child */
+SPAWN = ('static NTSTATUS spawn_process(', '__wine_unix_spawnvp')
+
+
+edit('dlls/ntdll/unix/process.c', '''        stdout_fd = 1;
+
+    if (!(pid = fork()))  /* child */
     {
         if (!(pid = fork()))  /* grandchild */
-        {''', '''#ifdef __PS4_WINE__
+        {''', '''        stdout_fd = 1;
+
+#ifdef __PS4_WINE__
     /* one fork: an orphaned grandchild can't exec on the PS4 */
     if (!(pid = fork()))  /* child */
     {
@@ -36,7 +49,7 @@ edit('dlls/ntdll/unix/process.c', '''    if (!(pid = fork()))  /* child */
     {
         if (!(pid = fork()))  /* grandchild */
         {
-#endif''')
+#endif''', within=SPAWN)
 
 edit('dlls/ntdll/unix/process.c', '''    if (pid != -1)
     {
@@ -60,7 +73,7 @@ edit('dlls/ntdll/unix/process.c', '''    if (pid != -1)
         } while (wret < 0 && errno == EINTR);
     }
     else status = STATUS_NO_MEMORY;
-#endif''')
+#endif''', within=SPAWN)
 
 edit('dlls/ntdll/unix/loader.c', '''    argv[1] = (char *)"/app0/wineps4.bin";
     execv( argv[1], argv + 1 );
