@@ -397,6 +397,8 @@ struct ps4_unixlib
 /* the Unix libraries linked into the app (ps4_unixlibs.c) */
 extern const struct ps4_unixlib ps4_unixlibs[];
 #define unixlibs ps4_unixlibs
+/* what dlopen( NULL ) gives: the main program, none of the libraries above */
+static const struct ps4_unixlib main_program;
 
 static char dl_error[256];
 
@@ -406,7 +408,7 @@ void *ps4_dlopen( const char *name, int flags )
     const struct ps4_unixlib *lib;
 
     (void)flags;
-    if (!name) return (void *)unixlibs;  /* the main program */
+    if (!name) return (void *)&main_program;
     base = strrchr( name, '/' );
     base = base ? base + 1 : name;
     for (lib = unixlibs; lib->name; lib++)
@@ -422,14 +424,17 @@ void *ps4_dlopen( const char *name, int flags )
 
 void *ps4_dlsym( void *handle, const char *name )
 {
-    const struct ps4_unixlib *lib = handle;
+    const struct ps4_unixlib *lib;
     int i;
 
-    if (lib && lib != unixlibs && lib->symbols)
+    /* one of the table's libraries, else the main program (dlopen( NULL ), RTLD_DEFAULT) */
+    for (lib = unixlibs; lib->name; lib++) if (lib == handle) break;
+    if (!lib->name) lib = &main_program;
+    if (lib != &main_program && lib->symbols)
         for (i = 0; lib->symbols[i].name; i++)
             if (!strcmp( lib->symbols[i].name, name )) return lib->symbols[i].addr;
     snprintf( dl_error, sizeof(dl_error), "%s: no such symbol", name );
-    if (lib && lib != unixlibs)
+    if (lib != &main_program)
         fprintf( stderr, "wineps4: library %s has no %s\n", lib->name, name );
     return NULL;
 }
