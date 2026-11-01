@@ -7,7 +7,7 @@ source "$HOME/ps4-kit/toolchain/env.sh"
 VERSION="${WINEPS4_VERSION:-00.00}"
 B="$PSB/build/wineps4"
 [ "${1:-}" = clean ] && { rm -rf "$B"; shift; }
-TARGET="${1:-wineps4}"
+TARGET="${1:-all}"  # all: the signed eboot too (wineps4 alone leaves the old one)
 export PATH="$PSB/host-tools/bin:$PATH" CLANG_VER
 need cmake ninja
 [ -f "$B/build.ninja" ] || ps4_cmake -S "$HERE" -B "$B" -G Ninja -DWINEPS4_VERSION="$VERSION" > "$PSB/logs/wineps4-configure.log" 2>&1 \
