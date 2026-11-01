@@ -26,7 +26,27 @@
 #include <unistd.h>
 
 #include "ps4_kit_diag.h"
+#include "ps4_kit.h"
 #include "../shell/shell.h"
+
+/* The C heap of a program process comes from direct memory: the system's flexible memory is one
+ * pool for the whole app, and 256 MiB heaps for the desktop and two programs left none for the
+ * explorer.exe they started, which never got going (v00.32 froze). The desktop keeps its heap
+ * there (it forks: a forked child has flexible memory, not direct memory). Called before main and
+ * any allocation: it only reads the environment. */
+void ps4_kit_configure_heap( ps4_kit_heap_options *options )
+{
+    extern char **environ;
+    char **env;
+
+    for (env = environ; env && *env; env++)
+        if (!strncmp( *env, "WINESERVERSOCKET=", 17 ) || !strncmp( *env, "WINEPS4_PROGRAM=", 16 ))
+        {
+            options->source_order = PS4_KIT_HEAP_DIRECT_FIRST;
+            options->direct_max = 256u << 20;
+            return;
+        }
+}
 
 #ifndef WINEPS4_VERSION
 #define WINEPS4_VERSION "00.00"
