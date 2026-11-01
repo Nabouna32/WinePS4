@@ -207,7 +207,7 @@ static int copy_system32_from_lib( void )
 
 /* Which prefix the console has: written once the copy is whole. A package with a newer one (v00.14:
  * the 32-bit side, syswow64) copies it over the old one; files the user added stay. */
-#define PREFIX_VERSION "3 display"
+#define PREFIX_VERSION "4 driver"
 #define PREFIX_MARK    PREFIX_DIR "/.wineps4-prefix"
 
 static int prefix_current( void )
