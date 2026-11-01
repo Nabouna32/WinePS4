@@ -7,6 +7,8 @@ v00.21: wineserver closed its socket and exited (0) once a program ended, though
 
 wineboot (run_wineboot, at every program's start when the prefix is new) is a process of its own
 that sets the prefix up: the package's prefix is set up already (the PC's wineboot made it).
+v00.22: wineboot is also where the shared data page gets filled (SystemCall = 1): without it every
+PE system call faulted (heap handle 0, endless exceptions), so programs fill it themselves (v00.23).
 
   python3 scripts/apply-server-stays-edits.py ~/wine-ps4-build/src/wine
 """
@@ -39,6 +41,9 @@ edit('dlls/ntdll/unix/env.c', '''static void run_wineboot( WCHAR *env, SIZE_T si
 {''', '''static void run_wineboot( WCHAR *env, SIZE_T size )
 {
 #ifdef __PS4_WINE__
-    return;  /* the package's prefix is set up already (the PC's wineboot made it) */
+    /* the package's prefix is set up already (the PC's wineboot made it); the shared data
+     * page (SystemCall = 1 and the cpu info) is filled here, before PE code runs */
+    virtual_init_user_shared_data();
+    return;
 #endif''')
 print('ok')
