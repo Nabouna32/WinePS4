@@ -115,6 +115,32 @@ endfunction()
 wine_unixlib_one(win32u wine_win32u_unix)
 wine_unixlib_one(wineps4drv wine_ps4drv_unix)
 
+# the other modules' Unix halves: name, the module's folder, its #pragma makedep unix files, then
+# DEFS and the module's EXTRADEFS
+function(wine_module_unixlib name dir)
+    cmake_parse_arguments(M "" "" "SOURCES;DEFS" ${ARGN})
+    list(TRANSFORM M_SOURCES PREPEND ${WINE_SRC}/dlls/${dir}/)
+    add_library(wine_${name}_unix OBJECT ${M_SOURCES})
+    target_include_directories(wine_${name}_unix BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/dlls/${dir} ${WINE_SRC}/include ${WINE_GEN_INCLUDE})
+    target_compile_definitions(wine_${name}_unix PRIVATE ${WINE_UNIX_DEFS} ${M_DEFS})
+    target_compile_options(wine_${name}_unix PRIVATE ${WINE_UNIX_OPTS})
+    wine_unixlib_one(${name} wine_${name}_unix)
+    set(${name}_ONE ${${name}_ONE} PARENT_SCOPE)
+endfunction()
+wine_module_unixlib(ws2_32 ws2_32 SOURCES unixlib.c DEFS _WS2_32_)
+# (nsiproxy: needs net/if.h, if_nameindex: not in the PS4 libc yet)
+# wine_module_unixlib(nsiproxy nsiproxy.sys SOURCES icmp_echo.c ip.c ndis.c nsi.c tcp.c udp.c)
+# (dnsapi: needs libresolv; DNS will go through the PS4 resolver)
+# wine_module_unixlib(dnsapi dnsapi SOURCES libresolv.c)
+wine_module_unixlib(mountmgr mountmgr.sys SOURCES cred.c dbus.c diskarb.c unixlib.c)
+set(MODULE_UNIXLIBS ws2_32 mountmgr)
+set(MODULE_UNIXLIB_OBJECTS)
+set(MODULE_UNIXLIB_TARGETS)
+foreach(m ${MODULE_UNIXLIBS})
+    list(APPEND MODULE_UNIXLIB_OBJECTS ${${m}_ONE})
+    list(APPEND MODULE_UNIXLIB_TARGETS ${m}_one)
+endforeach()
+
 # --- The desktop ---------------------------------------------------------------------------------
 # A Windows 11-style desktop on the CPU (shell/), with HENkaku's canvas (ps4_canvas.cpp).
 set(SHELL_DIR ${CMAKE_CURRENT_LIST_DIR}/../shell)
@@ -130,8 +156,8 @@ target_compile_options(wine_shell PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++20> 
 # --- The app -------------------------------------------------------------------------------------
 add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/ps4_wine_dirs.c ${PORT}/unused_reals.c
     ${PORT}/ps4_unixlibs.c
-    $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} $<TARGET_OBJECTS:wine_shell>)
-add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one)
+    $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} ${MODULE_UNIXLIB_OBJECTS} $<TARGET_OBJECTS:wine_shell>)
+add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one ${MODULE_UNIXLIB_TARGETS})
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include ${WINEPS4_FREETYPE}/include)
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")

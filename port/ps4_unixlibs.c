@@ -1,6 +1,6 @@
 /* WinePS4: the Unix libraries linked into the app, for ps4_dlopen/ps4_dlsym (ps4_wine_port.c).
  *
- * win32u.so and wineps4.so are Unix halves of builtin DLLs: ntdll looks up their
+ * win32u.so, wineps4.so and the MODULE ones are Unix halves of builtin DLLs: ntdll looks up their
  * __wine_unix_call_funcs (renamed when linked, see app/CMakeLists.txt). libfreetype.so.6 is what
  * win32u's freetype.c loads the FreeType functions from. */
 #include <stddef.h>
@@ -35,6 +35,27 @@ static const struct ps4_symbol wineps4drv_symbols[] =
     { NULL, NULL }
 };
 
+/* the other modules' Unix halves (app/CMakeLists.txt, wine_module_unixlib); MODULE_WOW64 for the
+ * ones with a 32-bit table too (an unresolved weak reference would be an import create-fself
+ * can't place) */
+#define MODULE(m) \
+    extern const void *m##_unix_call_funcs[]; \
+    static const struct ps4_symbol m##_symbols[] = \
+    { \
+        { "__wine_unix_call_funcs", m##_unix_call_funcs }, \
+        { NULL, NULL } \
+    };
+#define MODULE_WOW64(m) \
+    extern const void *m##_unix_call_funcs[], *m##_unix_call_wow64_funcs[]; \
+    static const struct ps4_symbol m##_symbols[] = \
+    { \
+        { "__wine_unix_call_funcs", m##_unix_call_funcs }, \
+        { "__wine_unix_call_wow64_funcs", m##_unix_call_wow64_funcs }, \
+        { NULL, NULL } \
+    };
+MODULE_WOW64(ws2_32)
+MODULE(mountmgr)
+
 #define FT(f) { #f, (void *)f }
 static const struct ps4_symbol freetype_symbols[] =
 {
@@ -55,6 +76,8 @@ const struct ps4_unixlib ps4_unixlibs[] =
 {
     { "win32u.so", win32u_symbols },
     { "wineps4.so", wineps4drv_symbols },
+    { "ws2_32.so", ws2_32_symbols },
+    { "mountmgr.so", mountmgr_symbols },
     { "libfreetype.so.6", freetype_symbols },
     { NULL, NULL }
 };
