@@ -68,11 +68,17 @@ static int started_by_desktop( void )
  * pool shared by every process of the app, and the PS4 itself takes from it: the desktop's 256 MiB
  * and 128 MiB for each program used it all up (v00.40: winedevice.exe, the 4th, got nothing and
  * hung, and the PS4 froze; v00.32's explorer.exe the same). The desktop keeps its heap there.
- * Called in static init, before main and any allocation: the environment is still empty then (the
- * WINEPS4_PROGRAM test never matched), so the parent is what tells. */
+ * Called while the system libraries start, before _start, main and any allocation: no environment
+ * yet, so the parent is what tells. (v00.33-v00.41 never ran this: ps4_kit.h declared it weak, and
+ * the linker kept the kit's empty one.) The log tag shows in boot-trace.log which one ran. */
 void ps4_kit_configure_heap( ps4_kit_heap_options *options )
 {
-    if (!started_by_desktop()) return;
+    if (!started_by_desktop())
+    {
+        options->log_tag = "desktop";
+        return;
+    }
+    options->log_tag = "program";
     options->source_order = PS4_KIT_HEAP_DIRECT_FIRST;
     options->direct_max = 256u << 20;
     /* no fallback into the flexible pools either (a child reads a nonsense amount of it free, and
