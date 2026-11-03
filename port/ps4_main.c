@@ -2,7 +2,8 @@
  * (loader/main.c) on a thread of its own for the program picked there.
  *
  *  /data/WinePS4/wine.log   everything Wine writes to stdout/stderr, and the program's console output
- *                           (also shown in the desktop's Terminal)
+ *                           (also shown in the desktop's Terminal), each line with the seconds since
+ *                           the app started
  *  /data/WinePS4/env.txt    optional KEY=VALUE lines put in the environment first (WINEDEBUG=+server);
  *                           the desktop's Settings write its switches there
  *  /data/WinePS4/launch.txt the program to run now (one argument per line): the desktop writes it,
@@ -10,8 +11,9 @@
  *  /data/WinePS4/run.txt    optional, for testing: a program to run at every start, like launch.txt
  *  /data/WinePS4/prefix     the Wine prefix, copied from the package (/app0/wine/prefix) on first run
  *  /data/WinePS4/crash.log  ps4-kit's report of a crash (boot-trace.log: the start up to it)
- *  /data/WinePS4/hang.log   where Wine's threads are when the program has not finished after 20 s
- *                           (WINEPS4_HANG_DUMP=<seconds>, 0 = off)
+ *  /data/WinePS4/hang.log   where Wine's threads are when the program has not finished after
+ *                           WINEPS4_HANG_DUMP seconds (Settings > Diagnostics > Hang report; off
+ *                           without it: services, explorer.exe and windowed programs run on)
  *
  * The programs are processes of their own: the desktop has the PS4 start each one as a local process
  * of the app (the ones programs start too: port/ps4_spawn_desk.c), which the system suspends and ends
@@ -124,17 +126,44 @@ static void logf_( const char *fmt, ... )
 }
 
 static int log_fd = -1;
+static struct timespec app_start;
 
-/* stdout and stderr through a pipe: into wine.log and the desktop's Terminal */
+/* seconds since the app started */
+static double app_seconds( void )
+{
+    struct timespec now;
+
+    clock_gettime( CLOCK_MONOTONIC, &now );
+    return (now.tv_sec - app_start.tv_sec) + (now.tv_nsec - app_start.tv_nsec) / 1e9;
+}
+
+/* stdout and stderr through a pipe: into wine.log, each line with the seconds since the app started
+ * (what each start waits for), and the desktop's Terminal as they are */
 static void *output_thread( void *arg )
 {
-    char buffer[4096];
+    static char buffer[4096], out[4096 * 16];  /* (room for a time on every character) */
     ssize_t n;
-    int fd = (int)(long)arg;
+    int fd = (int)(long)arg, line_start = 1;
 
     while ((n = read( fd, buffer, sizeof(buffer) )) > 0)
     {
-        if (log_fd >= 0) write( log_fd, buffer, n );
+        if (log_fd >= 0)
+        {
+            const char *p = buffer, *end = buffer + n;
+            size_t len = 0;
+
+            while (p < end)
+            {
+                const char *newline = memchr( p, '\n', end - p ), *next = newline ? newline + 1 : end;
+
+                if (line_start) len += snprintf( out + len, sizeof(out) - len, "[%7.2f] ", app_seconds() );
+                memcpy( out + len, p, next - p );
+                len += next - p;
+                line_start = newline != NULL;
+                p = next;
+            }
+            write( log_fd, out, len );
+        }
         ps4_shell_output( buffer, n );
     }
     return NULL;
@@ -145,6 +174,7 @@ static void open_log( void )
     int fds[2];
     pthread_t thread;
 
+    clock_gettime( CLOCK_MONOTONIC, &app_start );
     mkdir( DATA_DIR, 0777 );
     log_fd = open( DATA_DIR "/wine.log", O_WRONLY | O_CREAT | O_TRUNC, 0666 );
     if (log_fd < 0) return;
@@ -299,7 +329,7 @@ static void setup_prefix( void )
 
     if (prefix_current()) return;
     logf_( "wineps4: copying the prefix (" PREFIX_VERSION ") from " WINE_APP_DIR "/prefix\n" );
-    ps4_shell_status( "setting up Windows (first start of this version, about a minute)" );
+    ps4_shell_status( "copying its files (first start of a version that has new ones, about a minute)" );
     start = time( NULL );
     mkdir( PREFIX_DIR, 0777 );
     if (!copy_tree( WINE_APP_DIR "/prefix/drive_c", PREFIX_DIR "/drive_c" ) || !copy_system32_from_lib() ||
@@ -382,7 +412,8 @@ static void watch_lifeline( void )
 
 static volatile int wine_ready;  /* the prefix is in place and wineserver listens */
 static volatile int wine_booted; /* wineboot has run (services.exe started), or gave up */
-static volatile int boot_pid = -1;
+static volatile int desktop_up;  /* explorer.exe has made the Windows desktop, ended, or gave up */
+static volatile int boot_pid = -1, explorer_pid = -1;
 
 extern pthread_mutex_t ps4_spawn_lock;
 extern int ps4_spawn_broker_start( void );
@@ -430,13 +461,14 @@ static int children_left( void )
     return n;
 }
 
-int ps4_wine_ready( void ) { return wine_ready && wine_booted; }
+int ps4_wine_ready( void ) { return wine_ready && wine_booted && desktop_up; }
 
 /* a program process has ended (the reaper's wait, or a local process's socket) */
 static void process_gone( int pid, int code )
 {
     child_ended( pid );
     if (pid == boot_pid) wine_booted = 1;
+    else if (pid == explorer_pid) explorer_pid = -1;  /* (a program's first window starts another) */
     else ps4_shell_program_exited( pid, code );
 }
 
@@ -547,20 +579,71 @@ static void disable_prefix_update( void )
     }
 }
 
-/* Services the prefix starts with Windows (Start 2) that only start when something asks for them
- * here (Start 3). The PS4 runs 7 processes of an app at most (local processes: ps4_spawn_desk.c), and
- * these took 2 of them, plus a winedevice.exe each for drivers that aren't built in (v00.43; a second
- * Window test then found no room for its explorer.exe): Eventlog (an svchost.exe), PlugPlay
- * (plugplay.exe, which starts winebus and winebth), NDIS and nsiproxy (the network drivers;
- * nsiproxy.so isn't built yet). services.exe and MountMgr (the drives) stay. Done on the registry
- * file before wineserver loads it, every start (a new prefix copy has them at 2 again). */
-static void demand_start_services( void )
+/* What Windows starts by itself, trimmed. The PS4 runs 7 processes of an app at most (local
+ * processes: ps4_spawn_desk.c), and every start of the app waited for each of these (about a second
+ * a process):
+ *  - services the prefix starts with Windows (Start 2) that start here only when something asks for
+ *    them (3): Eventlog (an svchost.exe), PlugPlay (plugplay.exe), NDIS and nsiproxy (the network
+ *    drivers; nsiproxy.so isn't built yet). They took 2 of the 7 (v00.43: a second Window test found
+ *    no room for its explorer.exe).
+ *  - the root devices of drivers that aren't built in, winebus and winebth: services.exe starts the
+ *    driver of every root device whatever its Start, a winedevice.exe each that failed (c0000135);
+ *    without their Service value they are left alone.
+ *  - winemenubuilder.exe, which wineboot runs from RunServices (menu entries for Linux desktops; it
+ *    failed too, c0000135).
+ * services.exe and MountMgr (the drives) stay. Done on the registry file before wineserver loads it,
+ * every start (a new prefix copy has them again); written only when an edit applied. */
+struct reg_edit
 {
-    static const char *const names[] = { "Eventlog", "PlugPlay", "NDIS", "nsiproxy" };
-    static const char key[] = "[System\\\\ControlSet001\\\\Services\\\\";
-    static const char automatic[] = "\"Start\"=dword:00000002";
-    char *text, *p, *next, *start, changed[128] = "";
+    const char *key;   /* as in the file: backslashes doubled */
+    const char *from;  /* the start of one of the key's lines */
+    const char *to;    /* what it starts with instead (as long), or NULL: the line goes */
+    const char *name;  /* for the log */
+};
+
+static const struct reg_edit startup_edits[] =
+{
+    { "System\\\\ControlSet001\\\\Services\\\\Eventlog", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "Eventlog" },
+    { "System\\\\ControlSet001\\\\Services\\\\PlugPlay", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "PlugPlay" },
+    { "System\\\\ControlSet001\\\\Services\\\\NDIS", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "NDIS" },
+    { "System\\\\ControlSet001\\\\Services\\\\nsiproxy", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "nsiproxy" },
+    { "System\\\\ControlSet001\\\\Enum\\\\ROOT\\\\WINE\\\\WINEBUS", "\"Service\"=\"winebus\"", NULL, "winebus" },
+    { "System\\\\ControlSet001\\\\Enum\\\\ROOT\\\\WINE\\\\WINEBTH", "\"Service\"=\"winebth\"", NULL, "winebth" },
+    { "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\RunServices", "\"winemenubuilder\"=", NULL, "winemenubuilder" },
+};
+
+/* one edit of the registry file's text (*size: its length): whether it applied */
+static int apply_reg_edit( char *text, size_t *size, const struct reg_edit *edit )
+{
+    const size_t from_len = strlen( edit->from );
+    char header[160], *line, *end;
+
+    snprintf( header, sizeof(header), "\n[%s]", edit->key );
+    if (!(line = strstr( text, header ))) return 0;
+    line += strlen( header );
+    if (!(end = strstr( line, "\n[" ))) end = text + *size;  /* (the key's lines end at the next key) */
+    for (; (line = memchr( line, '\n', end - line )); line++)
+    {
+        if (strncmp( line + 1, edit->from, from_len )) continue;
+        if (edit->to) memcpy( line + 1, edit->to, from_len );
+        else  /* from its newline to the next one */
+        {
+            char *next = memchr( line + 1, '\n', text + *size - (line + 1) );
+            const size_t gone = (next ? next : text + *size) - line;
+
+            memmove( line, line + gone, text + *size - (line + gone) + 1 );
+            *size -= gone;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static void trim_windows_startup( void )
+{
+    char *text, demand[128] = "", off[128] = "";
     unsigned int i;
+    size_t len;
     long size;
     FILE *f = fopen( PREFIX_DIR "/system.reg", "rb" );
 
@@ -575,55 +658,66 @@ static void demand_start_services( void )
     }
     if (fread( text, 1, size, f ) != (size_t)size) size = 0;
     fclose( f );
-    text[size > 0 ? size : 0] = 0;
-    for (i = 0; size > 0 && i < sizeof(names) / sizeof(names[0]); i++)
-        for (p = text; (p = strstr( p, key )); p++)
+    len = size > 0 ? size : 0;
+    text[len] = 0;
+    for (i = 0; len && i < sizeof(startup_edits) / sizeof(startup_edits[0]); i++)
+        if (apply_reg_edit( text, &len, &startup_edits[i] ))
         {
-            char *name = p + sizeof(key) - 1;
-            const size_t len = strlen( names[i] );
-
-            if ((p != text && p[-1] != '\n') || strncmp( name, names[i], len ) || name[len] != ']') continue;
-            next = strstr( name, "\n[" );  /* (the next key) */
-            if ((start = strstr( name, automatic )) && (!next || start < next))
-            {
-                start[sizeof(automatic) - 2] = '3';
-                strcat( changed, " " );
-                strcat( changed, names[i] );
-            }
-            break;
+            strcat( startup_edits[i].to ? demand : off, " " );
+            strcat( startup_edits[i].to ? demand : off, startup_edits[i].name );
         }
-    if (changed[0] && (f = fopen( PREFIX_DIR "/system.reg.new", "wb" )))
+    if ((demand[0] || off[0]) && (f = fopen( PREFIX_DIR "/system.reg.new", "wb" )))
     {
-        const int ok = fwrite( text, 1, size, f ) == (size_t)size;
+        const int ok = fwrite( text, 1, len, f ) == len;
         if (!fclose( f ) && ok && !rename( PREFIX_DIR "/system.reg.new", PREFIX_DIR "/system.reg" ))
-            logf_( "wineps4: Windows services that start only when asked for now:%s\n", changed );
+        {
+            if (demand[0]) logf_( "wineps4: Windows services that start only when asked for now:%s\n", demand );
+            if (off[0]) logf_( "wineps4: no longer started with Windows:%s\n", off );
+        }
     }
     free( text );
 }
 
 /* Wine's startup, once per app start: wineboot --init (this machine's registry keys, then
- * services.exe, which stays). The programs wait for it (ps4_wine_ready). */
+ * services.exe, which stays), and beside it the Windows desktop, explorer.exe /desktop, which stays
+ * too (the wineserver no longer closes the desktop when its last program ends: server/winstation.c).
+ * A program's first window waited for explorer.exe otherwise, and for the rpcss.exe it starts, every
+ * time the last program had ended; the first one also for the font cache it makes (FreeType reads
+ * every font). The programs wait for both (ps4_wine_ready): explorer.exe until its display driver
+ * reaches the desktop (the desktop window is made), it ends, or 20 s passed. */
 static void boot_windows( void )
 {
-    static char *const args[] = { (char *)"C:\\windows\\system32\\wineboot.exe", (char *)"--init", NULL };
-    const time_t start = time( NULL );
+    static char *const boot_args[] = { (char *)"C:\\windows\\system32\\wineboot.exe", (char *)"--init", NULL };
+    static char *const desktop_args[] = { (char *)"C:\\windows\\system32\\explorer.exe", (char *)"/desktop", NULL };
+    const double start = app_seconds();
+    int pid;
 
     disable_prefix_update();
-    ps4_shell_status( "starting Windows services" );
-    boot_pid = launch( args, "WINEPS4_BOOT=1" );
+    boot_pid = launch( boot_args, "WINEPS4_BOOT=1" );
     if (boot_pid == -1) logf_( "wineps4: wineboot did not start: %s\n", strerror( errno ) );
+    explorer_pid = pid = launch( desktop_args, NULL );
+    if (pid == -1) logf_( "wineps4: explorer.exe did not start: %s\n", strerror( errno ) );
     while (!wine_booted && boot_pid != -1)
     {
-        if (time( NULL ) - start > 120)
+        if (app_seconds() - start > 120)
         {
             logf_( "wineps4: wineboot still running after 120 s: ended; programs start anyway\n" );
             ps4_local_kill( boot_pid );
             break;
         }
-        usleep( 100000 );
+        usleep( 20000 );
     }
-    if (wine_booted) logf_( "wineps4: wineboot done in %ld s\n", (long)(time( NULL ) - start) );
+    if (wine_booted) logf_( "wineps4: wineboot done in %.1f s\n", app_seconds() - start );
     wine_booted = 1;
+    while (pid != -1 && explorer_pid == pid && !ps4_shell_display_connected( pid ) && app_seconds() - start < 20)
+        usleep( 20000 );
+    if (pid != -1)
+    {
+        if (explorer_pid != pid) logf_( "wineps4: explorer.exe ended before it made the desktop\n" );
+        else if (!ps4_shell_display_connected( pid )) logf_( "wineps4: no Windows desktop after 20 s: programs start anyway\n" );
+        else logf_( "wineps4: Windows desktop up in %.1f s\n", app_seconds() - start );
+    }
+    desktop_up = 1;
 }
 
 /* the programs' ends, for the desktop */
@@ -665,20 +759,22 @@ static int read_program( const char *path, int remove_it, char **args, int max )
     return n > 0;
 }
 
-/* the desktop's Windows: the prefix (copied on a version's first start), then wineserver; then what
- * launch.txt or run.txt asks for */
+/* the desktop's Windows: the prefix (copied on a version's first start), wineserver, Windows' own
+ * startup; then what launch.txt or run.txt asks for */
 static void *setup_thread( void *arg )
 {
     static char *args[64];
     pthread_t reaper;
+    int waited;
 
-    ps4_shell_status( "setting up Windows" );
+    ps4_shell_status( "starting" );
     setup_prefix();
-    demand_start_services();
+    trim_windows_startup();
     ps4_start_wineserver_listening();
-    /* (the socket appears in the server directory once the thread has opened it; a server that
-     * can't start ends at once) */
-    usleep( 500000 );
+    /* (its socket is there once the thread has opened it, before the registry loads: the first
+     * program queues; a server that can't start ends at once) */
+    for (waited = 0; waited < 20 && !__atomic_load_n( &ps4_wineserver_stopped, __ATOMIC_SEQ_CST ); waited++)
+        usleep( 5000 );
     if (__atomic_load_n( &ps4_wineserver_stopped, __ATOMIC_SEQ_CST ))
     {
         ps4_shell_status( "did not start: wineserver stopped (see /data/WinePS4/wine.log)" );
@@ -690,7 +786,7 @@ static void *setup_thread( void *arg )
     if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
     boot_windows();
     ps4_shell_status( NULL );
-    logf_( "wineps4: Windows is ready\n" );
+    logf_( "wineps4: Windows is ready, %.1f s after the app started\n", app_seconds() );
     if (read_program( WINEPS4_LAUNCH_FILE, 1, args, 64 ) || read_program( DATA_DIR "/run.txt", 0, args, 64 ))
         ps4_shell_launch( args );
     return NULL;

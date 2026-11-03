@@ -277,7 +277,8 @@ void ps4_wine_exit( int status )
 /* --- Hang dump ---------------------------------------------------------------------------------
  * ps4-kit's thread dump signals with SIGUSR1, which is Wine's (and blocked during every server
  * call), so Wine's threads are dumped here with SIGXCPU, which Wine neither uses nor blocks. When
- * the program has not finished after WINEPS4_HANG_DUMP seconds (default 20, 0 = off), every thread
+ * the program has not finished after WINEPS4_HANG_DUMP seconds (Settings > Diagnostics > Hang report
+ * sets 20; off without it: services, explorer.exe and windowed programs run on), every thread
  * registered above writes its instruction pointer and the return addresses into the eboot on its
  * stack to /data/WinePS4/hang.log; twice more 30 s apart. Eboot addresses are as linked (the ELF
  * vaddrs: the image is linked at its base): symbolize with llvm-symbolizer --obj=<elf>. */
@@ -386,7 +387,7 @@ static void *hang_watch_thread( void *arg )
 void ps4_start_hang_watch( void )
 {
     const char *env = getenv( "WINEPS4_HANG_DUMP" );
-    int seconds = env ? atoi( env ) : 20;
+    int seconds = env ? atoi( env ) : 0;
     struct sigaction sa;
     pthread_t thread;
 

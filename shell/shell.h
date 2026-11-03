@@ -21,6 +21,9 @@ void ps4_shell_program_exited( int pid, int code );
 void ps4_shell_launch( char **args );
 /* a message for the user, shown like a program's end (the PS4 refused another process) */
 void ps4_shell_notice( const char *text );
+/* whether a program process's display driver has reached the desktop (explorer.exe's: the Windows
+ * desktop is made) */
+int ps4_shell_display_connected( int pid );
 
 /* From the desktop, in the port: whether wineserver is up, and starting a program (its Unix path or
  * Windows command line, then its arguments, NULL-ended): its pid, or -1 (errno EAGAIN: not ready) */

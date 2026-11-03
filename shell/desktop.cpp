@@ -768,7 +768,7 @@ struct Toggle {
 };
 
 const Toggle TOGGLES[] = {
-    {"Hang report", "Writes where Wine is stuck to hang.log when a program runs for 20 s and more", "WINEPS4_HANG_DUMP", "", "0"},
+    {"Hang report", "Writes where Wine is stuck to hang.log when a program runs for 20 s and more", "WINEPS4_HANG_DUMP", "20", ""},
     {"Wine debug messages", "Exceptions and DLL loading in wine.log (WINEDEBUG=+seh,+loaddll)", "WINEDEBUG", "+seh,+loaddll", ""},
     {"Memory log", "Every mapping of WinePS4's memory layer in wine.log (slow)", "WINEPS4_VM_LOG", "1", ""},
 };
@@ -1028,10 +1028,10 @@ void run_program(const std::string &path) {
             out.push_back(r);
     write_lines(RECENT_FILE, out);
     if (!ps4_wine_ready()) {
-        // (the first start after an update copies Windows' files): it starts when that's done
+        // (Windows starts with the app: a few seconds): it starts when that's done
         std::lock_guard lock(launch_lock);
         launch_queue.push_back(args);
-        toast = Toast{base_name(path) + " starts when Windows is set up", now_seconds() + 6};
+        toast = Toast{base_name(path) + " starts once Windows has started", now_seconds() + 6};
         return;
     }
     const std::string error = launch(args);

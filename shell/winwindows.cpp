@@ -8,12 +8,14 @@
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <set>
 
 #include <pthread.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include "../port/include/ps4_display.h"
+#include "shell.h"
 
 namespace shell {
 namespace {
@@ -33,6 +35,7 @@ struct WinWindow {
 
 std::mutex lock;
 std::map<uint64_t, WinWindow> windows;
+std::set<int> connected;  // the processes whose display driver is connected
 uint64_t next_order = 1;
 std::atomic<bool> changed{false};
 
@@ -132,6 +135,8 @@ void *client_thread(void *arg) {
         if (m.type == PS4_DISPLAY_HELLO) {
             pid = m.pid;
             std::fprintf(stderr, "shell: display: process %d connected\n", pid);
+            std::lock_guard guard(lock);
+            connected.insert(pid);
             continue;
         }
         handle(m, data);
@@ -139,6 +144,7 @@ void *client_thread(void *arg) {
     close(fd);
     // the program ended: its windows go
     std::lock_guard guard(lock);
+    connected.erase(pid);
     for (auto it = windows.begin(); it != windows.end();)
         it = it->second.pid == pid ? windows.erase(it) : std::next(it);
     changed = true;
@@ -302,3 +308,8 @@ void winwin_text(const std::string &utf8) {
 }
 
 } // namespace shell
+
+extern "C" int ps4_shell_display_connected(int pid) {
+    std::lock_guard guard(shell::lock);
+    return shell::connected.count(pid) ? 1 : 0;
+}
