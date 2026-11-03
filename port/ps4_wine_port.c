@@ -243,9 +243,20 @@ int ps4_program_process;   /* this process runs a Windows program (set by ps4_ma
 int ps4_wineserver_stopped;  /* the desktop's wineserver ended (it failed to start) */
 static int program_ended;  /* the hang dump stops then */
 
+int ps4_control_fd = -1;  /* a local process's socket to the desktop (port/ps4_spawn_desk.c) */
+
+/* a local process tells the desktop its exit code: one system call, nothing that may lock */
+static void tell_exit( int status )
+{
+    const struct { uint32_t magic; int32_t code; } msg = { 0x54495845 /* "EXIT" */, status };
+
+    if (ps4_control_fd >= 0) raw_syscall3( 4 /* SYS_write */, ps4_control_fd, (long)&msg, sizeof(msg) );
+}
+
 /* ends this process now, with no flush and no lock (a program process only) */
 void ps4_process_exit_now( int status )
 {
+    tell_exit( status );
     for (;;) raw_syscall3( 1 /* SYS_exit */, status, 0, 0 );
 }
 
@@ -255,6 +266,7 @@ void ps4_wine_exit( int status )
     if (ps4_program_process)
     {
         fflush( NULL );
+        tell_exit( status );
         for (;;) raw_syscall3( 1 /* SYS_exit */, status, 0, 0 );
     }
     fprintf( stderr, "wineps4: wineserver ended (%d), exit from %p\n", status, __builtin_return_address( 0 ));

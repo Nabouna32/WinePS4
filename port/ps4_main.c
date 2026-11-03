@@ -13,10 +13,10 @@
  *  /data/WinePS4/hang.log   where Wine's threads are when the program has not finished after 20 s
  *                           (WINEPS4_HANG_DUMP=<seconds>, 0 = off)
  *
- * The programs are processes of their own, which the PS4 doesn't end with the app. All of them are
- * the desktop's children (the ones programs start too: port/ps4_spawn_desk.c), which it ends and
- * collects before it exits (ps4_end_programs); each one ends itself when the desktop is gone (the
- * lifeline, below). */
+ * The programs are processes of their own: the desktop has the PS4 start each one as a local process
+ * of the app (the ones programs start too: port/ps4_spawn_desk.c), which the system suspends and ends
+ * with the app; Power > Exit ends them first (ps4_end_programs). Where the PS4 refuses that, they are
+ * the desktop's forked children, which end themselves when the desktop is gone (the lifeline). */
 #include <dirent.h>
 #include <pthread.h>
 #include <signal.h>
@@ -36,9 +36,9 @@
 #include "../shell/shell.h"
 #include "include/ps4_display.h"
 
-#define DESKTOP_PID_FILE "/data/WinePS4/.desktop-pid"  /* the desktop's pid, written at its start */
+#define DESKTOP_LOCK_FILE "/data/WinePS4/.desktop-lock"  /* locked by the desktop while it runs */
 
-/* a system call before anything is set up: no errno, no libc (-1 when it failed) */
+/* a system call before anything is set up: no errno, no libc (-errno when it failed) */
 static long early_syscall3( long number, long a, long b, long c )
 {
     long ret;
@@ -48,20 +48,28 @@ static long early_syscall3( long number, long a, long b, long c )
                       : "=a" (ret), "=qm" (failed)
                       : "a" (number), "D" (a), "S" (b), "d" (c)
                       : "rcx", "r8", "r9", "r10", "r11", "memory", "cc" );
-    return failed ? -1 : ret;
+    return failed ? -ret : ret;
 }
 
-/* a program process: its parent is the desktop (every program process is the desktop's child) */
-static int started_by_desktop( void )
-{
-    char text[16];
-    long fd, n, i, pid = 0;
+static long desktop_lock = -1;  /* the desktop's descriptor of DESKTOP_LOCK_FILE, locked */
 
-    if ((fd = early_syscall3( 5 /* SYS_open */, (long)DESKTOP_PID_FILE, 0 /* O_RDONLY */, 0 )) < 0) return 0;
-    n = early_syscall3( 3 /* SYS_read */, fd, (long)text, sizeof(text) - 1 );
+/* A program process: the desktop holds the lock. Otherwise this is the desktop, which takes it now
+ * (FreeBSD flags and numbers). (Its parent no longer tells: the PS4 starts the programs, as local
+ * processes of the app.) */
+static int is_program_process( void )
+{
+    long fd = early_syscall3( 5 /* SYS_open */, (long)DESKTOP_LOCK_FILE, 0x0202 /* O_RDWR | O_CREAT */, 0666 );
+    long ret;
+
+    if (fd < 0) return 0;  /* (no data folder yet: the very first start, the desktop's) */
+    if ((ret = early_syscall3( 131 /* SYS_flock */, fd, 2 | 4 /* LOCK_EX | LOCK_NB */, 0 )) == 0)
+    {
+        early_syscall3( 92 /* SYS_fcntl */, fd, 2 /* F_SETFD */, 1 /* FD_CLOEXEC */ );
+        desktop_lock = fd;
+        return 0;
+    }
     early_syscall3( 6 /* SYS_close */, fd, 0, 0 );
-    for (i = 0; i < n && text[i] >= '0' && text[i] <= '9'; i++) pid = pid * 10 + text[i] - '0';
-    return pid > 0 && pid == early_syscall3( 39 /* SYS_getppid */, 0, 0, 0 );
+    return ret == -35 /* EWOULDBLOCK */;
 }
 
 /* The C heap of a program process comes from direct memory. The system's flexible memory is one
@@ -69,11 +77,11 @@ static int started_by_desktop( void )
  * and 128 MiB for each program used it all up (v00.40: winedevice.exe, the 4th, got nothing and
  * hung, and the PS4 froze; v00.32's explorer.exe the same). The desktop keeps its heap there.
  * Called while the system libraries start, before _start, main and any allocation: no environment
- * yet, so the parent is what tells. (v00.33-v00.41 never ran this: ps4_kit.h declared it weak, and
- * the linker kept the kit's empty one.) The log tag shows in boot-trace.log which one ran. */
+ * yet, so the desktop's lock is what tells. (v00.33-v00.41 never ran this: ps4_kit.h declared it
+ * weak, and the linker kept the kit's empty one.) The log tag shows in boot-trace.log which one ran. */
 void ps4_kit_configure_heap( ps4_kit_heap_options *options )
 {
-    if (!started_by_desktop())
+    if (!is_program_process())
     {
         options->log_tag = "desktop";
         return;
@@ -81,9 +89,9 @@ void ps4_kit_configure_heap( ps4_kit_heap_options *options )
     options->log_tag = "program";
     options->source_order = PS4_KIT_HEAP_DIRECT_FIRST;
     options->direct_max = 256u << 20;
-    /* no fallback into the flexible pools either (a child reads a nonsense amount of it free, and
-     * tried 512 GiB, 256 GiB, ...): the kit's last resort is direct memory again */
-    options->system_pool_max = 0;
+    /* 128 MiB of the system pool only when direct memory failed; never regular flexible memory (a
+     * forked child reads a nonsense amount of it free, and tried 512 GiB, 256 GiB, ...) */
+    options->system_pool_max = 128u << 20;
     options->regular_reserve = (size_t)-1 - (32u << 20);
 }
 
@@ -378,6 +386,13 @@ static volatile int boot_pid = -1;
 
 extern pthread_mutex_t ps4_spawn_lock;
 extern int ps4_spawn_broker_start( void );
+extern int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, int fd2, int server_fd );
+extern int ps4_local_kill_all( void );
+extern void ps4_local_kill( int pid );
+extern int ps4_local_child( int argc, char **argv );
+extern int ps4_local_child_setup( int *argc_out, char ***argv_out );
+
+static int local_child;  /* this program process is a local process (the PS4 started it) */
 
 /* the desktop's children that have not been collected yet (the reaper's) */
 #define MAX_CHILDREN 256
@@ -417,14 +432,31 @@ static int children_left( void )
 
 int ps4_wine_ready( void ) { return wine_ready && wine_booted; }
 
+/* a program process has ended (the reaper's wait, or a local process's socket) */
+static void process_gone( int pid, int code )
+{
+    child_ended( pid );
+    if (pid == boot_pid) wine_booted = 1;
+    else ps4_shell_program_exited( pid, code );
+}
+
+/* a local process has ended, with its exit code (-1: it ended without telling one) */
+void ps4_process_ended( int pid, int code )
+{
+    if (code == -1) logf_( "wineps4: process %d ended (no exit code)\n", pid );
+    else logf_( "wineps4: process %d ended (exit code %d)\n", pid, code );
+    process_gone( pid, code );
+}
+
 /* Starts /app0/wineps4.bin for args (a Unix path or Windows command line, then its arguments), with
- * extra_env added to the environment when it isn't NULL: its pid, or -1. The child only execs (the
- * desktop has threads: nothing that may lock after fork). */
+ * extra_env added to the environment when it isn't NULL: its pid, or -1. A local process of the app;
+ * where the PS4 refuses that, forked (the child only execs: the desktop has threads, nothing that
+ * may lock after fork). */
 static int launch( char *const args[], const char *extra_env )
 {
     extern char **environ;
     char *argv[66], **envp = environ;
-    int argc = 0, pid, count = 0;
+    int argc = 0, pid, count = 0, local;
 
     argv[argc++] = (char *)"/app0/wineps4.bin";
     while (args[argc - 1] && argc < 65) argv[argc] = args[argc - 1], argc++;
@@ -443,16 +475,18 @@ static int launch( char *const args[], const char *extra_env )
         envp[count + 1] = NULL;
     }
     pthread_mutex_lock( &ps4_spawn_lock );
-    pid = fork();
-    if (pid == 0)
+    local = ps4_local_spawn( argv, envp, -1, 1, 2, -1 );
+    if (local != -ENOSYS) pid = local < 0 ? -1 : local;
+    else if ((pid = fork()) == 0)
     {
         execve( argv[0], argv, envp );
         _exit( 127 );  /* (the kernel's exit: not ps4-kit's, which would close the app) */
     }
-    if (pid > 0) ps4_child_started( pid );
+    else if (pid > 0) ps4_child_started( pid );
     pthread_mutex_unlock( &ps4_spawn_lock );
     if (envp != environ) free( envp );
-    if (pid > 0) logf_( "wineps4: started %s (process %d)\n", args[0], pid );
+    if (local < 0 && local != -ENOSYS) errno = -local;
+    if (pid > 0) logf_( "wineps4: started %s (%s %d)\n", args[0], local == -ENOSYS ? "forked process" : "local process", pid );
     return pid;
 }
 
@@ -462,14 +496,13 @@ int ps4_launch_program( char *const args[] )
 }
 
 /* Before the desktop ends or restarts: the wineserver kills every Windows process it knows, the
- * desktop every child it has left (the ones that never got to the wineserver too), and this waits
- * (3 s at most) for the reaper to have collected them all: the PS4 doesn't end them with the app,
- * and froze closing it while one was there */
+ * system every local process, the desktop every child it has left (the ones that never got to the
+ * wineserver too), and this waits (3 s at most) for all of them to be gone */
 void ps4_end_programs( void )
 {
     extern int ps4_ended_count, ps4_end_done;
     const struct ps4_input_record record = { PS4_INPUT_END_PROGRAMS };
-    int i, waited, total;
+    int i, waited, total, locals;
 
     if (!wine_ready) return;
     if (__atomic_load_n( &ps4_wineserver_stopped, __ATOMIC_SEQ_CST ))
@@ -483,13 +516,14 @@ void ps4_end_programs( void )
         else logf_( "wineps4: wineserver ended %d processes\n", ps4_ended_count );
     }
     pthread_mutex_lock( &ps4_spawn_lock );  /* (none starts from here on) */
+    locals = ps4_local_kill_all();
     pthread_mutex_lock( &children_lock );
     total = child_count;
     for (i = 0; i < child_count; i++) kill( children[i], SIGKILL );
     pthread_mutex_unlock( &children_lock );
     for (waited = 0; waited < 300 && children_left(); waited++) usleep( 10000 );
     if (children_left()) logf_( "wineps4: %d of %d processes still there after 3 s\n", children_left(), total );
-    else logf_( "wineps4: all %d processes ended and collected\n", total );
+    else logf_( "wineps4: all %d processes ended (%d local)\n", total, locals );
     usleep( 200000 );  /* (the log's thread writes it out) */
 }
 
@@ -529,7 +563,7 @@ static void boot_windows( void )
         if (time( NULL ) - start > 120)
         {
             logf_( "wineps4: wineboot still running after 120 s: ended; programs start anyway\n" );
-            kill( boot_pid, SIGKILL );
+            ps4_local_kill( boot_pid );
             break;
         }
         usleep( 100000 );
@@ -550,9 +584,7 @@ static void *reaper_thread( void *arg )
             const int code = WIFEXITED( status ) ? WEXITSTATUS( status ) : 128 + WTERMSIG( status );
             logf_( "wineps4: process %d ended (%s %d)\n", (int)pid, WIFEXITED( status ) ? "exit code" : "signal",
                    WIFEXITED( status ) ? code : WTERMSIG( status ) );
-            child_ended( pid );
-            if (pid == boot_pid) wine_booted = 1;
-            else ps4_shell_program_exited( pid, code );
+            process_gone( pid, code );
         }
         else sleep( 1 );  /* none running */
     }
@@ -615,7 +647,7 @@ static int program_main( int argc, char **argv )
     ps4_program_process = 1;
     setvbuf( stdout, NULL, _IONBF, 0 );  /* (wine.log and the Terminal, through the desktop's pipe) */
     setvbuf( stderr, NULL, _IONBF, 0 );
-    watch_lifeline();
+    if (!local_child) watch_lifeline();  /* (a local process watches its socket to the desktop) */
     if (argc < 2)
     {
         logf_( "wineps4: process %d: no program\n", (int)getpid() );
@@ -634,19 +666,27 @@ int main( int argc, char **argv )
     pthread_attr_t attr;
 
     ps4_kit_set_min_thread_stack( WINE_KERNEL_STACK_SIZE );
+    if (ps4_local_child( argc, argv ))  /* the PS4 started it: what to run comes from the desktop */
+    {
+        char **program_argv;
+        int program_argc;
+
+        if (!ps4_local_child_setup( &program_argc, &program_argv )) ps4_process_exit_now( 127 );
+        local_child = 1;
+        return program_main( program_argc, program_argv );
+    }
     if (getenv( "WINESERVERSOCKET" ) || getenv( "WINEPS4_PROGRAM" )) return program_main( argc, argv );
 
-    /* the desktop */
+    /* the desktop: holds its lock (taken in static init unless the data folder wasn't there yet) */
+    if (desktop_lock < 0)
     {
-        FILE *f = fopen( DESKTOP_PID_FILE, "w" );  /* (its children's heaps: ps4_kit_configure_heap) */
-        if (f)
-        {
-            fprintf( f, "%d\n", (int)getpid() );
-            fclose( f );
-        }
+        mkdir( DATA_DIR, 0777 );
+        is_program_process();
     }
     open_log();
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );
+    if (desktop_lock < 0)
+        logf_( "wineps4: %s could not be locked: programs will take the system's memory\n", DESKTOP_LOCK_FILE );
     setenv( "HOME", DATA_DIR, 1 );
     setenv( "USER", "ps4", 1 );
     setenv( "WINEPREFIX", PREFIX_DIR, 1 );
