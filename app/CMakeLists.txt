@@ -133,7 +133,9 @@ wine_module_unixlib(ws2_32 ws2_32 SOURCES unixlib.c DEFS _WS2_32_)
 # (dnsapi: needs libresolv; DNS will go through the PS4 resolver)
 # wine_module_unixlib(dnsapi dnsapi SOURCES libresolv.c)
 wine_module_unixlib(mountmgr mountmgr.sys SOURCES cred.c dbus.c diskarb.c unixlib.c)
-set(MODULE_UNIXLIBS ws2_32 mountmgr)
+# (crypt32: the root certificates, from the package's list (Wine patch); no GnuTLS: no PFX import)
+wine_module_unixlib(crypt32 crypt32 SOURCES unixlib.c DEFS _CRYPT32_)
+set(MODULE_UNIXLIBS ws2_32 mountmgr crypt32)
 set(MODULE_UNIXLIB_OBJECTS)
 set(MODULE_UNIXLIB_TARGETS)
 foreach(m ${MODULE_UNIXLIBS})
@@ -155,7 +157,7 @@ target_compile_options(wine_shell PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++20> 
 
 # --- The app -------------------------------------------------------------------------------------
 add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/ps4_wine_dirs.c ${PORT}/unused_reals.c ${PORT}/ps4_spawn_desk.c
-    ${PORT}/ps4_unixlibs.c
+    ${PORT}/ps4_unixlibs.c ${PORT}/ps4_net.c
     $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} ${MODULE_UNIXLIB_OBJECTS} $<TARGET_OBJECTS:wine_shell>)
 add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one ${MODULE_UNIXLIB_TARGETS})
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include ${WINEPS4_FREETYPE}/include)

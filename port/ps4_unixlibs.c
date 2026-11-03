@@ -55,6 +55,7 @@ static const struct ps4_symbol wineps4drv_symbols[] =
     };
 MODULE_WOW64(ws2_32)
 MODULE(mountmgr)
+MODULE_WOW64(crypt32)
 
 #define FT(f) { #f, (void *)f }
 static const struct ps4_symbol freetype_symbols[] =
@@ -78,6 +79,7 @@ const struct ps4_unixlib ps4_unixlibs[] =
     { "wineps4.so", wineps4drv_symbols },
     { "ws2_32.so", ws2_32_symbols },
     { "mountmgr.so", mountmgr_symbols },
+    { "crypt32.so", crypt32_symbols },
     { "libfreetype.so.6", freetype_symbols },
     { NULL, NULL }
 };

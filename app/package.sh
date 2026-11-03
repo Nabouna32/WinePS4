@@ -9,6 +9,7 @@
 # /app0/wine/lib/wine/x86_64-windows   Wine's 64-bit PE DLLs and programs (no import libraries)
 # /app0/wine/lib/wine/i386-windows     its 32-bit ones (WoW64: 32-bit programs in the 64-bit process)
 # /app0/wine/share/wine                nls files, wine.inf
+# /app0/wine/share/ca-certificates.crt the root certificates (crypt32)
 # /app0/wine/prefix                    the prefix without dosdevices/ and without system32's and
 #                                      syswow64's copies of the DLLs above (system32-from-lib.txt lists
 #                                      them as system32/<name> and syswow64/<name>: the first run
@@ -36,6 +37,9 @@ cp "$ROOT/app/sce_sys/icon0.png" "$STAGE/sce_sys/"
 rsync -a --exclude '*.a' "$HOSTWINE/lib/wine/x86_64-windows/" "$STAGE/wine/lib/wine/x86_64-windows/"
 rsync -a --exclude '*.a' "$HOSTWINE/lib/wine/i386-windows/" "$STAGE/wine/lib/wine/i386-windows/"
 rsync -a "$HOSTWINE/share/wine" "$STAGE/wine/share/"
+# the root certificates Windows programs trust (crypt32, Wine patch): Mozilla's list (Ubuntu's
+# ca-certificates, MPL 2.0); the console has none of its own
+cp "$ROOT/app/certs/ca-certificates.crt" "$STAGE/wine/share/ca-certificates.crt"
 rsync -a --exclude dosdevices "$PREFIX/" "$STAGE/wine/prefix/"
 
 : > "$STAGE/wine/system32-from-lib.txt"

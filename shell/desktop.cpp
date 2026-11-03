@@ -142,6 +142,11 @@ bool is_dir(const std::string &path) {
     return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
+bool is_file(const std::string &path) {
+    struct stat st{};
+    return stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
 // --- what the program's thread reports (any thread) --------------------------------------------
 
 std::mutex program_lock;
@@ -1396,7 +1401,7 @@ struct Pin {
 const Pin PINS[] = {
     {"Files", Icon::Folder, 0}, {"Terminal", Icon::Terminal, 1}, {"Settings", Icon::Settings, 2},
     {"C: drive", Icon::Drive, 3}, {"Wine test", Icon::Program, 4}, {"32-bit test", Icon::Program, 6},
-    {"Window test", Icon::Program, 7},
+    {"Window test", Icon::Program, 7}, {"Steam", Icon::Package, 8},
 };
 // the pins share one row (narrower as there are more), so "Recent programs" below stays clear
 Rect pin_rect(int i) {
@@ -1426,6 +1431,20 @@ struct DesktopIcon {
 const DesktopIcon DESKTOP_ICONS[] = {{"This PS4", Icon::Computer, 5}, {"C: drive", Icon::Drive, 3}, {"Terminal", Icon::Terminal, 1}};
 Rect desktop_icon_rect(int i) { return Rect{16, 16 + i * 116, 104, 108}; }
 
+// Steam: the client once it is installed, else its installer, put in WinePS4's folder
+void start_steam() {
+    const std::string folder = std::string(C_DRIVE) + "/Program Files (x86)/Steam/";
+    for (const char *name : {"steam.exe", "Steam.exe"})
+        if (is_file(folder + name)) {
+            ask_run(folder + name);
+            return;
+        }
+    if (is_file(std::string(DATA_DIR) + "/SteamSetup.exe"))
+        ask_run(std::string(DATA_DIR) + "/SteamSetup.exe");
+    else
+        show_message("Steam", "Put SteamSetup.exe (from store.steampowered.com) in /data/WinePS4 to install Steam.");
+}
+
 void start_action(int action) {
     popup = Popup::None;
     switch (action) {
@@ -1437,6 +1456,7 @@ void start_action(int action) {
     case 5: open_window(Kind::Files, ""); break;
     case 6: ask_run("/app0/wine/hello32.exe"); break;
     case 7: ask_run("/app0/wine/window.exe"); break;
+    case 8: start_steam(); break;
     }
 }
 

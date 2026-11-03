@@ -213,6 +213,29 @@ static void load_env_file( void )
     fclose( f );
 }
 
+/* The console's name for Windows (port/ps4_net.c): its System Name (Settings > System > System
+ * Information) as a computer name: letters, digits and '-', 15 at most (Windows' NetBIOS names) */
+extern int sceSystemServiceParamGetString( int id, char *buffer, size_t size );
+
+static void set_computer_name( void )
+{
+    char name[65] = "", out[16];
+    size_t i, n = 0;
+
+    if (sceSystemServiceParamGetString( 6 /* SYSTEM_NAME */, name, sizeof(name) )) name[0] = 0;
+    for (i = 0; name[i] && n < sizeof(out) - 1; i++)
+    {
+        const char c = name[i];
+
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) out[n++] = c;
+        else if (n && out[n - 1] != '-') out[n++] = '-';
+    }
+    while (n && out[n - 1] == '-') n--;
+    out[n] = 0;
+    setenv( "WINEPS4_HOSTNAME", n ? out : "PS4", 0 );  /* (env.txt may set it) */
+    logf_( "wineps4: computer name %s\n", getenv( "WINEPS4_HOSTNAME" ) );
+}
+
 static unsigned long long copied_bytes;
 static unsigned int copied_files;
 
@@ -847,6 +870,7 @@ int main( int argc, char **argv )
      * without it Wine hands them to start.exe */
     setenv( "WINEARCH", "wow64", 0 );
     load_env_file();
+    set_computer_name();
     make_lifeline();
     setenv( "WINEPS4_PROGRAM", "1", 1 );  /* for the processes it starts (ps4_launch_program) */
 

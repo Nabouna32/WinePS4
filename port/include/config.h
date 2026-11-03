@@ -14,6 +14,9 @@
 #define HAVE_ELF_H 1
 #define HAVE_FUTIMES 1
 #define HAVE_GETADDRINFO 1
+/* ps4-kit's: the kernel's kern.arandom (the C library's is a stub; without it ntdll only read
+ * /dev/urandom, which leaves the buffer as it was when it can't be opened: BCryptGenRandom, TLS keys) */
+#define HAVE_GETRANDOM 1
 #define HAVE_IFADDRS_H 1
 #define HAVE_INTTYPES_H 1
 #define HAVE_NETDB_H 1
@@ -34,6 +37,7 @@
 #define HAVE_STRUCT_STAT_ST_MTIM 1
 #define HAVE_STRUCT_STAT_ST_BIRTHTIM 1
 #define HAVE_SYS_PARAM_H 1
+#define HAVE_SYS_RANDOM_H 1
 #define HAVE_SYS_RESOURCE_H 1
 #define HAVE_SYS_STATFS_H 1
 #define HAVE_SYS_STATVFS_H 1

@@ -351,6 +351,19 @@ static inline int ps4_no_fstatfs( int fd, struct statfs *buf ) { (void)fd; (void
 #define fstatfs(fd, buf) ps4_no_fstatfs( fd, buf )
 #define statfs(path, buf) ps4_no_fstatfs( -1, buf )
 
+/* --- The console's name (port/ps4_net.c) ---------------------------------------------------------
+ * The C library's gethostname is a stub (ENOSYS: Windows had no computer name), and a lookup of the
+ * console's own name went to DNS through the PS4's resolver (ps4-kit): wineboot looks it up at every
+ * start, and a name the router doesn't know takes up to 2 x 5 s there. */
+struct addrinfo;
+struct hostent;
+int ps4_gethostname( char *name, size_t size );
+int ps4_getaddrinfo( const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res );
+struct hostent *ps4_gethostbyname( const char *name );
+#define gethostname ps4_gethostname
+#define getaddrinfo ps4_getaddrinfo
+#define gethostbyname ps4_gethostbyname
+
 /* The TEB of the calling thread, kept in ordinary TLS: inside a signal handler the PS4 does not give
  * the thread's GS base back, and Wine's handlers find the TEB through %gs. */
 extern __thread void *ps4_thread_teb;
