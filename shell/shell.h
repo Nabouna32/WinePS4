@@ -19,6 +19,8 @@ void ps4_shell_output( const char *text, size_t len );
 void ps4_shell_status( const char *text );
 void ps4_shell_program_exited( int pid, int code );
 void ps4_shell_launch( char **args );
+/* a message for the user, shown like a program's end (the PS4 refused another process) */
+void ps4_shell_notice( const char *text );
 
 /* From the desktop, in the port: whether wineserver is up, and starting a program (its Unix path or
  * Windows command line, then its arguments, NULL-ended): its pid, or -1 (errno EAGAIN: not ready) */

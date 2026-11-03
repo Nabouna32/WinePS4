@@ -547,6 +547,60 @@ static void disable_prefix_update( void )
     }
 }
 
+/* Services the prefix starts with Windows (Start 2) that only start when something asks for them
+ * here (Start 3). The PS4 runs 7 processes of an app at most (local processes: ps4_spawn_desk.c), and
+ * these took 2 of them, plus a winedevice.exe each for drivers that aren't built in (v00.43; a second
+ * Window test then found no room for its explorer.exe): Eventlog (an svchost.exe), PlugPlay
+ * (plugplay.exe, which starts winebus and winebth), NDIS and nsiproxy (the network drivers;
+ * nsiproxy.so isn't built yet). services.exe and MountMgr (the drives) stay. Done on the registry
+ * file before wineserver loads it, every start (a new prefix copy has them at 2 again). */
+static void demand_start_services( void )
+{
+    static const char *const names[] = { "Eventlog", "PlugPlay", "NDIS", "nsiproxy" };
+    static const char key[] = "[System\\\\ControlSet001\\\\Services\\\\";
+    static const char automatic[] = "\"Start\"=dword:00000002";
+    char *text, *p, *next, *start, changed[128] = "";
+    unsigned int i;
+    long size;
+    FILE *f = fopen( PREFIX_DIR "/system.reg", "rb" );
+
+    if (!f) return;
+    fseek( f, 0, SEEK_END );
+    size = ftell( f );
+    fseek( f, 0, SEEK_SET );
+    if (size <= 0 || !(text = malloc( size + 1 )))
+    {
+        fclose( f );
+        return;
+    }
+    if (fread( text, 1, size, f ) != (size_t)size) size = 0;
+    fclose( f );
+    text[size > 0 ? size : 0] = 0;
+    for (i = 0; size > 0 && i < sizeof(names) / sizeof(names[0]); i++)
+        for (p = text; (p = strstr( p, key )); p++)
+        {
+            char *name = p + sizeof(key) - 1;
+            const size_t len = strlen( names[i] );
+
+            if ((p != text && p[-1] != '\n') || strncmp( name, names[i], len ) || name[len] != ']') continue;
+            next = strstr( name, "\n[" );  /* (the next key) */
+            if ((start = strstr( name, automatic )) && (!next || start < next))
+            {
+                start[sizeof(automatic) - 2] = '3';
+                strcat( changed, " " );
+                strcat( changed, names[i] );
+            }
+            break;
+        }
+    if (changed[0] && (f = fopen( PREFIX_DIR "/system.reg.new", "wb" )))
+    {
+        const int ok = fwrite( text, 1, size, f ) == (size_t)size;
+        if (!fclose( f ) && ok && !rename( PREFIX_DIR "/system.reg.new", PREFIX_DIR "/system.reg" ))
+            logf_( "wineps4: Windows services that start only when asked for now:%s\n", changed );
+    }
+    free( text );
+}
+
 /* Wine's startup, once per app start: wineboot --init (this machine's registry keys, then
  * services.exe, which stays). The programs wait for it (ps4_wine_ready). */
 static void boot_windows( void )
@@ -620,6 +674,7 @@ static void *setup_thread( void *arg )
 
     ps4_shell_status( "setting up Windows" );
     setup_prefix();
+    demand_start_services();
     ps4_start_wineserver_listening();
     /* (the socket appears in the server directory once the thread has opened it; a server that
      * can't start ends at once) */

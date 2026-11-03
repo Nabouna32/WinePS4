@@ -109,6 +109,7 @@ int sceSystemServiceGetParentSocket( void );
 
 extern void ps4_process_ended( int pid, int code );
 extern void ps4_process_exit_now( int status ) __attribute__((noreturn));
+extern void ps4_shell_notice( const char *text );
 extern int ps4_control_fd;
 
 static pthread_mutex_t locals_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -254,6 +255,8 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
     {
         fprintf( stderr, "wineps4: the PS4 did not start a local process (0x%08x)%s\n", id,
                  local_state ? "" : ": programs are forked (close the app with Power > Exit only)" );
+        /* (0x80aa0008: 7 already run, the most an app has) */
+        if (local_state) ps4_shell_notice( "The PS4 runs 7 Windows processes at once at most: close a program first" );
         ret = local_state ? -EAGAIN : -ENOSYS;
         if (!local_state) local_state = -1;
         goto done;

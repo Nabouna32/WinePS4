@@ -2505,6 +2505,14 @@ extern "C" void ps4_shell_program_exited(int pid, int code) {
     program_changed = true;
 }
 
+extern "C" void ps4_shell_notice(const char *text) {
+    {
+        std::lock_guard lock(program_lock);
+        ended_toasts.push_back(text);
+    }
+    program_changed = true;
+}
+
 // launch.txt, run.txt (from the port's setup thread): started on the desktop's thread (launch_queue)
 
 extern "C" void ps4_shell_launch(char **args) {
