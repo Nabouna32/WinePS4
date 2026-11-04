@@ -129,8 +129,9 @@ void PS4DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     if ((style & WS_VISIBLE) && surface) msg.flags |= PS4_WINDOW_VISIBLE;
     if (ex_style & WS_EX_TOPMOST) msg.flags |= PS4_WINDOW_TOPMOST;
     if (ex_style & WS_EX_LAYERED) msg.flags |= PS4_WINDOW_LAYERED;
-    if ((ex_style & WS_EX_TOOLWINDOW) || (!(style & WS_CAPTION) && (style & WS_POPUP)) ||
-        NtUserGetWindowRelative( hwnd, GW_OWNER ))
+    /* no taskbar button, as Windows has it: tool windows and owned ones (menus, tooltips, dialogs),
+     * unless the program asks for one; a window drawing its own frame (an installer's, Steam's) has one */
+    if (!(ex_style & WS_EX_APPWINDOW) && ((ex_style & WS_EX_TOOLWINDOW) || NtUserGetWindowRelative( hwnd, GW_OWNER )))
         msg.flags |= PS4_WINDOW_POPUP;
     if (style & WS_MAXIMIZE) msg.flags |= PS4_WINDOW_MAXIMIZED;
     if (style & WS_MINIMIZE) msg.flags |= PS4_WINDOW_MINIMIZED;

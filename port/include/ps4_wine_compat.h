@@ -351,6 +351,26 @@ static inline int ps4_no_fstatfs( int fd, struct statfs *buf ) { (void)fd; (void
 #define fstatfs(fd, buf) ps4_no_fstatfs( fd, buf )
 #define statfs(path, buf) ps4_no_fstatfs( -1, buf )
 
+/* --- Resource limits (FreeBSD's numbers) ---------------------------------------------------------
+ * musl's are Linux's: ntdll and wineserver raised "RLIMIT_NOFILE" (7, the kernel's RLIMIT_NPROC) to
+ * its most at every start and left the open files at the PS4's default (v00.47: Steam got "Too many
+ * open files" a second in: its free disk space, wininet.dll, its sockets all failed). */
+#include <sys/resource.h>
+#undef RLIMIT_MEMLOCK
+#undef RLIMIT_NPROC
+#undef RLIMIT_NOFILE
+#undef RLIMIT_AS
+#undef RLIMIT_LOCKS
+#undef RLIMIT_SIGPENDING
+#undef RLIMIT_MSGQUEUE
+#undef RLIMIT_NICE
+#undef RLIMIT_RTPRIO
+#undef RLIMIT_RTTIME
+#define RLIMIT_MEMLOCK 6
+#define RLIMIT_NPROC   7
+#define RLIMIT_NOFILE  8
+#define RLIMIT_AS      10  /* RLIMIT_VMEM */
+
 /* --- The console's name (port/ps4_net.c) ---------------------------------------------------------
  * The C library's gethostname is a stub (ENOSYS: Windows had no computer name), and a lookup of the
  * console's own name went to DNS through the PS4's resolver (ps4-kit): wineboot looks it up at every

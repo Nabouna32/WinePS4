@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -831,6 +832,14 @@ static void *setup_thread( void *arg )
         return NULL;
     }
     if (!ps4_spawn_broker_start()) logf_( "wineps4: programs start their processes themselves\n" );
+    {
+        /* (raised to its most by wineserver as it started: every program's handles are open here
+         * too; FreeBSD's number, the C library's headers have Linux's) */
+        struct rlimit files;
+        if (!getrlimit( 8 /* RLIMIT_NOFILE */, &files ))
+            logf_( "wineps4: open files: %llu at once (the most allowed %llu)\n", (unsigned long long)files.rlim_cur,
+                   (unsigned long long)files.rlim_max );
+    }
     wine_ready = 1;
     if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
     boot_windows();
