@@ -281,3 +281,8 @@ v00.56:
   one still focused 1.2 s after a click on its process's window, with no news meanwhile, opens the
   keyboard too. If the system refuses its keyboard dialog while libSceIme's keyboard is open, that
   keyboard is closed, the dialog tried again, and the keyboard opened again when the dialog closes.
+- Programs saw no free memory at all (GlobalMemoryStatusEx: neither ntdll's Linux nor its BSD
+  branch is built here), so Chromium was in critical memory pressure all the time ("Discarding
+  multiple pages" every 5 s in cef_log). ntdll's get_performance_info has a PS4 branch (Wine patch):
+  the app's direct memory is the RAM, its largest free run and the flexible memory free what's
+  available (ps4_vm_memory_status).

@@ -538,6 +538,22 @@ static void vm_leave( void )
 
 /* --- the calls -------------------------------------------------------------------------------- */
 
+/* GlobalMemoryStatusEx's figures (ntdll's get_performance_info): the app's direct memory as the RAM, its
+ * largest free run and the flexible memory free as what's available. Programs saw none available before:
+ * Chromium (Steam's web helper) was in critical memory pressure all the time ("Discarding multiple pages"
+ * every 5 s, v00.55). */
+void ps4_vm_memory_status( unsigned long long *total, unsigned long long *avail )
+{
+    size_t flexible = 0, size = 0;
+    off_t start = 0;
+
+    *total = sceKernelGetDirectMemorySize();
+    if (sceKernelAvailableDirectMemorySize( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, &start, &size )) size = 0;
+    if (sceKernelAvailableFlexibleMemorySize( &flexible )) flexible = 0;
+    *avail = size + flexible;
+    if (*avail > *total) *avail = *total;
+}
+
 void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t offset )
 {
     uintptr_t start = (uintptr_t)addr & ~(uintptr_t)(HOST_PAGE - 1);
