@@ -290,6 +290,210 @@ struct cmsghdr
 #undef SO_PEERNAME
 #undef SCM_CREDENTIALS
 
+/* IP, IPv6 and TCP options: OpenOrbis' netinet headers have Linux's numbers (its SOL_SOCKET ones are
+ * FreeBSD's). Steam's IP_TOS (Linux 1) went to the kernel as IP_OPTIONS, "Unable to set default socket
+ * options, error 10022", and every ping of its login servers failed (v00.54). FreeBSD 9's numbers
+ * here; the options it lacks are undefined, so Wine takes its other ways: IP_RECVDSTADDR for
+ * IP_PKTINFO, IP_DONTFRAG and IPV6_DONTFRAG for the MTU discovery options. The source-specific
+ * multicast ones go too: musl's struct ip_mreq_source has its fields in another order. */
+#include <netinet/tcp.h>
+#undef IP_OPTIONS
+#undef IP_HDRINCL
+#undef IP_TOS
+#undef IP_TTL
+#undef IP_RECVOPTS
+#undef IP_RECVRETOPTS
+#undef IP_RETOPTS
+#undef IP_MULTICAST_IF
+#undef IP_MULTICAST_TTL
+#undef IP_MULTICAST_LOOP
+#undef IP_ADD_MEMBERSHIP
+#undef IP_DROP_MEMBERSHIP
+#undef IP_RECVTTL
+#undef IP_MINTTL
+#undef IP_PKTINFO
+#undef IP_PKTOPTIONS
+#undef IP_PMTUDISC
+#undef IP_MTU_DISCOVER
+#undef IP_PMTUDISC_DONT
+#undef IP_PMTUDISC_WANT
+#undef IP_PMTUDISC_DO
+#undef IP_PMTUDISC_PROBE
+#undef IP_PMTUDISC_INTERFACE
+#undef IP_PMTUDISC_OMIT
+#undef IP_RECVERR
+#undef IP_RECVTOS
+#undef IP_MTU
+#undef IP_FREEBIND
+#undef IP_IPSEC_POLICY
+#undef IP_XFRM_POLICY
+#undef IP_PASSSEC
+#undef IP_TRANSPARENT
+#undef IP_ORIGDSTADDR
+#undef IP_RECVORIGDSTADDR
+#undef IP_NODEFRAG
+#undef IP_CHECKSUM
+#undef IP_BIND_ADDRESS_NO_PORT
+#undef IP_RECVFRAGSIZE
+#undef IP_ROUTER_ALERT
+#undef IP_MULTICAST_ALL
+#undef IP_UNICAST_IF
+#undef IP_MSFILTER
+#undef IP_ADD_SOURCE_MEMBERSHIP
+#undef IP_DROP_SOURCE_MEMBERSHIP
+#undef IP_BLOCK_SOURCE
+#undef IP_UNBLOCK_SOURCE
+#undef MCAST_JOIN_GROUP
+#undef MCAST_LEAVE_GROUP
+#undef MCAST_JOIN_SOURCE_GROUP
+#undef MCAST_LEAVE_SOURCE_GROUP
+#undef MCAST_BLOCK_SOURCE
+#undef MCAST_UNBLOCK_SOURCE
+#undef MCAST_MSFILTER
+#define IP_OPTIONS          1
+#define IP_HDRINCL          2
+#define IP_TOS              3
+#define IP_TTL              4
+#define IP_RECVOPTS         5
+#define IP_RECVRETOPTS      6
+#define IP_RECVDSTADDR      7
+#define IP_RETOPTS          8
+#define IP_MULTICAST_IF     9
+#define IP_MULTICAST_TTL    10
+#define IP_MULTICAST_LOOP   11
+#define IP_ADD_MEMBERSHIP   12
+#define IP_DROP_MEMBERSHIP  13
+#define IP_RECVIF           20
+#define IP_RECVTTL          65
+#define IP_MINTTL           66
+#define IP_DONTFRAG         67
+#define MCAST_JOIN_GROUP    80
+#define MCAST_LEAVE_GROUP   81
+
+#undef IPV6_ADDRFORM
+#undef IPV6_2292PKTINFO
+#undef IPV6_2292HOPOPTS
+#undef IPV6_2292DSTOPTS
+#undef IPV6_2292RTHDR
+#undef IPV6_2292PKTOPTIONS
+#undef IPV6_2292HOPLIMIT
+#undef IPV6_CHECKSUM
+#undef IPV6_NEXTHOP
+#undef IPV6_AUTHHDR
+#undef IPV6_UNICAST_HOPS
+#undef IPV6_MULTICAST_IF
+#undef IPV6_MULTICAST_HOPS
+#undef IPV6_MULTICAST_LOOP
+#undef IPV6_JOIN_GROUP
+#undef IPV6_LEAVE_GROUP
+#undef IPV6_ADD_MEMBERSHIP
+#undef IPV6_DROP_MEMBERSHIP
+#undef IPV6_ROUTER_ALERT
+#undef IPV6_ROUTER_ALERT_ISOLATE
+#undef IPV6_MTU_DISCOVER
+#undef IPV6_PMTUDISC_DONT
+#undef IPV6_PMTUDISC_WANT
+#undef IPV6_PMTUDISC_DO
+#undef IPV6_PMTUDISC_PROBE
+#undef IPV6_PMTUDISC_INTERFACE
+#undef IPV6_PMTUDISC_OMIT
+#undef IPV6_MTU
+#undef IPV6_RECVERR
+#undef IPV6_V6ONLY
+#undef IPV6_JOIN_ANYCAST
+#undef IPV6_LEAVE_ANYCAST
+#undef IPV6_MULTICAST_ALL
+#undef IPV6_IPSEC_POLICY
+#undef IPV6_XFRM_POLICY
+#undef IPV6_HDRINCL
+#undef IPV6_RECVPKTINFO
+#undef IPV6_PKTINFO
+#undef IPV6_RECVHOPLIMIT
+#undef IPV6_HOPLIMIT
+#undef IPV6_RECVHOPOPTS
+#undef IPV6_HOPOPTS
+#undef IPV6_RTHDRDSTOPTS
+#undef IPV6_RECVRTHDR
+#undef IPV6_RTHDR
+#undef IPV6_RECVDSTOPTS
+#undef IPV6_DSTOPTS
+#undef IPV6_RECVPATHMTU
+#undef IPV6_PATHMTU
+#undef IPV6_DONTFRAG
+#undef IPV6_RECVTCLASS
+#undef IPV6_TCLASS
+#undef IPV6_AUTOFLOWLABEL
+#undef IPV6_ADDR_PREFERENCES
+#undef IPV6_MINHOPCOUNT
+#undef IPV6_ORIGDSTADDR
+#undef IPV6_RECVORIGDSTADDR
+#undef IPV6_TRANSPARENT
+#undef IPV6_UNICAST_IF
+#undef IPV6_RECVFRAGSIZE
+#undef IPV6_FREEBIND
+#undef IPV6_RXHOPOPTS
+#undef IPV6_RXDSTOPTS
+#define IPV6_UNICAST_HOPS    4
+#define IPV6_MULTICAST_IF    9
+#define IPV6_MULTICAST_HOPS  10
+#define IPV6_MULTICAST_LOOP  11
+#define IPV6_JOIN_GROUP      12
+#define IPV6_LEAVE_GROUP     13
+#define IPV6_ADD_MEMBERSHIP  IPV6_JOIN_GROUP
+#define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
+#define IPV6_CHECKSUM        26
+#define IPV6_V6ONLY          27
+#define IPV6_RECVPKTINFO     36
+#define IPV6_RECVHOPLIMIT    37
+#define IPV6_PKTINFO         46
+#define IPV6_HOPLIMIT        47
+#define IPV6_RECVTCLASS      57
+#define IPV6_TCLASS          61
+#define IPV6_DONTFRAG        62
+
+#undef TCP_CORK
+#undef TCP_KEEPIDLE
+#undef TCP_KEEPINTVL
+#undef TCP_KEEPCNT
+#undef TCP_SYNCNT
+#undef TCP_LINGER2
+#undef TCP_DEFER_ACCEPT
+#undef TCP_WINDOW_CLAMP
+#undef TCP_INFO
+#undef TCP_QUICKACK
+#undef TCP_CONGESTION
+#undef TCP_MD5SIG
+#undef TCP_THIN_LINEAR_TIMEOUTS
+#undef TCP_THIN_DUPACK
+#undef TCP_USER_TIMEOUT
+#undef TCP_REPAIR
+#undef TCP_REPAIR_QUEUE
+#undef TCP_QUEUE_SEQ
+#undef TCP_REPAIR_OPTIONS
+#undef TCP_FASTOPEN
+#undef TCP_TIMESTAMP
+#undef TCP_NOTSENT_LOWAT
+#undef TCP_CC_INFO
+#undef TCP_SAVE_SYN
+#undef TCP_SAVED_SYN
+#undef TCP_REPAIR_WINDOW
+#undef TCP_FASTOPEN_CONNECT
+#undef TCP_ULP
+#undef TCP_MD5SIG_EXT
+#undef TCP_FASTOPEN_KEY
+#undef TCP_FASTOPEN_NO_COOKIE
+#undef TCP_ZEROCOPY_RECEIVE
+#undef TCP_INQ
+#undef TCP_TX_DELAY
+#undef TCP_CM_INQ
+#define TCP_NOPUSH    4
+#define TCP_NOOPT     8
+#define TCP_INFO      32   /* (its struct starts with the state as Linux's does: wineserver's TCP table) */
+#define TCP_KEEPINIT  128
+#define TCP_KEEPIDLE  256
+#define TCP_KEEPINTVL 512
+#define TCP_KEEPCNT   1024
+
 /* --- Memory ------------------------------------------------------------------------------------------
  * MAP_NORESERVE (0x4000) and MAP_FIXED_NOREPLACE (0x100000) are Linux numbers in OpenOrbis' header;
  * the PS4 kernel reads those bits as something else. Wine works without either (an address hint,

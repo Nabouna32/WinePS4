@@ -9,6 +9,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <orbis/UserService.h>
 
@@ -375,6 +377,45 @@ void apply(const KeyboardData &data, float dt, std::vector<KeyEvent> &out) {
         repeat_wait = REPEAT_PERIOD;  // (after a long frame: a few, not a burst)
 }
 
+// Settings > Diagnostics > Keyboard log: each new shape of what libSceKeyboard reads (how many keys,
+// in which slots, their high bits, how many the table doesn't know, whether modifiers are held) and
+// the presses it made; never which keys (passwords are typed with it). 400 lines at most.
+void log_shape(const KeyboardData &data, const std::vector<KeyEvent> &events) {
+    static const bool on = [] {
+        const char *v = std::getenv("WINEPS4_KEY_LOG");
+        return !v || std::strcmp(v, "0") != 0;
+    }();
+    static unsigned lines = 0;
+    static uint64_t last = ~0ull;
+    if (!on || lines >= 400)
+        return;
+    const int count = std::clamp(data.count, 0, 16);
+    unsigned slots = 0, high = 0, unknown = 0, presses = 0;
+    for (int i = 0; i < count; i++) {
+        if (!data.keys[i])
+            continue;
+        slots |= 1u << i;
+        high |= data.keys[i] >> 8;
+        if (data.keys[i] >= KEYS.size() || !KEYS[data.keys[i]].vk)
+            unknown++;
+    }
+    for (const KeyEvent &e : events)
+        presses += e.down;
+    const uint64_t shape = static_cast<uint64_t>(static_cast<uint32_t>(data.count)) | static_cast<uint64_t>(slots) << 32 |
+                           static_cast<uint64_t>(high & 0xff) << 48 | static_cast<uint64_t>(unknown & 0x1f) << 56 |
+                           static_cast<uint64_t>(data.mods != 0) << 61 | static_cast<uint64_t>(data.intercepted != 0) << 62 |
+                           static_cast<uint64_t>(data.connected != 0) << 63;
+    if (shape == last && !presses)
+        return;
+    last = shape;
+    lines++;
+    std::fprintf(stderr,
+                 "shell: hwkeyboard: read: count %d, keys in slots %#x, high bits %#x, %u not in the table, modifiers %s, "
+                 "%s%s; %u presses\n",
+                 data.count, slots, high, unknown, data.mods ? "held" : "none", data.connected ? "connected" : "not connected",
+                 data.intercepted ? ", the system's" : "", presses);
+}
+
 } // namespace
 
 void hwkeyboard_open() {
@@ -418,6 +459,8 @@ std::vector<KeyEvent> hwkeyboard_poll(float dt) {
         apply(data, dt, events);
     else
         lose(events);
+    if (result >= 0)
+        log_shape(data, events);
     return events;
 }
 

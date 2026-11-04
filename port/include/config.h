@@ -22,6 +22,7 @@
 #define HAVE_NETDB_H 1
 #define HAVE_NETINET_IN_H 1
 #define HAVE_NETINET_TCP_H 1
+#define HAVE_NETINET_TCP_FSM_H 1  /* (port/include/netinet/tcp_fsm.h: FreeBSD's states) */
 #define HAVE_PTHREAD_GETTHREADID_NP 1
 #define HAVE_PWD_H 1
 #define HAVE_SCHED_H 1

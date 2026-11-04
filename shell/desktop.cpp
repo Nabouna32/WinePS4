@@ -1088,7 +1088,16 @@ const Toggle TOGGLES[] = {
     {"Wine debug messages", "Exceptions and DLL loading in wine.log (WINEDEBUG=+seh,+loaddll)", "WINEDEBUG", "+seh,+loaddll", ""},
     {"Memory log", "Every mapping of WinePS4's memory layer in wine.log (slow)", "WINEPS4_VM_LOG", "1", ""},
     {"Budget log", "The PS4's budget for the app (open files, threads, memory) in wine.log, what holds files when they run out", "WINEPS4_FILES_LOG", "", "0"},
+    {"Keyboard log", "How the USB keyboard's presses arrive and where they go, in wine.log (never which keys)", "WINEPS4_KEY_LOG", "", "0"},
 };
+
+// Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
+// while they come (how many, never which: passwords are typed with it)
+struct KeyRoutes {
+    int desktop = 0, program = 0, held_back = 0, not_sent = 0;
+    std::string to;  // the desktop's window that took them
+    double since = 0;
+} key_routes;
 
 bool toggle_on(const Toggle &t) {
     const std::string v = env_get(t.key);
@@ -4276,6 +4285,48 @@ void files_key(Window &w, const KeyEvent &k) {
 }
 
 // A USB keyboard's key for the desktop's own windows (the one in front), its menus and dialogs
+// the desktop's window (or menu, dialog) a USB keyboard's press went to, for the Keyboard log
+std::string key_target() {
+    if (dialog.open)
+        return "dialog";
+    if (menu.open)
+        return "menu";
+    if (popup != Popup::None)
+        return "Start or flyout";
+    const Window *w = focused();
+    if (!w)
+        return "desktop (no window open)";
+    switch (w->kind) {
+    case Kind::Files: return "Files";
+    case Kind::Terminal: return "Terminal";
+    case Kind::Settings: return "Settings";
+    case Kind::TaskManager: return "Task Manager";
+    case Kind::Notepad: return w->text ? "Notepad" : "Notepad (no document)";
+    case Kind::HexEditor: return "hex editor";
+    }
+    return "window";
+}
+
+// a line a second while presses come (Settings > Diagnostics > Keyboard log)
+void log_key_routes(double now) {
+    static const bool on = env_get("WINEPS4_KEY_LOG") != "0";
+    KeyRoutes &r = key_routes;
+    if (!on || now - r.since < 1)
+        return;
+    if (r.desktop || r.program || r.held_back || r.not_sent) {
+        std::string top = "none";
+        for (const WinTask &t : program_tasks)
+            if (t.active)
+                top = t.title.empty() ? "untitled" : t.title;
+        std::fprintf(stderr,
+                     "shell: keyboard: %d presses to the desktop's %s, %d to programs (the top one: %s), %d held back "
+                     "(the PS4's keyboard up), %d not sent (PS4 + Keyboard mode)\n",
+                     r.desktop, r.to.empty() ? "-" : r.to.c_str(), r.program, top.c_str(), r.held_back, r.not_sent);
+    }
+    r = KeyRoutes{};
+    r.since = now;
+}
+
 void desktop_key(const KeyEvent &k) {
     if (!k.down)
         return;
@@ -6432,15 +6483,25 @@ extern "C" void ps4_shell_run(const char *) {
                         open_window(Kind::TaskManager), dirty = true;
                     continue;
                 }
-                if (keyboard_active() || !live)
+                if (keyboard_active() || !live) {
+                    if (k.down)
+                        key_routes.held_back++;
                     continue;
+                }
                 if (to_desktop) {
+                    if (k.down)
+                        key_routes.desktop++, key_routes.to = key_target();
                     desktop_key(k);
                     dirty = true;
                 } else if (direct_keyboard) {
+                    if (k.down)
+                        key_routes.program++;
                     winwin_key(k.vkey, k.down, k.scan, k.extended);
+                } else if (k.down) {
+                    key_routes.not_sent++;
                 }
             }
+            log_key_routes(t);
         }
 
         // a program window's title bar buttons (the desktop's, over Windows' own): pressed here, done

@@ -208,3 +208,27 @@ Wine patch): RSA and ECC public keys imported, ECDSA and RSA (PKCS #1, PSS) sign
 duplicated and destroyed, AES CBC/ECB/CFB8/GCM (GCM's tag on decryption from the plaintext encrypted
 again). Key generation, private keys, signing, RSA encryption, export and key agreement return
 STATUS_NOT_IMPLEMENTED. The eboot grows from 13 to 18.7 MB.
+
+## Socket option numbers, and the USB keyboard (v00.55, 2026-11-05)
+
+v00.54 (logs/v00.54): the certificate errors were gone and Steam's login server connection
+completed (ConnectionCompleted, 162.254.192.99:27018, WebSocket), 30 s after the UI asked; the log
+ended 10 s later without a result. Every quick ping of a login server still failed in the second
+Steam asserted "Unable to set default socket options, error 10022" (WSAEINVAL). OpenOrbis'
+netinet/in.h and netinet/tcp.h have Linux's IP, IPv6 and TCP option numbers (its SOL_SOCKET and
+MSG_ ones are FreeBSD's or corrected already): IP_TOS 1 is FreeBSD's IP_OPTIONS, IP_TTL 2 its
+IP_HDRINCL, IPV6_V6ONLY 26 its IPV6_CHECKSUM, TCP_KEEPIDLE 4 its TCP_NOPUSH.
+
+v00.55:
+- port/include/ps4_wine_compat.h: FreeBSD 9's IP_, IPV6_ and TCP_ numbers for all of Wine's Unix
+  code; the options it lacks undefined so Wine takes its BSD ways (IP_RECVDSTADDR for IP_PKTINFO,
+  IP_DONTFRAG/IPV6_DONTFRAG for MTU discovery); source-specific multicast undefined (musl's
+  ip_mreq_source has another field order). TCP_INFO is FreeBSD's 32: wineserver's TCP table reads
+  each socket's state with it (it failed before, so every connection was "established"), so
+  port/include/netinet/tcp_fsm.h has FreeBSD's TCPS_ numbers (the server's own are Linux's).
+- The USB keyboard ("Keyboard" mode) typed nothing in the desktop's Notepad or in Steam. It opens
+  and reads (keyboard opened, connected, "the system has the keyboard" for a second), the layout
+  agrees with OpenOrbis' OrbisKeyboardData, the routing and win32u's kbdus fallback look right: not
+  found by reading. Settings > Diagnostics > Keyboard log (WINEPS4_KEY_LOG, on by default for now)
+  logs the shape of each new read (count, slots, high bits, keys the table doesn't know) and where
+  the presses went each second, never which keys.
