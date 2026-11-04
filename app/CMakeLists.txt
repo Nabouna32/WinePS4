@@ -133,8 +133,9 @@ wine_module_unixlib(ws2_32 ws2_32 SOURCES unixlib.c DEFS _WS2_32_)
 # if_nameindex from the PS4's kernel, port/ps4_ifaddrs.c: the C library's ask Linux's netlink.
 # Steam takes its web helper's connection only when the TCP table names its owner, v00.51)
 wine_module_unixlib(nsiproxy nsiproxy.sys SOURCES icmp_echo.c ip.c ndis.c nsi.c tcp.c udp.c DEFS HAVE_NET_IF_H=1 _GNU_SOURCE)
-# (dnsapi: needs libresolv; DNS will go through the PS4 resolver)
-# wine_module_unixlib(dnsapi dnsapi SOURCES libresolv.c)
+# (dnsapi: the PS4's own Unix half, dlls/dnsapi/ps4.c (no libresolv): the DNS servers from the
+# PS4's network settings, addresses through its resolver; GetAdaptersAddresses fails without them)
+wine_module_unixlib(dnsapi dnsapi SOURCES ps4.c)
 wine_module_unixlib(mountmgr mountmgr.sys SOURCES cred.c dbus.c diskarb.c unixlib.c)
 # (crypt32: the root certificates, from the package's list (Wine patch); no GnuTLS: no PFX import)
 wine_module_unixlib(crypt32 crypt32 SOURCES unixlib.c DEFS _CRYPT32_)
@@ -144,7 +145,7 @@ wine_module_unixlib(opengl32 opengl32 SOURCES unix_thunks.c unix_wgl.c DEFS _OPE
 # (dwrite: DirectWrite's fonts through FreeType; Chromium (Steam's web view, Chrome) draws every
 # letter with it)
 wine_module_unixlib(dwrite dwrite SOURCES freetype.c INCLUDES ${WINEPS4_FREETYPE}/include)
-set(MODULE_UNIXLIBS ws2_32 nsiproxy mountmgr crypt32 opengl32 dwrite)
+set(MODULE_UNIXLIBS ws2_32 nsiproxy dnsapi mountmgr crypt32 opengl32 dwrite)
 set(MODULE_UNIXLIB_OBJECTS)
 set(MODULE_UNIXLIB_TARGETS)
 foreach(m ${MODULE_UNIXLIBS})
@@ -173,7 +174,7 @@ target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/in
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
-target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceImeDialog SceCommonDialog)
+target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceImeDialog SceCommonDialog SceNetCtl)
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FFMPEG}/lib/libavformat.a ${WINEPS4_FFMPEG}/lib/libavcodec.a
     ${WINEPS4_FFMPEG}/lib/libswscale.a ${WINEPS4_FFMPEG}/lib/libavutil.a)
 ps4_kit_app(wineps4)

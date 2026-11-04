@@ -124,10 +124,12 @@ struct local_stats
     uint64_t pool;    /* outside the 7: the memory all of those share, free (the kernel's figure) */
 };
 
-/* A process outside the 7 starts only while the memory they share has room for it: about 60 MiB
- * each (a 16 MiB heap, the eboot, Wine's DLLs and stacks); v00.51 ran it out by the fourth, and
- * rpcss.exe and steamservice.exe did not start. Without it the program goes among the 7. */
-#define OUTSIDE_MIN_POOL (80ull << 20)
+/* A process outside the 7 starts only while the memory they share with the PS4 has room for it: 75
+ * to 115 MiB each in the PS4's own count (v00.52), and the PS4 keeps 128 MiB of it (port/
+ * ps4_wine_vm.c). v00.51 ran it out by the fourth (rpcss.exe and steamservice.exe did not start);
+ * v00.52 took it to 13 MiB, and a new local process could not start its C library: the PS4 closed
+ * the app. Without the room the program goes among the 7. */
+#define OUTSIDE_MIN_POOL (256ull << 20)
 static uint64_t outside_pool = ~0ull;  /* the last figure one of them sent */
 
 extern int ps4_outside_process;
@@ -178,6 +180,7 @@ static void control_event( int fd )
 {
     struct local_msg msg;
     struct local_stats stats;
+    unsigned long long memory;
     ssize_t got;
     int i, pid, code, local_id, have_stats = 0;
 
@@ -200,6 +203,7 @@ static void control_event( int fd )
     pid = locals[i].pid;
     code = locals[i].code;
     local_id = locals[i].local_id;
+    memory = locals[i].stats.memory;
     close( fd );
     locals[i] = locals[--local_count];
     pthread_mutex_unlock( &locals_lock );
@@ -208,6 +212,7 @@ static void control_event( int fd )
     {
         kill( pid, SIGKILL );  /* (a socket closed early: what is left of it) */
         outside_pool = ~0ull;  /* (its memory is free again: the next figure tells) */
+        fprintf( stderr, "wineps4: process %d outside the 7 had backed %llu MiB of Wine's memory\n", pid, memory >> 20 );
     }
     ps4_process_ended( pid, code );
 }
@@ -375,8 +380,16 @@ static int start_outside( int *sock, int *pid_out )
 
     if (outside_allowed() && outside_pool < OUTSIDE_MIN_POOL)
     {
+        int i;
+
         fprintf( stderr, "wineps4: the memory the processes outside the PS4's 7 share has %llu MiB free: "
-                 "this one starts among the 7\n", (unsigned long long)(outside_pool >> 20) );
+                 "this one starts among the 7 (Wine's memory outside:", (unsigned long long)(outside_pool >> 20) );
+        pthread_mutex_lock( &locals_lock );
+        for (i = 0; i < local_count; i++)
+            if (locals[i].local_id < 0)
+                fprintf( stderr, " %d %llu MiB", locals[i].pid, (unsigned long long)(locals[i].stats.memory >> 20) );
+        pthread_mutex_unlock( &locals_lock );
+        fprintf( stderr, ")\n" );
         return 0;
     }
     while (outside_allowed())

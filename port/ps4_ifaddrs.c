@@ -8,10 +8,13 @@
  * address of every interface, the link level one (sockaddr_dl: index, type, MAC) first. The C
  * library's headers have Linux's numbers for these ioctls: FreeBSD's are here, made with the raw
  * system call (a negative int request is sign-extended, and the kernel logs every one). */
+#include <arpa/inet.h>
 #include <errno.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -310,4 +313,238 @@ void freeifaddrs( struct ifaddrs *list )
         free( list );  /* (each is the start of its ifaddrs_node) */
         list = next;
     }
+}
+
+/* --- Routes and the console's network settings --------------------------------------------------
+ * For nsiproxy's IPv4 route table (ip.c) and dnsapi's server list (dlls/dnsapi/ps4.c): without
+ * either, GetAdaptersAddresses failed as a whole (v00.52: "failed: 1", the route table's "not
+ * implemented"). The routes come from FreeBSD's routing sysctl (NET_RT_DUMP, made with the raw
+ * system call: the C library's headers have neither its numbers nor its structures), else from the
+ * interfaces' own networks; the gateway and the DNS servers from the PS4's network settings
+ * (sceNetCtl). */
+
+int32_t sceNetCtlInit( void );
+int32_t sceNetCtlGetInfo( int32_t code, void *info );
+extern int ps4_kit_load_module( uint32_t id, const char *name );
+extern int ps4_outside_process;  /* port/ps4_main.c */
+
+#define SYSMODULE_NET    0x8000001c
+#define SYSMODULE_NETCTL 0x80000009
+
+#define NETCTL_INFO_DEFAULT_ROUTE 16
+#define NETCTL_INFO_PRIMARY_DNS   17
+#define NETCTL_INFO_SECONDARY_DNS 18
+
+struct ps4_route  /* (dlls/nsiproxy.sys/ip.c has it too) */
+{
+    unsigned int prefix, next_hop;  /* network byte order */
+    unsigned int prefix_len, if_index, gateway;
+};
+
+static struct
+{
+    unsigned int gateway, dns[2];  /* network byte order; 0: none */
+} net_info;
+static pthread_once_t net_info_once = PTHREAD_ONCE_INIT;
+
+static unsigned int netctl_address( int code )
+{
+    union { char text[260]; unsigned int align; } info;  /* (SceNetCtlInfo: 256 bytes at most) */
+    struct in_addr addr;
+
+    memset( &info, 0, sizeof(info) );
+    if (sceNetCtlGetInfo( code, &info )) return 0;
+    info.text[15] = 0;
+    return inet_pton( AF_INET, info.text, &addr ) == 1 ? addr.s_addr : 0;
+}
+
+static const char *dotted( unsigned int addr, char *buf )
+{
+    struct in_addr a;
+
+    a.s_addr = addr;
+    return addr && inet_ntop( AF_INET, &a, buf, 16 ) ? buf : "none";
+}
+
+static void read_net_info( void )
+{
+    char a[16], b[16], c[16];
+    int ret;
+
+    /* (not in a process outside the 7, nsiproxy's winedevice.exe among them: no system module has
+     * been loaded outside the app yet, and the drives go with it if that fails) */
+    if (ps4_outside_process) return;
+    /* (a system library whose module isn't loaded ends the app at its first call, without a word:
+     * ps4-kit's ps4_modules.cpp) */
+    ps4_kit_load_module( SYSMODULE_NET, "Net" );
+    if ((ret = ps4_kit_load_module( SYSMODULE_NETCTL, "NetCtl" )))
+    {
+        fprintf( stderr, "wineps4: network settings: the PS4's NetCtl module did not load (%#x)\n", ret );
+        return;
+    }
+    ret = sceNetCtlInit();  /* (an error when it was already: then it is) */
+    net_info.gateway = netctl_address( NETCTL_INFO_DEFAULT_ROUTE );
+    net_info.dns[0] = netctl_address( NETCTL_INFO_PRIMARY_DNS );
+    net_info.dns[1] = netctl_address( NETCTL_INFO_SECONDARY_DNS );
+    fprintf( stderr, "wineps4: network settings: gateway %s, DNS %s %s (sceNetCtlInit %#x)\n",
+             dotted( net_info.gateway, a ), dotted( net_info.dns[0], b ), dotted( net_info.dns[1], c ), ret );
+}
+
+/* the DNS servers (network byte order): how many; the gateway when the PS4 names none */
+int ps4_dns_servers( unsigned int *servers, int max )
+{
+    int n = 0, i;
+
+    pthread_once( &net_info_once, read_net_info );
+    for (i = 0; i < 2 && n < max; i++)
+        if (net_info.dns[i]) servers[n++] = net_info.dns[i];
+    if (!n && max && net_info.gateway) servers[n++] = net_info.gateway;
+    return n;
+}
+
+static int raw_sysctl( int *mib, unsigned int len, void *old, size_t *oldlen )
+{
+    register long r10 __asm__("r10") = (long)oldlen;
+    register long r8 __asm__("r8") = 0;  /* (nothing new) */
+    register long r9 __asm__("r9") = 0;
+    long rax = 202 /* SYS___sysctl */, rdx = (long)old;
+    unsigned char failed;
+
+    __asm__ volatile( "syscall\n\tsetc %1"
+                      : "+a" (rax), "=qm" (failed), "+d" (rdx), "+r" (r10), "+r" (r8), "+r" (r9)
+                      : "D" ((long)mib), "S" ((long)len)
+                      : "rcx", "r11", "memory", "cc" );
+    if (failed)
+    {
+        errno = (int)rax;
+        return -1;
+    }
+    return 0;
+}
+
+static unsigned int mask_bits( unsigned int mask )
+{
+    unsigned int bits = 0, host = ntohl( mask );
+
+    while (bits < 32 && (host & (0x80000000u >> bits))) bits++;
+    return bits;
+}
+
+struct fbsd_rt_msghdr  /* FreeBSD's struct rt_msghdr on amd64 (152 bytes) */
+{
+    unsigned short msglen;
+    unsigned char version, type;
+    unsigned short index;
+    int flags, addrs, pid, seq, err, fmask;
+    unsigned long inits;
+    unsigned long rmx[14];
+};
+
+#define FBSD_RTM_GET       4
+#define FBSD_RTF_GATEWAY   0x2
+#define FBSD_RTF_HOST      0x4
+#define FBSD_RTF_MULTICAST 0x800000
+#define FBSD_RTA_DST       0x1
+#define FBSD_RTA_GATEWAY   0x2
+#define FBSD_RTA_NETMASK   0x4
+
+/* the kernel's IPv4 routes: how many, or -1 (the sandbox's no) */
+static int routes_from_kernel( struct ps4_route *routes, int max )
+{
+    int mib[6] = { 4 /* CTL_NET */, 17 /* PF_ROUTE */, 0, AF_INET, 1 /* NET_RT_DUMP */, 0 }, n = 0;
+    size_t size = 0;
+    char *buf, *p, *end;
+
+    if (raw_sysctl( mib, 6, NULL, &size ) || !size) return -1;
+    size += size / 2 + 4096;  /* (more may come meanwhile) */
+    if (!(buf = malloc( size ))) return -1;
+    if (raw_sysctl( mib, 6, buf, &size ))
+    {
+        free( buf );
+        return -1;
+    }
+    for (p = buf, end = buf + size; p + sizeof(struct fbsd_rt_msghdr) <= end && n < max; )
+    {
+        const struct fbsd_rt_msghdr *rtm = (const struct fbsd_rt_msghdr *)p;
+        const char *sa_ptr = p + sizeof(*rtm), *msg_end = p + rtm->msglen;
+        struct ps4_route r;
+        int bit;
+
+        if (rtm->msglen < sizeof(*rtm) || msg_end > end) break;
+        p = (char *)msg_end;
+        if (rtm->type != FBSD_RTM_GET) continue;
+        if ((rtm->flags & FBSD_RTF_GATEWAY) && (rtm->flags & FBSD_RTF_MULTICAST)) continue;
+        memset( &r, 0, sizeof(r) );
+        r.if_index = rtm->index;
+        r.gateway = !!(rtm->flags & FBSD_RTF_GATEWAY);
+        r.prefix_len = (rtm->flags & FBSD_RTF_HOST) ? 32 : 0;  /* (no netmask: a host route, or the default) */
+        /* the addresses, each padded to a long (FreeBSD's SA_SIZE) */
+        for (bit = 1; bit <= 0x80 && sa_ptr < msg_end; bit <<= 1)
+        {
+            const struct sockaddr *sa = (const struct sockaddr *)sa_ptr;
+            struct sockaddr_in sin;
+
+            if (!(rtm->addrs & bit)) continue;
+            memset( &sin, 0, sizeof(sin) );
+            if (sa->sa_len) memcpy( &sin, sa, sa->sa_len < sizeof(sin) ? sa->sa_len : sizeof(sin) );
+            if (bit == FBSD_RTA_DST && sa->sa_family == AF_INET) r.prefix = sin.sin_addr.s_addr;
+            else if (bit == FBSD_RTA_GATEWAY && sa->sa_family == AF_INET) r.next_hop = sin.sin_addr.s_addr;
+            else if (bit == FBSD_RTA_NETMASK) r.prefix_len = mask_bits( sin.sin_addr.s_addr );
+            sa_ptr += sa->sa_len ? (sa->sa_len + sizeof(long) - 1) & ~(sizeof(long) - 1) : sizeof(long);
+        }
+        routes[n++] = r;
+    }
+    free( buf );
+    return n;
+}
+
+/* the interfaces' own networks, and the default route by the PS4's gateway */
+static int routes_from_addresses( struct ps4_route *routes, int max )
+{
+    struct ifaddrs *list, *ifa;
+    int n = 0, gateway_if = 0;
+
+    if (getifaddrs( &list )) return 0;
+    for (ifa = list; ifa && n < max; ifa = ifa->ifa_next)
+    {
+        const struct sockaddr_in *addr = (const struct sockaddr_in *)ifa->ifa_addr;
+        const struct sockaddr_in *mask = (const struct sockaddr_in *)ifa->ifa_netmask;
+        const unsigned int m = mask ? mask->sin_addr.s_addr : ~0u;
+        unsigned int index;
+
+        if (!addr || addr->sin_family != AF_INET || !(index = if_nametoindex( ifa->ifa_name ))) continue;
+        memset( &routes[n], 0, sizeof(routes[n]) );
+        routes[n].if_index = index;
+        routes[n].prefix_len = mask_bits( m );
+        routes[n].prefix = addr->sin_addr.s_addr & m;
+        n++;
+        if (net_info.gateway && (net_info.gateway & m) == (addr->sin_addr.s_addr & m)) gateway_if = index;
+    }
+    freeifaddrs( list );
+    if (gateway_if && n < max)
+    {
+        memset( &routes[n], 0, sizeof(routes[n]) );
+        routes[n].if_index = gateway_if;
+        routes[n].next_hop = net_info.gateway;
+        routes[n].gateway = 1;
+        n++;
+    }
+    return n;
+}
+
+/* the IPv4 routes (nsiproxy's ip.c): how many */
+int ps4_ipv4_routes( struct ps4_route *routes, int max )
+{
+    static int told;
+    int n = routes_from_kernel( routes, max );
+
+    if (n < 0)
+    {
+        if (!told++)
+            fprintf( stderr, "wineps4: no routing table from the kernel (%s): routes from the interfaces\n",
+                     strerror( errno ) );
+        pthread_once( &net_info_once, read_net_info );
+        n = routes_from_addresses( routes, max );
+    }
+    return n;
 }

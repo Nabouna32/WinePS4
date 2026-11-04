@@ -115,20 +115,28 @@ void ps4_kit_configure_heap( ps4_kit_heap_options *options )
 {
     if (!is_program_process())
     {
+        /* the desktop's heap in direct memory too (the app's, which it is): the system's flexible
+         * memory is what the PS4 itself and the processes outside the 7 live on (v00.52: with this
+         * heap's 256 MiB there and four of them outside, a new local process could not get its C
+         * library's memory, "Failed to create the system memory", and the PS4 closed the app) */
         options->log_tag = "desktop";
+        options->source_order = PS4_KIT_HEAP_DIRECT_FIRST;
+        options->direct_max = 384u << 20;
+        options->system_pool_max = 128u << 20;  /* (only if direct memory failed) */
         return;
     }
     if (started_by_desktop())
     {
         /* outside the system's processes of the app: none of the app's direct memory (what the
          * PS4's suspend and close of the app tear down, v00.42) and none of its system pool;
-         * regular flexible memory, from one pool all of them share (v00.51: 96 MiB heaps took it
-         * all by the third): 16 MiB, and 16 MiB more at a time as the heap fills, 7 times at most */
+         * regular flexible memory, from one pool all of them share with the PS4 (v00.51: 96 MiB
+         * heaps took it all by the third): 16 MiB, and 16 MiB more at a time as the heap fills,
+         * 3 times at most */
         ps4_outside_process = 1;
         options->log_tag = "outside";
         options->regular_only = 1;
         options->regular_max = 16u << 20;
-        options->max_overflow_heaps = 7;
+        options->max_overflow_heaps = 3;
         return;
     }
     options->log_tag = "program";

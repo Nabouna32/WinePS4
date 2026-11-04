@@ -90,10 +90,13 @@ static int vm_log;
 static int direct_exec = 1;  /* direct memory runs code (tested at start) */
 static unsigned long long backed_direct, backed_flexible;  /* pages */
 
-/* a process outside the PS4's 7: regular flexible memory for every page, flexible_max at most */
+/* a process outside the PS4's 7: regular flexible memory for every page, flexible_max at most, and
+ * none while the pool they share with the PS4 has less than the floor (v00.52: four of them took it
+ * down to 13 MiB and a new local process could not start its C library: the PS4 closed the app) */
 extern int ps4_outside_process;
 static int flexible_only;
 static unsigned long long flexible_max = (256u << 20) >> PAGE_SHIFT;  /* pages */
+#define OUTSIDE_POOL_FLOOR ((size_t)128 << 20)
 
 /* the level-2 block of a GiB whose every page is reserved, which has no table of its own yet (one is
  * 256 KiB: Chromium reserves 32 GiB at once, v00.50) */
@@ -272,7 +275,8 @@ static int back_range( uintptr_t start, uintptr_t end, int prot )
 
         if (flexible_only)
         {
-            static int told;
+            static int told, told_pool;
+            size_t pool = 0;
 
             n = want;
             if (backed_flexible + n > flexible_max)
@@ -280,6 +284,16 @@ static int back_range( uintptr_t start, uintptr_t end, int prot )
                 if (!told++)
                     fprintf( stderr, "wineps4 vm: this process outside the PS4's 7 has backed %llu MiB, the most "
                              "it may (WINEPS4_OUTSIDE_MAX_MB)\n", backed_flexible >> 6 );
+                errno = ENOMEM;
+                return 0;
+            }
+            /* the pool it shares with the PS4 and the others outside never below the floor */
+            if (!sceKernelAvailableFlexibleMemorySize( &pool ) && pool < OUTSIDE_POOL_FLOOR + ((size_t)n << PAGE_SHIFT))
+            {
+                if (!told_pool++)
+                    fprintf( stderr, "wineps4 vm: the memory outside the PS4's 7 is down to %zu MiB: no more for this "
+                             "process (it has %llu MiB), the PS4 keeps %u MiB\n", pool >> 20, backed_flexible >> 6,
+                             (unsigned int)(OUTSIDE_POOL_FLOOR >> 20) );
                 errno = ENOMEM;
                 return 0;
             }
@@ -306,7 +320,9 @@ static int back_range( uintptr_t start, uintptr_t end, int prot )
             errno = ENOMEM;
             return 0;
         }
-        memset( base, 0, (size_t)n << PAGE_SHIFT );
+        /* direct memory comes as its last user left it; flexible memory is the kernel's, zero until
+         * a page is first touched (written here, every page backed became the console's at once) */
+        if (!flexible) memset( base, 0, (size_t)n << PAGE_SHIFT );
         if ((prot & PROT_ALL) != (PROT_READ | PROT_WRITE)) sceKernelMprotect( base, (size_t)n << PAGE_SHIFT, prot & PROT_ALL );
         for (i = 0; i < n; i++)
             page_set( addr + ((uintptr_t)i << PAGE_SHIFT), flexible ? PAGE_FLEXIBLE : PAGE_DIRECT + first + i );

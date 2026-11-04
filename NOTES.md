@@ -163,3 +163,29 @@ v00.52:
   it fills (ps4-kit: regular_only now has them; a bigger request gets one its size), 7 at most.
 - Each outside process sends the pool's free memory with its figures; below 80 MiB no other starts
   outside: it goes among the 7.
+
+## The crash: the PS4's own memory (v00.53, 2026-11-04)
+
+v00.52 closed itself 72 s in, with no crash.log and wine.log cut short. GoldHEN's kernel log
+(logs/v00.52/klog.txt) says why: a new local process (pid 395, Steam's) died as the PS4's C library
+started in it, "# reason: Failed to create the system memory" (0xa002008f, ENOMEM), and the PS4
+closes the whole app when one of its processes crashes (AppCrash, a core dump, every local process
+killed, then the desktop). SceShellCore's memory table just before it listed the processes outside
+the 7 as the system's (no title id), 107-119 MiB each: four of them had taken the pool the PS4
+itself lives on down to 13 MiB (their own figure). Good news in the same log: they held none of the
+app's direct memory, they all ended with the desktop, and the close was clean (no gbase panic).
+nsiproxy loaded (eth0, lo0, wlan0, wlan1), GetAdaptersAddresses then failed with 1 instead of 2: the
+IPv4 route table's "not implemented"; and it fails as a whole too when DnsQueryConfig has no servers
+(dnsapi had no Unix half).
+
+v00.53:
+- The desktop's C heap in direct memory (384 MiB at most), out of the system's pool.
+- Outside processes: no more of their memory once the pool would go below 128 MiB (port/
+  ps4_wine_vm.c), a new one only with 256 MiB of it free, 3 overflow heaps at most; fresh flexible
+  memory is no longer zero-filled by hand (the kernel's is zero; writing it made every page backed
+  the console's at once); each one's memory in wine.log as it ends.
+- nsiproxy's IPv4 route table (FreeBSD's routing sysctl through the raw system call, else the
+  interfaces' networks and the PS4's gateway) and dnsapi's Unix half (dlls/dnsapi/ps4.c: DNS
+  servers from sceNetCtl, A queries through getaddrinfo as DNS messages), so GetAdaptersAddresses
+  succeeds. NetCtl is loaded first (ps4-kit: a call into an unloaded module ends the app); not in
+  processes outside the 7.
