@@ -446,4 +446,23 @@ ps4ui::Image file_icon(const std::string &path, int size) {
     return scaled(image, size);
 }
 
+bool exe_is_console(const std::string &path) {
+    FILE *f = std::fopen(path.c_str(), "rb");
+    if (!f)
+        return false;
+    uint8_t head[0x400];
+    const size_t n = std::fread(head, 1, sizeof head, f);
+    std::fclose(f);
+    if (n < 0x40 || head[0] != 'M' || head[1] != 'Z')
+        return false;
+    uint32_t pe = 0;
+    std::memcpy(&pe, head + 0x3c, 4);
+    // the PE signature, the file header (20 bytes), then the optional header's Subsystem at 68
+    if (pe + 24 + 70 > n || std::memcmp(head + pe, "PE  ", 4) != 0)
+        return false;
+    uint16_t subsystem = 0;
+    std::memcpy(&subsystem, head + pe + 24 + 68, 2);
+    return subsystem == 3;  // IMAGE_SUBSYSTEM_WINDOWS_CUI
+}
+
 } // namespace shell

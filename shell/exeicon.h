@@ -13,4 +13,8 @@ namespace shell {
 // can't be read.
 ps4ui::Image file_icon(const std::string &path, int size);
 
+// Whether a Windows program is a console one (its PE header's subsystem is CUI): Windows opens a
+// console window for it, the desktop its Terminal
+bool exe_is_console(const std::string &path);
+
 } // namespace shell

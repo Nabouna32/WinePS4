@@ -13,6 +13,8 @@ std::string unique_name(const std::string &dir, const std::string &stem, const s
 std::string make_folder(const std::string &path);
 std::string make_file(const std::string &path);
 std::string rename_entry(const std::string &from, const std::string &to);
+// The bytes in the files below path (a file's own size); items: how many there are, path among them
+long long folder_size(const std::string &path, long long &items);
 
 struct JobStatus {
     bool running = false;

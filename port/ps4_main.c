@@ -808,12 +808,26 @@ static int read_program( const char *path, int remove_it, char **args, int max )
     return n > 0;
 }
 
+extern void ps4_files_watch( void );
+
+/* the console's open files, every 5 s (port/ps4_wine_dirs.c; Settings > Diagnostics > Open files) */
+static void *files_thread( void *arg )
+{
+    for (;;)
+    {
+        ps4_files_watch();
+        sleep( 5 );
+    }
+    return NULL;
+}
+
 /* the desktop's Windows: the prefix (copied on a version's first start), wineserver, Windows' own
  * startup; then what launch.txt or run.txt asks for */
 static void *setup_thread( void *arg )
 {
     static char *args[64];
-    pthread_t reaper;
+    pthread_t reaper, files;
+    const char *files_log = getenv( "WINEPS4_FILES_LOG" );
     int waited;
 
     ps4_shell_status( "starting" );
@@ -842,6 +856,8 @@ static void *setup_thread( void *arg )
     }
     wine_ready = 1;
     if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
+    if ((!files_log || strcmp( files_log, "0" )) && !pthread_create( &files, NULL, files_thread, NULL ))
+        pthread_detach( files );
     boot_windows();
     ps4_shell_status( NULL );
     logf_( "wineps4: Windows is ready, %.1f s after the app started\n", app_seconds() );

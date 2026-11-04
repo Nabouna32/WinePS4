@@ -328,6 +328,21 @@ DIR *ps4_wine_fdopendir( int fd );
 #define fchdir ps4_wine_fchdir
 #define fdopendir ps4_wine_fdopendir
 
+/* --- File locks --------------------------------------------------------------------------------------
+ * OpenOrbis' struct flock and lock types are musl's (l_type first; F_RDLCK 0, F_WRLCK 1), the kernel's
+ * are FreeBSD's (l_start first; F_RDLCK 1, F_WRLCK 3): every lock wineserver set failed with EINVAL,
+ * and with it LockFile (SQLite's databases: Steam's web view, Chrome). fcntl hands the kernel its own
+ * (port/ps4_wine_dirs.c). */
+#undef F_RDLCK
+#undef F_WRLCK
+#undef F_UNLCK
+#define F_RDLCK 1
+#define F_UNLCK 2
+#define F_WRLCK 3
+#undef F_DUPFD_CLOEXEC  /* (Linux's 1030: the PS4's FreeBSD 9 has none) */
+int ps4_wine_fcntl( int fd, int cmd, ... );
+#define fcntl ps4_wine_fcntl
+
 /* --- The end of the program ---------------------------------------------------------------------------
  * The desktop (shell/) shares the process: Wine's exit tells it the program ended and leaves the
  * calling thread waiting, instead of closing the app (port/ps4_wine_port.c). */

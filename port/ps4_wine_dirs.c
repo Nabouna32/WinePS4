@@ -14,7 +14,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #define SLOTS 16384  /* a power of two */
@@ -191,6 +193,215 @@ static int full_name( int dirfd, const char *name, char *out, size_t size )
     return 0;
 }
 
+/* --- Open files ----------------------------------------------------------------------------------------
+ * The PS4 has room for 13952 open files on the whole console (12556 in one process), and wineserver
+ * holds every program's files in the desktop's process (v00.48: during Steam's update the Chrome
+ * installer's processes could not even open kernel32.dll). Every file opened by name is remembered
+ * under its descriptor; when an open fails for lack of room, the log gets what this process holds:
+ * by kind, by folder and the files open more than once (Settings > Diagnostics > Open files). */
+#define FD_NAMES 16384
+
+static struct { dev_t dev; ino_t ino; char *name; } fd_names[FD_NAMES];
+static pthread_mutex_t fd_names_lock = PTHREAD_MUTEX_INITIALIZER;
+
+int sysctlbyname( const char *name, void *old, size_t *old_size, const void *new_value, size_t new_size );
+
+static void note_fd( int fd, const struct stat *st, const char *path )
+{
+    char cwd[1024], *name = NULL, *old;
+
+    if (fd < 0 || fd >= FD_NAMES) return;
+    if (path[0] == '/') name = strdup( path );
+    else if (getcwd( cwd, sizeof(cwd) ) && asprintf( &name, "%s/%s", cwd, path ) < 0) name = NULL;
+    pthread_mutex_lock( &fd_names_lock );
+    old = fd_names[fd].name;
+    fd_names[fd].dev = st->st_dev;
+    fd_names[fd].ino = st->st_ino;
+    fd_names[fd].name = name;
+    pthread_mutex_unlock( &fd_names_lock );
+    free( old );
+}
+
+static int kernel_int( const char *name )
+{
+    int value = -1;
+    size_t size = sizeof(value);
+    return sysctlbyname( name, &value, &size, NULL, 0 ) ? -1 : value;
+}
+
+struct tally { char *key; unsigned int count; };
+
+/* one more of key (its first len characters) in a table of size entries (a power of two) */
+static void tally_add( struct tally *table, unsigned int size, const char *key, size_t len )
+{
+    unsigned int hash = 5381, i, n;
+
+    for (i = 0; i < len; i++) hash = hash * 33 + (unsigned char)key[i];
+    for (i = hash & (size - 1), n = 0; n < size; i = (i + 1) & (size - 1), n++)
+    {
+        if (!table[i].key)
+        {
+            if ((table[i].key = strndup( key, len ))) table[i].count = 1;
+            return;
+        }
+        if (!strncmp( table[i].key, key, len ) && !table[i].key[len])
+        {
+            table[i].count++;
+            return;
+        }
+    }
+}
+
+/* the most counted (at least at_least), largest first; frees the table */
+static void tally_print( struct tally *table, unsigned int size, const char *what, int lines, unsigned int at_least )
+{
+    unsigned int i;
+
+    while (lines-- > 0)
+    {
+        unsigned int best = size;
+        for (i = 0; i < size; i++)
+            if (table[i].key && table[i].count >= at_least && (best == size || table[i].count > table[best].count)) best = i;
+        if (best == size) break;
+        fprintf( stderr, "wineps4:   %u %s %s\n", table[best].count, what, table[best].key );
+        table[best].count = 0;
+    }
+    for (i = 0; i < size; i++) free( table[i].key );
+    free( table );
+}
+
+/* what this process has open, and the console in all, in the log */
+void ps4_files_census( const char *why )
+{
+    static const char *const kind_names[] = { "files", "folders", "sockets", "pipes", "devices", "other" };
+    unsigned int kinds[6] = { 0 }, total = 0, unnamed = 0, i;
+    struct tally *folders = calloc( 1024, sizeof(*folders) ), *files = calloc( 8192, sizeof(*files) );
+    char line[256];
+    struct rlimit limit;
+    int fd, max = FD_NAMES, saved = errno, len;
+
+    if (!getrlimit( RLIMIT_NOFILE, &limit ) && limit.rlim_cur < (rlim_t)max) max = (int)limit.rlim_cur;
+    for (fd = 0; fd < max; fd++)
+    {
+        struct stat st;
+        char path[1024], *name = NULL;
+        int kind;
+
+        if (fstat( fd, &st ) == -1) continue;
+        total++;
+        switch (st.st_mode & S_IFMT)
+        {
+        case S_IFREG:  kind = 0; break;
+        case S_IFDIR:  kind = 1; break;
+        case S_IFSOCK: kind = 2; break;
+        case S_IFIFO:  kind = 3; break;
+        case S_IFCHR:  kind = 4; break;
+        default:       kind = 5; break;
+        }
+        kinds[kind]++;
+        if (kind > 1) continue;
+        pthread_mutex_lock( &fd_names_lock );
+        if (fd_names[fd].name && fd_names[fd].dev == st.st_dev && fd_names[fd].ino == st.st_ino)
+            name = strdup( fd_names[fd].name );
+        pthread_mutex_unlock( &fd_names_lock );
+        if (!name && kind == 1 && find_path( &st, path, sizeof(path) )) name = strdup( path );
+        if (!name)
+        {
+            unnamed++;
+            continue;
+        }
+        if (folders)
+        {
+            const char *slash = strrchr( name, '/' );
+            tally_add( folders, 1024, name, slash && slash > name ? (size_t)(slash - name) : strlen( name ) );
+        }
+        if (files) tally_add( files, 8192, name, strlen( name ) );
+        free( name );
+    }
+    len = 0;
+    for (i = 0; i < 6; i++)
+        if (kinds[i]) len += snprintf( line + len, sizeof(line) - len, "%s%u %s", len ? ", " : "", kinds[i], kind_names[i] );
+    fprintf( stderr, "wineps4: open files (%s): %u in this process (%s; %u files without a name), %d of %d on the "
+             "console (%d for one process)\n", why, total, line, unnamed, kernel_int( "kern.openfiles" ),
+             kernel_int( "kern.maxfiles" ), kernel_int( "kern.maxfilesperproc" ) );
+    if (folders) tally_print( folders, 1024, "in", 8, 2 );
+    if (files) tally_print( files, 8192, "times", 6, 2 );
+    errno = saved;
+}
+
+/* an open just failed for lack of room: the census, at most every half a minute */
+static void census_after_failure( void )
+{
+    static time_t last;
+    const char *on = getenv( "WINEPS4_FILES_LOG" );
+    int saved = errno;
+    time_t now = time( NULL );
+
+    if ((on && !strcmp( on, "0" )) || now - last < 30) return;
+    last = now;
+    ps4_files_census( saved == EMFILE ? "an open failed: this process is full" : "an open failed: the console is full" );
+    errno = saved;
+}
+
+/* the desktop, every few seconds (Settings > Diagnostics > Open files): the console's count when it
+ * has grown by a thousand since the last line, the census when it nears the end */
+void ps4_files_watch( void )
+{
+    static int logged = -1, census_done;
+    int open_now = kernel_int( "kern.openfiles" ), max = kernel_int( "kern.maxfiles" );
+
+    if (open_now < 0) return;
+    if (logged < 0 || open_now >= logged + 1000 || open_now <= logged - 1000)
+    {
+        fprintf( stderr, "wineps4: open files on the console: %d of %d\n", open_now, max );
+        logged = open_now;
+    }
+    if (max > 0 && open_now > max * 85 / 100 && !census_done)
+    {
+        census_done = 1;
+        ps4_files_census( "the console is almost full" );
+    }
+    else if (max > 0 && open_now < max * 70 / 100) census_done = 0;
+}
+
+/* fcntl with the kernel's struct flock (the compat header's lock types are already its numbers) */
+struct ps4_kernel_flock
+{
+    off_t l_start;
+    off_t l_len;
+    pid_t l_pid;
+    short l_type;
+    short l_whence;
+    int   l_sysid;
+};
+
+int ps4_wine_fcntl( int fd, int cmd, ... )
+{
+    unsigned long arg;
+    va_list args;
+
+    va_start( args, cmd );
+    arg = va_arg( args, unsigned long );
+    va_end( args );
+    if (cmd == F_GETLK || cmd == F_SETLK || cmd == F_SETLKW)
+    {
+        struct flock *lock = (struct flock *)arg;
+        struct ps4_kernel_flock kernel = { lock->l_start, lock->l_len, lock->l_pid, lock->l_type, lock->l_whence, 0 };
+        int ret = fcntl( fd, cmd, &kernel );
+
+        if (ret != -1 && cmd == F_GETLK)
+        {
+            lock->l_type = kernel.l_type;
+            lock->l_whence = kernel.l_whence;
+            lock->l_start = kernel.l_start;
+            lock->l_len = kernel.l_len;
+            lock->l_pid = kernel.l_pid;
+        }
+        return ret;
+    }
+    return fcntl( fd, cmd, arg );
+}
+
 int ps4_wine_open( const char *path, int flags, ... )
 {
     struct stat st;
@@ -203,8 +414,12 @@ int ps4_wine_open( const char *path, int flags, ... )
         mode = va_arg( args, int );
         va_end( args );
     }
-    if ((fd = open( path, flags, mode )) >= 0 && !fstat( fd, &st ) && S_ISDIR( st.st_mode ))
-        remember( &st, path );
+    if ((fd = open( path, flags, mode )) >= 0 && !fstat( fd, &st ))
+    {
+        if (S_ISDIR( st.st_mode )) remember( &st, path );
+        note_fd( fd, &st, path );
+    }
+    else if (fd == -1 && (errno == EMFILE || errno == ENFILE)) census_after_failure();
     return fd;
 }
 

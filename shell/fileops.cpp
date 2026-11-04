@@ -273,6 +273,8 @@ std::string rename_entry(const std::string &from, const std::string &to) {
     return rename(from.c_str(), to.c_str()) == 0 ? std::string() : why("Could not rename", from);
 }
 
+long long folder_size(const std::string &path, long long &items) { return tree_size(path, items); }
+
 bool job_paste(const std::vector<std::string> &sources, bool cut, const std::string &folder) {
     if (!start((cut ? "Moving " : "Copying ") + items_text(sources.size())))
         return false;

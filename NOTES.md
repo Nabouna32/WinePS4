@@ -29,3 +29,36 @@ Problems:
 - CPU: SSE4.2 + AVX1, no AVX2/FMA/BMI2/FSGSBASE. Memory: 4608 MiB direct, ~442 MiB flexible free.
 - VirtualQuery does not list system modules (libkernel etc.), so "free" ranges are only free of the
   app's own mappings; mapping MAP_FIXED there still worked for every address tried.
+
+## More than 7 processes (study, v00.49, 2026-11-04)
+
+The limit: every Windows process is a PS4 local process (`sceSystemServiceAddLocalProcess`), and the
+PS4 refuses the 8th one an app asks for (0x80aa0008); 7 ran at once in v00.43's test. Windows' own take
+4 of them for good: services.exe, winedevice.exe (mountmgr.sys), explorer.exe (the desktop window) and
+rpcss.exe (COM). That leaves 3 for programs, and Chromium programs start one process per page, one for
+the GPU, one for the network, a crash handler...: Steam (steam.exe + steamwebhelper.exe and its
+children), Chrome and its installer (GoogleUpdater's processes) all ran out.
+
+What was looked at:
+- **fork / rfork / vfork + execve work** (process probe, 2026-11-01), but those processes are not the
+  app's: closing the app from the PS4 menu kills only the app's own process, and the forked ones keep
+  its VM and direct memory: "gbase_free_vm_space_2 has mapped memory", a page fault in the kernel and
+  the sandbox's unmount stuck (a kernel panic, v00.30-00.42). Not safe as it is.
+- **pdfork** (FreeBSD 9's process descriptors, syscall 518): its child gets SIGKILL when the descriptor
+  closes, that is when the app dies, so forked processes would end with it. Untested: the PS4 may not
+  have the call, and if the kill comes later than the PS4's teardown of the app it is still a panic.
+  Only as an opt-in experiment on a console that may crash.
+- **sceSystemServiceAddLocalProcessForJvm / ForPsmKit**: other kinds of local processes, maybe with
+  their own count; signatures unknown (the PS4's own browser and PSM use them).
+- **Fewer of Windows' own**: rpcss.exe could start when COM needs it and end when idle (1 more slot);
+  explorer.exe owns the desktop window and the shell, it stays; mountmgr is the only winedevice driver.
+
+Done in v00.49: **Chromium in one process**. A Chromium browser's first process (chrome.exe,
+msedge.exe, steamwebhelper.exe, or an exe next to libcef.dll / v8_context_snapshot.bin /
+chrome_100_percent.pak: CEF and Electron programs) gets `--single-process --no-sandbox --in-process-gpu
+--disable-gpu --disable-breakpad` (ntdll's NtCreateUserProcess for one a program starts, the desktop's
+launch for one started from Files). Steam is then 2 processes. Settings > Apps > "Chromium programs in
+one process" turns it off (WINEPS4_CHROMIUM_ONE_PROCESS=0).
+
+Next, by cost: rpcss started on demand and ended when idle; then a pdfork probe pkg, if a console that
+may panic is acceptable for the test.

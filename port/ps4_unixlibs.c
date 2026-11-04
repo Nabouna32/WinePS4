@@ -14,6 +14,7 @@
 #include FT_TRIGONOMETRY_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_SFNT_NAMES_H
+#include FT_SIZES_H
 #include FT_WINFONTS_H
 
 struct ps4_symbol { const char *name; void *addr; };
@@ -56,6 +57,8 @@ static const struct ps4_symbol wineps4drv_symbols[] =
 MODULE_WOW64(ws2_32)
 MODULE(mountmgr)
 MODULE_WOW64(crypt32)
+MODULE_WOW64(opengl32)
+MODULE_WOW64(dwrite)
 
 #define FT(f) { #f, (void *)f }
 static const struct ps4_symbol freetype_symbols[] =
@@ -70,6 +73,10 @@ static const struct ps4_symbol freetype_symbols[] =
     FT(FT_Set_Charmap), FT(FT_Set_Pixel_Sizes), FT(FT_Vector_Length), FT(FT_Vector_Transform),
     FT(FT_Vector_Unit), FT(FT_Done_FreeType), FT(FT_Get_Kerning), FT(FT_Outline_Get_Orientation),
     FT(FT_Get_Glyph_Name), FT(FT_GlyphSlot_Embolden), FT(FT_Select_Charmap),
+    /* dwrite's */
+    FT(FT_Activate_Size), FT(FT_Done_Glyph), FT(FT_Done_Size), FT(FT_Get_Glyph), FT(FT_Glyph_Copy),
+    FT(FT_Glyph_Get_CBox), FT(FT_Glyph_Transform), FT(FT_New_Size), FT(FT_Outline_Copy),
+    FT(FT_Outline_Decompose), FT(FT_Outline_Done), FT(FT_Outline_EmboldenXY), FT(FT_Outline_New),
     { NULL, NULL }
 };
 
@@ -80,6 +87,8 @@ const struct ps4_unixlib ps4_unixlibs[] =
     { "ws2_32.so", ws2_32_symbols },
     { "mountmgr.so", mountmgr_symbols },
     { "crypt32.so", crypt32_symbols },
+    { "opengl32.so", opengl32_symbols },
+    { "dwrite.so", dwrite_symbols },
     { "libfreetype.so.6", freetype_symbols },
     { NULL, NULL }
 };
