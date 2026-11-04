@@ -72,7 +72,8 @@ int ps4_ioctl( int fd, unsigned long request, void *arg )
 
 /* --- The kernel's list -------------------------------------------------------------------------- */
 
-#define MAX_IFS 16
+#define MAX_IFS     16
+#define IFCONF_SIZE 16384
 
 struct ps4_if
 {
@@ -100,12 +101,11 @@ static int entry_size( const struct sockaddr *sa )
 /* the interfaces, in the kernel's order: how many */
 static int list_ifs( struct ps4_if *ifs, int max )
 {
-    static char buf[16384];
-    int sock = socket( AF_INET, SOCK_DGRAM, 0 ), len, pos, n = 0, i;
+    char *buf = malloc( IFCONF_SIZE );  /* (each call its own: several threads may ask) */
+    int sock = socket( AF_INET, SOCK_DGRAM, 0 ), len = -1, pos, n = 0, i;
 
-    if (sock < 0) return 0;
-    len = read_ifconf( sock, buf, sizeof(buf) );
-    close( sock );
+    if (sock >= 0 && buf) len = read_ifconf( sock, buf, IFCONF_SIZE );
+    if (sock >= 0) close( sock );
     for (pos = 0; len > 0 && pos + (int)sizeof(struct fbsd_ifreq) <= len; )
     {
         const struct fbsd_ifreq *req = (const struct fbsd_ifreq *)(buf + pos);
@@ -132,6 +132,7 @@ static int list_ifs( struct ps4_if *ifs, int max )
         }
         pos += entry_size( sa );
     }
+    free( buf );
     return n;
 }
 
@@ -241,15 +242,16 @@ static void ipv6_mask( const struct sockaddr_in6 *addr, struct sockaddr_in6 *mas
 
 int getifaddrs( struct ifaddrs **result )
 {
-    static char buf[16384];
+    char *buf = malloc( IFCONF_SIZE );
     struct ifaddrs *head = NULL, **tail = &head;
-    int sock = socket( AF_INET, SOCK_DGRAM, 0 ), len, pos;
+    int sock = socket( AF_INET, SOCK_DGRAM, 0 ), len = -1, pos;
 
     *result = NULL;
-    if (sock < 0) return -1;
-    if ((len = read_ifconf( sock, buf, sizeof(buf) )) < 0)
+    if (sock >= 0 && buf) len = read_ifconf( sock, buf, IFCONF_SIZE );
+    if (len < 0)
     {
-        close( sock );
+        if (sock >= 0) close( sock );
+        free( buf );
         return -1;
     }
     for (pos = 0; pos + (int)sizeof(struct fbsd_ifreq) <= len; )
@@ -295,6 +297,7 @@ int getifaddrs( struct ifaddrs **result )
         tail = &node->ifa.ifa_next;
     }
     close( sock );
+    free( buf );
     *result = head;
     return 0;
 }
