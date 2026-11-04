@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -536,7 +537,10 @@ struct spawn_request
     const void *mask;          /* 32: the signal mask the program starts with (none blocked) */
     const char *text;          /* 40: said when the exec fails */
     long        text_len;      /* 48 */
-    unsigned char empty_mask[16];
+    unsigned char empty_mask[16];  /* 56 */
+    int         control;       /* 72: ps4_spawn_outside: the socket to the desktop (descriptor 3 there) */
+    int         leave_budget;  /* 76: ps4_spawn_outside: budget_set( 0 ) before the exec */
+    int         close_limit;   /* 80: ps4_spawn_outside: descriptors 4 to this one closed */
 };
 
 /* vfork (or fork) and exec, the child running only this code: no stack, nothing but system calls
@@ -687,6 +691,111 @@ pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 )
         return -1;
     }
     return (pid_t)pid;
+}
+
+/* --- Past the PS4's 7: a process outside the system's own of the app ------------------------------
+ * The desktop starts it itself (port/ps4_spawn_desk.c): vfork, and the child, with only system
+ * calls on the request: its socket to the desktop as descriptor 3, every other descriptor closed (a
+ * program's socket to the wineserver held open by another process would keep the server from
+ * seeing that program end; one by one: a system call the kernel doesn't have, closefrom, would be
+ * a SIGSYS), out of the app's budget (budget_set 571 with 0: the PS4 lets a child of the app do it,
+ * v00.50's probe; the PS5's payload loader does the same) if asked, then the exec. Its pid, or -1. */
+static long outside_exec( struct spawn_request *req, long *child_pid )
+{
+    long ret, flag;
+
+    __asm__ volatile( "syscall\n\t"
+                      "jnc 1f\n\t"
+                      "movq $-1,%%rdx\n\t"          /* failed: rax = errno */
+                      "jmp 9f\n"
+                      "1:\ttestq %%rdx,%%rdx\n\t"   /* rdx: 0 in the parent, 1 in the child */
+                      "jz 9f\n\t"
+                      /* the child */
+                      "movl 72(%%rbx),%%edi\n\t"    /* dup2( control, 3 ) */
+                      "movl $3,%%esi\n\t"
+                      "movl $90,%%eax\n\t"
+                      "syscall\n\t"
+                      "movl $4,%%r12d\n"            /* close( 4 ... close_limit ) */
+                      "5:\tcmpl 80(%%rbx),%%r12d\n\t"
+                      "ja 4f\n\t"
+                      "movl %%r12d,%%edi\n\t"
+                      "movl $6,%%eax\n\t"
+                      "syscall\n\t"
+                      "incl %%r12d\n\t"
+                      "jmp 5b\n"
+                      "4:\tcmpl $0,76(%%rbx)\n\t"   /* budget_set( 0 ) */
+                      "je 6f\n\t"
+                      "xorl %%edi,%%edi\n\t"
+                      "movl $571,%%eax\n\t"
+                      "syscall\n"
+                      "6:\tmovl $3,%%edi\n\t"       /* sigprocmask( SIG_SETMASK, mask, NULL ) */
+                      "movq 32(%%rbx),%%rsi\n\t"
+                      "xorl %%edx,%%edx\n\t"
+                      "movl $340,%%eax\n\t"
+                      "syscall\n\t"
+                      "movq 0(%%rbx),%%rdi\n\t"     /* execve( path, argv, envp ) */
+                      "movq 8(%%rbx),%%rsi\n\t"
+                      "movq 16(%%rbx),%%rdx\n\t"
+                      "movl $59,%%eax\n\t"
+                      "syscall\n\t"
+                      "movl $2,%%edi\n\t"           /* it failed: write( 2, text, len ), exit( 127 ) */
+                      "movq 40(%%rbx),%%rsi\n\t"
+                      "movq 48(%%rbx),%%rdx\n\t"
+                      "movl $4,%%eax\n\t"
+                      "syscall\n\t"
+                      "movl $127,%%edi\n\t"
+                      "movl $1,%%eax\n\t"
+                      "syscall\n"
+                      "9:"
+                      : "=a" (ret), "=d" (flag)
+                      : "a" (66 /* SYS_vfork */), "b" (req)
+                      : "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "memory", "cc" );
+    if (flag < 0) return -(int)ret;
+    *child_pid = ret;
+    return 0;
+}
+
+pid_t ps4_spawn_outside( const char *path, char **argv, char **envp, int control, int leave_budget )
+{
+    static const char failed_text[] = "wineps4: spawn: exec failed (a process outside the PS4's 7)\n";
+    struct spawn_request *req = calloc( 1, sizeof(*req) );
+    struct rlimit files;
+    sigset_t all, old;
+    long err, pid = -1;
+
+    if (!req)
+    {
+        errno = ENOMEM;
+        return -1;
+    }
+    if (control == 3) fcntl( control, F_SETFD, 0 );  /* (dup2 of 3 onto itself keeps close-on-exec) */
+    /* (FreeBSD's RLIMIT_NOFILE: the C library's headers have Linux's number) */
+    req->close_limit = !getrlimit( 8, &files ) && files.rlim_cur < 65536 ? (int)files.rlim_cur : 16384;
+    req->path = path;
+    req->argv = argv;
+    req->envp = envp;
+    req->mask = req->empty_mask;
+    req->text = failed_text;
+    req->text_len = sizeof(failed_text) - 1;
+    req->control = control;
+    req->leave_budget = leave_budget;
+    sigfillset( &all );
+    pthread_sigmask( SIG_SETMASK, &all, &old );  /* nothing runs in the child before its exec */
+    err = -outside_exec( req, &pid );
+    pthread_sigmask( SIG_SETMASK, &old, NULL );
+    free( req );
+    if (err)
+    {
+        errno = (int)err;
+        return -1;
+    }
+    return (pid_t)pid;
+}
+
+/* this process's budget (budget_getid 609): 0 outside every app's */
+long ps4_budget_id( void )
+{
+    return raw_syscall3( 609, 0, 0, 0 );
 }
 
 int execv( const char *path, char *const argv[] )

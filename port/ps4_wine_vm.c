@@ -19,8 +19,14 @@
  * Pages are tracked per 16 KiB host page in a two-level table: 0 = not ours (passed to the kernel),
  * reserved, backed by flexible memory, or the index of the direct memory page behind it.
  *
+ * A process the desktop started outside the PS4's 7 (ps4_outside_process, port/ps4_main.c) backs
+ * every page with regular flexible memory instead: the app's direct memory mapped in a process the
+ * system doesn't know as the app's brought the PS4 down when it suspended the app (v00.42). Nothing
+ * limits that memory there but the console's: WINEPS4_OUTSIDE_MAX_MB does.
+ *
  *  WINEPS4_VM_LOG=1               log every operation (env.txt), off by default
- *  WINEPS4_DIRECT_RESERVE_MB=n    direct memory left to the rest of the app (default 256) */
+ *  WINEPS4_DIRECT_RESERVE_MB=n    direct memory left to the rest of the app (default 256)
+ *  WINEPS4_OUTSIDE_MAX_MB=n       the most a process outside the 7 backs (default 256) */
 #include <errno.h>
 #include <pthread.h>
 #include <setjmp.h>
@@ -38,6 +44,8 @@ int32_t sceKernelMunmap( void *addr, size_t len );
 int32_t sceKernelMprotect( const void *addr, size_t len, int32_t prot );
 int32_t sceKernelMapNamedSystemFlexibleMemory( void **addr, size_t len, int32_t prot, int32_t flags,
                                                const char *name );
+int32_t sceKernelMapNamedFlexibleMemory( void **addr, size_t len, int32_t prot, int32_t flags, const char *name );
+int32_t sceKernelAvailableFlexibleMemorySize( size_t *size );
 size_t sceKernelGetDirectMemorySize( void );
 int32_t sceKernelAllocateDirectMemory( off_t start, off_t end, size_t len, size_t align, int32_t type,
                                        off_t *phys );
@@ -58,6 +66,11 @@ void *__real_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
 #define L2_PAGES     (1u << (L2_SHIFT - PAGE_SHIFT))
 #define L1_ENTRIES   (1u << (47 - L2_SHIFT))
 #define ADDR_LIMIT   ((uintptr_t)1 << 47)
+#define GIB          ((uintptr_t)1 << L2_SHIFT)
+
+/* where the app's own part of the address space starts: below it the PS4's (its libraries, the
+ * kernel's choices of address) */
+#define APP_AREA_START ((uintptr_t)0x1000000000)
 
 enum { PAGE_UNTRACKED = 0, PAGE_RESERVED = 1, PAGE_FLEXIBLE = 2, PAGE_DIRECT = 3 /* + direct page */ };
 
@@ -77,11 +90,22 @@ static int vm_log;
 static int direct_exec = 1;  /* direct memory runs code (tested at start) */
 static unsigned long long backed_direct, backed_flexible;  /* pages */
 
+/* a process outside the PS4's 7: regular flexible memory for every page, flexible_max at most */
+extern int ps4_outside_process;
+static int flexible_only;
+static unsigned long long flexible_max = (256u << 20) >> PAGE_SHIFT;  /* pages */
+
+/* the level-2 block of a GiB whose every page is reserved, which has no table of its own yet (one is
+ * 256 KiB: Chromium reserves 32 GiB at once, v00.50) */
+static uint32_t reserved_block[1];
+#define RESERVED_BLOCK reserved_block
+
 #define LOG(...) do { if (vm_log) fprintf( stderr, "wineps4 vm: " __VA_ARGS__ ); } while (0)
 
 static uint32_t page_get( uintptr_t addr )
 {
     uint32_t *l2 = l1[addr >> L2_SHIFT];
+    if (l2 == RESERVED_BLOCK) return PAGE_RESERVED;
     return l2 ? l2[(addr >> PAGE_SHIFT) & (L2_PAGES - 1)] : PAGE_UNTRACKED;
 }
 
@@ -89,12 +113,45 @@ static int page_set( uintptr_t addr, uint32_t state )
 {
     uint32_t **slot = &l1[addr >> L2_SHIFT];
 
-    if (!*slot)
+    if (*slot == RESERVED_BLOCK)
+    {
+        uint32_t *table;
+        unsigned int i;
+
+        if (state == PAGE_RESERVED) return 1;
+        if (!(table = malloc( L2_PAGES * sizeof(uint32_t) ))) return 0;
+        for (i = 0; i < L2_PAGES; i++) table[i] = PAGE_RESERVED;
+        *slot = table;
+    }
+    else if (!*slot)
     {
         if (state == PAGE_UNTRACKED) return 1;
         if (!(*slot = calloc( L2_PAGES, sizeof(uint32_t) ))) return 0;
     }
     (*slot)[(addr >> PAGE_SHIFT) & (L2_PAGES - 1)] = state;
+    return 1;
+}
+
+/* every page of start-end reserved (a range the kernel has just reserved: nothing of ours in it);
+ * whole GiBs without a table of their own */
+static int reserve_pages( uintptr_t start, uintptr_t end )
+{
+    uintptr_t addr = start;
+
+    while (addr < end)
+    {
+        const uintptr_t next = (addr | (GIB - 1)) + 1, stop = next < end ? next : end;
+        uint32_t **slot = &l1[addr >> L2_SHIFT];
+
+        if (addr == next - GIB && stop == next && (!*slot || *slot == RESERVED_BLOCK))
+        {
+            *slot = RESERVED_BLOCK;
+            addr = stop;
+            continue;
+        }
+        for (; addr < stop; addr += HOST_PAGE)
+            if (!page_set( addr, PAGE_RESERVED )) return 0;
+    }
     return 1;
 }
 
@@ -168,23 +225,42 @@ unsigned long long ps4_vm_backed_bytes( void )
 
 static int release_range( uintptr_t start, uintptr_t end )
 {
-    uintptr_t addr;
+    uintptr_t addr = start;
+    int ret = 0;
 
-    for (addr = start; addr < end; addr += HOST_PAGE)
+    while (addr < end)
     {
-        uint32_t state = page_get( addr );
-        if (state == PAGE_UNTRACKED) continue;
-        if (state >= PAGE_DIRECT) { give_direct( state - PAGE_DIRECT, 1 ); backed_direct--; }
-        else if (state == PAGE_FLEXIBLE) backed_flexible--;
-        page_set( addr, PAGE_UNTRACKED );
+        const uintptr_t next = (addr | (GIB - 1)) + 1, stop = next < end ? next : end;
+        uint32_t **slot = &l1[addr >> L2_SHIFT];
+
+        if (!*slot || (*slot == RESERVED_BLOCK && addr == next - GIB && stop == next))
+        {
+            if (*slot) *slot = NULL;  /* (a reserved GiB, whole) */
+            addr = stop;
+            continue;
+        }
+        for (; addr < stop; addr += HOST_PAGE)
+        {
+            uint32_t state = page_get( addr );
+            if (state == PAGE_UNTRACKED) continue;
+            if (state >= PAGE_DIRECT) { give_direct( state - PAGE_DIRECT, 1 ); backed_direct--; }
+            else if (state == PAGE_FLEXIBLE) backed_flexible--;
+            page_set( addr, PAGE_UNTRACKED );
+        }
     }
-    return sceKernelMunmap( (void *)start, end - start ) ? -1 : 0;
+    /* (in pieces of 4 GiB at most, as reserve_high and reserve_fixed reserve them) */
+    for (addr = start; addr < end; addr += (uintptr_t)4 << 30)
+    {
+        const uintptr_t piece = end - addr < ((uintptr_t)4 << 30) ? end - addr : (uintptr_t)4 << 30;
+        if (sceKernelMunmap( (void *)addr, piece )) ret = -1;
+    }
+    return ret;
 }
 
 /* Backs reserved pages: zeroed while still inaccessible to everyone else, then given prot. */
 static int back_range( uintptr_t start, uintptr_t end, int prot )
 {
-    int flexible = (prot & PROT_EXEC) && !direct_exec;
+    int flexible = flexible_only || ((prot & PROT_EXEC) && !direct_exec);
     uintptr_t addr = start;
 
     while (addr < end)
@@ -194,7 +270,23 @@ static int back_range( uintptr_t start, uintptr_t end, int prot )
         void *base = (void *)addr;
         int ret;
 
-        if (flexible)
+        if (flexible_only)
+        {
+            static int told;
+
+            n = want;
+            if (backed_flexible + n > flexible_max)
+            {
+                if (!told++)
+                    fprintf( stderr, "wineps4 vm: this process outside the PS4's 7 has backed %llu MiB, the most "
+                             "it may (WINEPS4_OUTSIDE_MAX_MB)\n", backed_flexible >> 6 );
+                errno = ENOMEM;
+                return 0;
+            }
+            ret = sceKernelMapNamedFlexibleMemory( &base, (size_t)n << PAGE_SHIFT, PROT_READ | PROT_WRITE, SCE_FIXED,
+                                                   "wine" );
+        }
+        else if (flexible)
         {
             n = want;
             ret = sceKernelMapNamedSystemFlexibleMemory( &base, (size_t)n << PAGE_SHIFT, PROT_READ | PROT_WRITE,
@@ -209,7 +301,7 @@ static int back_range( uintptr_t start, uintptr_t end, int prot )
         if (ret || base != (void *)addr)
         {
             fprintf( stderr, "wineps4 vm: backing %p (%u pages, %s) failed: %#x\n", (void *)addr, n,
-                     flexible ? "flexible" : "direct", (unsigned int)ret );
+                     flexible_only ? "regular flexible" : flexible ? "flexible" : "direct", (unsigned int)ret );
             if (!flexible) give_direct( first, n );
             errno = ENOMEM;
             return 0;
@@ -291,10 +383,15 @@ static void test_direct_exec( void )
     sigaction( SIGSEGV, &old_segv, NULL );
     sigaction( 10, &old_bus, NULL );
 
-    direct_exec = result == 42;
-    fprintf( stderr, "wineps4 vm: direct memory %s code%s\n", direct_exec ? "runs" : "does not run",
-             direct_exec ? "" : " (code pages go to system flexible memory)" );
-    if (!direct_exec && exec_faulted) fprintf( stderr, "wineps4 vm: the test faulted with signal %d\n", exec_faulted );
+    if (flexible_only)  /* (the test ran on regular flexible memory: nothing else to go to) */
+        fprintf( stderr, "wineps4 vm: regular flexible memory %s code\n", result == 42 ? "runs" : "DOES NOT RUN" );
+    else
+    {
+        direct_exec = result == 42;
+        fprintf( stderr, "wineps4 vm: direct memory %s code%s\n", direct_exec ? "runs" : "does not run",
+                 direct_exec ? "" : " (code pages go to system flexible memory)" );
+    }
+    if (result != 42 && exec_faulted) fprintf( stderr, "wineps4 vm: the test faulted with signal %d\n", exec_faulted );
     release_range( (uintptr_t)base, (uintptr_t)base + HOST_PAGE );
 }
 
@@ -319,6 +416,61 @@ static void find_address_limit( void )
     fprintf( stderr, "wineps4 vm: address space reservable up to %#llx\n", (unsigned long long)top );
 }
 
+/* A reservation at an address of the kernel's choosing that it refused: without an address the PS4
+ * looks only in its own part below 32 GiB (0x400000-0x7ffffc000), where one as big as Chromium's
+ * 32 GiB (its memory pools: steamwebhelper's chrome_elf.dll, v00.50) never fits. Then down from the
+ * top of the app's part, a GiB at a time, in pieces of 4 GiB at most, each where it was asked for (a
+ * piece the kernel puts elsewhere goes again, and so does that try): its base, or NULL. */
+static void *reserve_high( size_t size )
+{
+    const size_t piece_max = (size_t)4 << 30;
+    uintptr_t top;
+
+    if (size >= address_limit - APP_AREA_START) return NULL;
+    for (top = (address_limit - size) & ~(GIB - 1); top >= APP_AREA_START; top -= GIB)
+    {
+        size_t done = 0;
+
+        while (done < size)
+        {
+            const size_t piece = size - done < piece_max ? size - done : piece_max;
+            void *want = (void *)(top + done), *base = want;
+
+            if (sceKernelReserveVirtualRange( &base, piece, 0, HOST_PAGE )) break;
+            if (base != want)
+            {
+                sceKernelMunmap( base, piece );
+                break;
+            }
+            done += piece;
+        }
+        if (done == size) return (void *)top;
+        if (done) sceKernelMunmap( (void *)top, done );
+    }
+    return NULL;
+}
+
+/* start + size reserved where asked (MAP_FIXED), in pieces of 4 GiB at most as above */
+static int reserve_fixed( uintptr_t start, size_t size )
+{
+    const size_t piece_max = (size_t)4 << 30;
+    size_t done = 0;
+
+    while (done < size)
+    {
+        const size_t piece = size - done < piece_max ? size - done : piece_max;
+        void *want = (void *)(start + done), *base = want;
+
+        if (sceKernelReserveVirtualRange( &base, piece, SCE_FIXED, HOST_PAGE ) || base != want)
+        {
+            if (done) sceKernelMunmap( (void *)start, done );
+            return 0;
+        }
+        done += piece;
+    }
+    return 1;
+}
+
 /* for ntdll's get_host_addr_space_limit */
 void *ps4_vm_address_limit( void )
 {
@@ -339,9 +491,20 @@ static void vm_init( void )
     pthread_mutexattr_destroy( &attr );
     vm_log = (env = getenv( "WINEPS4_VM_LOG" )) && atoi( env );
     if ((env = getenv( "WINEPS4_DIRECT_RESERVE_MB" ))) direct_reserve = (size_t)atoi( env ) << 20;
-    sceKernelAvailableDirectMemorySize( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, &start, &size );
-    fprintf( stderr, "wineps4 vm: direct memory %zu MiB, largest free %zu MiB, %zu MiB kept for the app\n",
-             sceKernelGetDirectMemorySize() >> 20, size >> 20, direct_reserve >> 20 );
+    if ((flexible_only = ps4_outside_process))
+    {
+        if ((env = getenv( "WINEPS4_OUTSIDE_MAX_MB" )) && atoi( env ) > 0)
+            flexible_max = ((unsigned long long)atoi( env ) << 20) >> PAGE_SHIFT;
+        if (sceKernelAvailableFlexibleMemorySize( &size )) size = 0;
+        fprintf( stderr, "wineps4 vm: outside the PS4's 7: regular flexible memory only, %llu MiB at most "
+                 "(the kernel says %zu MiB of it free)\n", flexible_max >> 6, size >> 20 );
+    }
+    else
+    {
+        sceKernelAvailableDirectMemorySize( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, &start, &size );
+        fprintf( stderr, "wineps4 vm: direct memory %zu MiB, largest free %zu MiB, %zu MiB kept for the app\n",
+                 sceKernelGetDirectMemorySize() >> 20, size >> 20, direct_reserve >> 20 );
+    }
     find_address_limit();
     test_direct_exec();
 }
@@ -389,7 +552,7 @@ void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
         if (start + size > ADDR_LIMIT) { errno = ENOMEM; goto done; }
         release_range( start, start + size );
         base = (void *)start;
-        if (sceKernelReserveVirtualRange( &base, size, SCE_FIXED, HOST_PAGE ) || base != (void *)start)
+        if (!reserve_fixed( start, size ))
         {
             fprintf( stderr, "wineps4 vm: fixed reservation %p-%p failed\n", (void *)start, (void *)(start + size) );
             errno = ENOMEM;
@@ -399,8 +562,19 @@ void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
     else
     {
         base = (void *)start;  /* a hint: Wine checks where it landed */
-        /* refused (above the console's address space, or taken): Wine looks further down */
-        if (sceKernelReserveVirtualRange( &base, size, 0, HOST_PAGE )) { errno = start ? EEXIST : ENOMEM; goto done; }
+        if (sceKernelReserveVirtualRange( &base, size, 0, HOST_PAGE ))
+        {
+            /* refused (above the console's address space, or taken): Wine looks further down */
+            if (start) { errno = EEXIST; goto done; }
+            if (!(base = reserve_high( size )))
+            {
+                fprintf( stderr, "wineps4 vm: no room for %zu MiB of address space, low or high\n", size >> 20 );
+                errno = ENOMEM;
+                goto done;
+            }
+            fprintf( stderr, "wineps4 vm: %zu MiB of address space at %p (the kernel had no room below 32 GiB)\n",
+                     size >> 20, base );
+        }
         if ((uintptr_t)base + size > ADDR_LIMIT)
         {
             sceKernelMunmap( base, size );
@@ -408,8 +582,13 @@ void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t of
             goto done;
         }
     }
-    for (uintptr_t a = (uintptr_t)base; a < (uintptr_t)base + size; a += HOST_PAGE)
-        if (!page_set( a, PAGE_RESERVED )) { errno = ENOMEM; release_range( (uintptr_t)base, (uintptr_t)base + size ); goto done; }
+    if (!reserve_pages( (uintptr_t)base, (uintptr_t)base + size ))
+    {
+        fprintf( stderr, "wineps4 vm: no memory for the page table of %p+%#zx\n", base, size );
+        errno = ENOMEM;
+        release_range( (uintptr_t)base, (uintptr_t)base + size );
+        goto done;
+    }
     if ((prot & PROT_ALL) && !back_range( (uintptr_t)base, (uintptr_t)base + size, prot ))
     {
         release_range( (uintptr_t)base, (uintptr_t)base + size );

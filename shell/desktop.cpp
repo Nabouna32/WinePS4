@@ -1528,6 +1528,7 @@ struct ProcessView {
     float cpu_percent = 0; // of the console's 7 cores, over the last second
     unsigned long long memory = 0;
     bool windows_own = false;  // C:\windows: Windows' own (services, explorer, ...)
+    bool outside = false;      // started outside the PS4's 7 (port/ps4_spawn_desk.c)
 };
 std::vector<ProcessView> process_views;
 std::map<int, double> last_cpu;  // pid: CPU seconds at the last look
@@ -1548,8 +1549,8 @@ void refresh_processes(bool force = false) {
         return;
     const double elapsed = std::max(0.2, t - processes_when);
     processes_when = t;
-    ps4_process_info list[32];
-    const int n = ps4_process_list(list, 32);
+    ps4_process_info list[48];
+    const int n = ps4_process_list(list, 48);
     std::vector<ProcessView> views;
     std::map<int, double> cpu_now;
     float total = 0;
@@ -1565,6 +1566,7 @@ void refresh_processes(bool force = false) {
         if (it != last_cpu.end())
             v.cpu_percent = std::clamp(static_cast<float>((v.cpu - it->second) / elapsed * 100.0 / APP_CORES), 0.f, 100.f);
         v.windows_own = lower(v.image).rfind("c:\\windows\\", 0) == 0;
+        v.outside = list[i].outside != 0;
         cpu_now[v.pid] = v.cpu;
         total += v.cpu_percent;
         views.push_back(v);
@@ -2950,11 +2952,12 @@ Rect speed_button(const Window &w, int i) {  // 0 slower, 1 faster: the bar betw
     return Rect{i ? c.x + c.w - 60 : c.x + c.w - 380, c.y + 28, 40, 36};
 }
 // Apps: a row for each program installed, with its Uninstall button
-// (under the cards for Chromium programs in one process and for helpers left out: the PS4 runs 7
-// processes for the app)
+// (under the cards for Chromium programs in one process, for helpers left out and for processes
+// outside the PS4's 7: the PS4 runs 7 processes for the app)
 Rect chromium_card(const Window &w) { return card_at(w, 56, 84); }
 Rect rules_card(const Window &w) { return card_at(w, 150, 84); }
-Rect app_row(const Window &w, int i) { return card_at(w, 290 + i * 70, 62); }
+Rect outside_card(const Window &w) { return card_at(w, 244, 84); }
+Rect app_row(const Window &w, int i) { return card_at(w, 384 + i * 70, 62); }
 Rect app_uninstall(const Window &w, int i) { const Rect r = app_row(w, i); return Rect{r.x + r.w - 140, r.y + 13, 120, 36}; }
 
 // --- typing on a USB keyboard: characters, edit boxes ---------------------------------------------
@@ -4510,6 +4513,8 @@ std::string settings_hit(const Window &w, float px, float py) {
             return "chromium";
         if (rules_card(w).contains(px, py))
             return "rules";
+        if (outside_card(w).contains(px, py))
+            return "outside";
         for (int i = 0; i < static_cast<int>(installed_apps().size()); i++)
             if (app_uninstall(w, i).contains(px, py))
                 return "uninstall" + std::to_string(i);
@@ -4734,8 +4739,10 @@ void settings_click(Window &w, const std::string &part) {
         if (direct_keyboard)
             hwkeyboard_open();
         save_desktop();
-    } else if (part == "chromium" || part == "rules") {
-        const char *key = part == "chromium" ? "WINEPS4_CHROMIUM_ONE_PROCESS" : "WINEPS4_PROCESS_RULES";
+    } else if (part == "chromium" || part == "rules" || part == "outside") {
+        const char *key = part == "chromium" ? "WINEPS4_CHROMIUM_ONE_PROCESS"
+                          : part == "rules"  ? "WINEPS4_PROCESS_RULES"
+                                             : "WINEPS4_OUTSIDE";
         env_set(key, env_get(key) != "0" ? "0" : "");
         toast = Toast{"Applies the next time WinePS4 starts", now_seconds() + 3};
     } else if (part.rfind("uninstall", 0) == 0) {
@@ -5723,7 +5730,15 @@ void draw_apps_page(Canvas &c, const Window &w) {
     c.text(rr.x + 66, rr.y + 58, "Steam's start-up probes, its install scripts and its overlay window", 13, TEXT3,
            Weight::Regular, rr.w - 180);
     draw_switch(c, rr, env_get("WINEPS4_PROCESS_RULES") != "0");
-    c.text(a.x, a.y + 266, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
+    // Windows' background programs and helpers outside the PS4's 7, and any program once 7 run
+    const Rect orr = outside_card(w);
+    panel(c, orr.x, orr.y, orr.w, orr.h, 6, hover == id + "outside" ? CARD_HOT : CARD, CARD_BORDER);
+    draw_icon(c, Icon::Program, orr.x + 34, orr.y + orr.h / 2.f, 26);
+    c.text(orr.x + 66, orr.y + 34, "More than 7 processes (test)", 16, TEXT);
+    c.text(orr.x + 66, orr.y + 58, "Windows' services and helpers run outside the PS4's 7, which stay for programs and games. "
+                                   "Close WinePS4 with Power > Exit", 13, TEXT3, Weight::Regular, orr.w - 180);
+    draw_switch(c, orr, env_get("WINEPS4_OUTSIDE") != "0");
+    c.text(a.x, a.y + 360, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
                                         : "Installed apps (" + std::to_string(apps.size()) + ")",
            15, TEXT2);
     for (int i = 0; i < static_cast<int>(apps.size()); i++) {
@@ -5817,7 +5832,8 @@ void draw_taskmgr(Canvas &c, Window &w) {
                 c.blit(*icon, name_x + 4, ry + TM_ROW_H / 2 - 8);
             else
                 draw_icon(c, row.desktop ? Icon::Logo : row.view->windows_own ? Icon::Settings : Icon::Program, name_x + 12, ry + TM_ROW_H / 2.f, 18);
-            const std::string name = row.desktop ? "Desktop and Windows server" : row.view->name;
+            const std::string name = row.desktop ? "Desktop and Windows server"
+                                     : row.view->outside ? row.view->name + "  (outside the 7)" : row.view->name;
             const float cpu = row.desktop ? desktop_cpu_percent : row.view->cpu_percent;
             const unsigned long long memory = row.desktop ? ps4_vm_backed_bytes() : row.view->memory;
             char cpu_text[16];
@@ -5842,8 +5858,13 @@ void draw_taskmgr(Canvas &c, Window &w) {
         char up_text[32];
         std::snprintf(up_text, sizeof up_text, "%ld:%02ld:%02ld", up / 3600, up / 60 % 60, up % 60);
         const bool pro = sceKernelIsNeoMode() == 1;
+        int outside = 0;
+        for (const ProcessView &v : process_views)
+            outside += v.outside;
+        const int local = static_cast<int>(process_views.size()) - outside;
         const std::string lines[][2] = {
-            {"Windows processes", std::to_string(process_views.size()) + " of 7 (the most a PS4 app runs)"},
+            {"Windows processes", std::to_string(local) + " of the PS4's 7" +
+                                      (outside ? ", " + std::to_string(outside) + " outside them" : std::string())},
             {"Cores", std::to_string(APP_CORES) + " for apps (AMD Jaguar)"},
             {"CPU speed", pro ? "2.13 GHz (PS4 Pro, NEO mode)" : "1.6 GHz"},
             {"Up time", up_text},

@@ -17,8 +17,10 @@
  *
  * The programs are processes of their own: the desktop has the PS4 start each one as a local process
  * of the app (the ones programs start too: port/ps4_spawn_desk.c), which the system suspends and ends
- * with the app; Power > Exit ends them first (ps4_end_programs). Where the PS4 refuses that, they are
- * the desktop's forked children, which end themselves when the desktop is gone (the lifeline). */
+ * with the app; Power > Exit ends them first (ps4_end_programs). Windows' background programs, and
+ * any program once the PS4's 7 run, the desktop starts itself, outside the app's own processes: with
+ * regular flexible memory only, ending with the desktop. Where the PS4 refuses local processes, they
+ * are the desktop's forked children, which end themselves when the desktop is gone (the lifeline). */
 #include <dirent.h>
 #include <pthread.h>
 #include <signal.h>
@@ -40,6 +42,7 @@
 #include "include/ps4_display.h"
 
 #define DESKTOP_LOCK_FILE "/data/WinePS4/.desktop-lock"  /* locked by the desktop while it runs */
+#define DESKTOP_PID_FILE  "/data/WinePS4/.desktop-pid"   /* the desktop's pid, written as it starts */
 
 /* a system call before anything is set up: no errno, no libc (-errno when it failed) */
 static long early_syscall3( long number, long a, long b, long c )
@@ -75,6 +78,32 @@ static int is_program_process( void )
     return ret == -35 /* EWOULDBLOCK */;
 }
 
+int ps4_outside_process;  /* the desktop started this one itself, outside the PS4's 7 (port/ps4_wine_vm.c) */
+
+/* A program process the desktop started itself (past the PS4's 7, or forked where the PS4 starts
+ * none: port/ps4_spawn_desk.c): its parent is the desktop. The PS4 starts the local processes (their
+ * parent is the system's). */
+static int started_by_desktop( void )
+{
+    char text[16];
+    long fd = early_syscall3( 5 /* SYS_open */, (long)DESKTOP_PID_FILE, 0 /* O_RDONLY */, 0 ), n, pid = 0, i;
+
+    if (fd < 0) return 0;
+    n = early_syscall3( 3 /* SYS_read */, fd, (long)text, sizeof(text) - 1 );
+    early_syscall3( 6 /* SYS_close */, fd, 0, 0 );
+    for (i = 0; i < n && text[i] >= '0' && text[i] <= '9'; i++) pid = pid * 10 + text[i] - '0';
+    return pid > 0 && early_syscall3( 39 /* SYS_getppid */, 0, 0, 0 ) == pid;
+}
+
+static void write_desktop_pid( void )
+{
+    FILE *f = fopen( DESKTOP_PID_FILE, "w" );
+
+    if (!f) return;
+    fprintf( f, "%d\n", (int)getpid() );
+    fclose( f );
+}
+
 /* The C heap of a program process comes from direct memory. The system's flexible memory is one
  * pool shared by every process of the app, and the PS4 itself takes from it: the desktop's 256 MiB
  * and 128 MiB for each program used it all up (v00.40: winedevice.exe, the 4th, got nothing and
@@ -87,6 +116,17 @@ void ps4_kit_configure_heap( ps4_kit_heap_options *options )
     if (!is_program_process())
     {
         options->log_tag = "desktop";
+        return;
+    }
+    if (started_by_desktop())
+    {
+        /* outside the system's processes of the app: none of the app's direct memory (what the
+         * PS4's suspend and close of the app tear down, v00.42) and none of its system pool;
+         * regular flexible memory, which nothing limits there: 96 MiB at most for the heap */
+        ps4_outside_process = 1;
+        options->log_tag = "outside";
+        options->regular_only = 1;
+        options->regular_max = 96u << 20;
         return;
     }
     options->log_tag = "program";
@@ -446,7 +486,9 @@ extern int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int
 extern int ps4_local_kill_all( void );
 extern void ps4_local_kill( int pid );
 extern int ps4_local_child( int argc, char **argv );
-extern int ps4_local_child_setup( int *argc_out, char ***argv_out );
+extern int ps4_local_child_setup( int outside, int *argc_out, char ***argv_out );
+extern int ps4_outside_child( int pid );
+extern long ps4_budget_id( void );
 
 static int local_child;  /* this program process is a local process (the PS4 started it) */
 
@@ -543,7 +585,9 @@ static int launch( char *const args[], const char *extra_env )
     pthread_mutex_unlock( &ps4_spawn_lock );
     if (envp != environ) free( envp );
     if (local < 0 && local != -ENOSYS) errno = -local;
-    if (pid > 0) logf_( "wineps4: started %s (%s %d)\n", args[0], local == -ENOSYS ? "forked process" : "local process", pid );
+    if (pid > 0)
+        logf_( "wineps4: started %s (%s %d)\n", args[0], local == -ENOSYS ? "forked process" :
+               ps4_outside_child( pid ) ? "outside the PS4's 7, process" : "local process", pid );
     return pid;
 }
 
@@ -814,6 +858,7 @@ static void *reaper_thread( void *arg )
     {
         int status = 0;
         const pid_t pid = waitpid( -1, &status, 0 );
+        if (pid > 0 && ps4_outside_child( pid )) continue;  /* (its socket told its end, with the whole exit code) */
         if (pid > 0)
         {
             const int code = WIFEXITED( status ) ? WEXITSTATUS( status ) : 128 + WTERMSIG( status );
@@ -925,7 +970,10 @@ static int program_main( int argc, char **argv )
         logf_( "wineps4: process %d: no program\n", (int)getpid() );
         ps4_process_exit_now( 1 );
     }
-    logf_( "wineps4: process %d: %s\n", (int)getpid(), argv[1] );
+    if (ps4_outside_process)
+        logf_( "wineps4: process %d: %s (outside the PS4's 7, budget %ld, regular flexible memory only)\n",
+               (int)getpid(), argv[1], ps4_budget_id() );
+    else logf_( "wineps4: process %d: %s\n", (int)getpid(), argv[1] );
     ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
     ps4_start_hang_watch();
     __wine_main( argc, argv );
@@ -936,14 +984,15 @@ int main( int argc, char **argv )
 {
     pthread_t thread;
     pthread_attr_t attr;
+    int kind;
 
     ps4_kit_set_min_thread_stack( WINE_KERNEL_STACK_SIZE );
-    if (ps4_local_child( argc, argv ))  /* the PS4 started it: what to run comes from the desktop */
+    if ((kind = ps4_local_child( argc, argv )))  /* the PS4 (or the desktop) started it: what to run comes from the desktop */
     {
         char **program_argv;
         int program_argc;
 
-        if (!ps4_local_child_setup( &program_argc, &program_argv )) ps4_process_exit_now( 127 );
+        if (!ps4_local_child_setup( kind == 2, &program_argc, &program_argv )) ps4_process_exit_now( 127 );
         local_child = 1;
         return program_main( program_argc, program_argv );
     }
@@ -955,6 +1004,7 @@ int main( int argc, char **argv )
         mkdir( DATA_DIR, 0777 );
         is_program_process();
     }
+    write_desktop_pid();  /* (before any program starts: the ones it starts itself tell by it) */
     open_log();
     ps4_dirs_reset();  /* (the processes' shared folder paths: none from the last session) */
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );

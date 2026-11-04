@@ -96,3 +96,40 @@ Past 7 on the PS4, if the probe says a child may leave the budget: a process for
 leaves it, runs from a copy of wineps4.bin outside /app0 (the sandbox's unmount waited for ours, v00.4x),
 uses no direct memory and ends itself when its control socket closes; the panic at the app's close
 (v00.30-00.42) is the test it has to pass, on a console that may crash.
+
+## Past the 7, and Chromium's 32 GiB (v00.51, 2026-11-04)
+
+v00.50's log: the probe's child left the app's budget (budget_set 0 gave 0, its budget then 0);
+steamservice.exe was refused at 7 twice; Steam's web helper died at every start in chrome_elf.dll:
+`mmap 0+0x800000000 prot 0 failed: Out of memory`. Chromium reserves 32 GiB less 64 KiB for its
+memory pools, and without an address the PS4 looks only in its own part of the address space below
+32 GiB (0x400000-0x7ffffc000, shadPS4's SYSTEM_MANAGED area; the app's own starts at 64 GiB,
+0x1000000000, and ends at 0xfc00000000, where the VM layer's probe found its limit): it never fits.
+
+v00.51:
+- port/ps4_wine_vm.c: a reservation the kernel refuses without an address goes down from the top of
+  the app's part, a GiB at a time, in pieces of 4 GiB at most, each where it was asked for (fixed
+  reservations in pieces too, unmapped in pieces); wine.log says so each time. A GiB reserved whole
+  has no page table until a page of it is backed (a table is 256 KiB a GiB: 8 MiB for Chromium's).
+- Processes outside the PS4's 7 (port/ps4_spawn_desk.c, port/ps4_wine_port.c ps4_spawn_outside):
+  the desktop vforks, the child keeps only its socket to the desktop (descriptor 3; every other one
+  closed one by one, no closefrom: an unknown system call is a SIGSYS), leaves the app's budget,
+  execs /app0/wineps4.bin --wineps4-outside, and takes the same hand-off as a local process (HELLO,
+  arguments/environment/descriptors, READY, STAT every second, EXIT). Windows' background programs
+  and helpers start there first (services, winedevice, rpcss, plugplay, svchost, dllhost, msiexec,
+  conhost, the command-line tools; Steam's steamservice and error reporters; Google's updater and
+  crash handlers; games' crash reporters), any program once the 7 run. The 7 then hold explorer.exe
+  and the programs: Steam, its web helper and a game have room. A first one that does not start is
+  tried again in the app's budget, then none start outside (wine.log says each).
+- What made the forked processes of v00.30-00.42 bring the PS4 down was the app's direct memory in
+  processes the system doesn't count as the app's (klog: "gbase_free_vm_space_2 has mapped memory
+  vmid:1" while the app was suspended, then "Fatal trap 12"; they all ran in vm#1/dmem#1). So these
+  map none: the program heap (ps4-kit's new regular_only option: no direct memory, no system pool,
+  no overflow heaps; 96 MiB at most) and every Wine page (256 MiB at most, WINEPS4_OUTSIDE_MAX_MB)
+  come from regular flexible memory, which nothing limits there but the console (a forked child once
+  asked for 4 GiB of it and the PS4 froze). They tell they are outside by their parent: the desktop
+  writes its pid to /data/WinePS4/.desktop-pid; local processes are the system's children.
+- They end with the desktop: their socket's end (the desktop gone, however) makes them exit at once;
+  Power > Exit kills them with the rest. Closing from the PS4 menu is the test they have to pass.
+- Settings > Apps > "More than 7 processes (test)" (WINEPS4_OUTSIDE=0 turns it off); Task Manager
+  marks them "(outside the 7)" and its Performance page counts both.

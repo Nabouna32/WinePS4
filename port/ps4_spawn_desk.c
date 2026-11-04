@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/resource.h>
 #include <unistd.h>
 
@@ -89,15 +90,25 @@ static void socket_address( struct sockaddr_un *addr )
  * arguments, the environment and the descriptors (standard input, output and error, the wineserver
  * socket), the child says READY, runs the program and says EXIT (its code) as it ends; the end of the
  * socket tells either side that the other is gone. When the PS4 refuses local processes, the desktop
- * forks the programs as before (and wine.log says so). */
+ * forks the programs as before (and wine.log says so).
+ *
+ * Past the PS4's 7 (the most local processes an app has: 0x80aa0008 for the 8th, v00.43): processes
+ * the desktop starts itself, outside the system's own of the app (port/ps4_wine_port.c's
+ * ps4_spawn_outside), with the same hand-off over a socket of their own (descriptor 3). Windows'
+ * background programs and helpers start there first (background_programs), so the 7 stay for the
+ * programs and games; any program when the 7 run. Forked processes with the app's direct memory
+ * brought the PS4 down when it suspended and closed the app (v00.30-00.42): these take regular
+ * flexible memory only (port/ps4_main.c, ps4_kit_configure_heap; port/ps4_wine_vm.c), and end the
+ * moment the desktop does (their socket's end). Settings > Apps turns them off (WINEPS4_OUTSIDE=0). */
 
 #define LOCAL_ARG        "--wineps4-local"  /* the argument the PS4 starts a local process with */
+#define OUTSIDE_ARG      "--wineps4-outside" /* the one the desktop starts a process outside the 7 with */
 #define LOCAL_MAGIC      0x504c3457         /* "W4LP": the desktop's hand-off */
 #define MSG_HELLO        0x4f4c4548         /* "HELO", the pid */
 #define MSG_READY        0x59444552         /* "REDY" */
 #define MSG_EXIT         0x54495845         /* "EXIT", the exit code (port/ps4_wine_port.c) */
 #define MSG_STATS        0x54415453         /* "STAT", then struct local_stats: every second, for Task Manager */
-#define MAX_LOCAL        16                 /* SCE_LNC_UTIL_MAX_LOCAL_PROCESS_NUM */
+#define MAX_PROCS        48                 /* local (SCE_LNC_UTIL_MAX_LOCAL_PROCESS_NUM: 16) and outside */
 #define LOCAL_TIMEOUT_MS 15000
 
 struct local_msg
@@ -120,20 +131,27 @@ int sceSystemServiceGetParentSocket( void );
 extern void ps4_process_ended( int pid, int code );
 extern void ps4_process_exit_now( int status ) __attribute__((noreturn));
 extern void ps4_shell_notice( const char *text );
+extern pid_t ps4_spawn_outside( const char *path, char **argv, char **envp, int control, int leave_budget );
 extern int ps4_control_fd;
 
 static pthread_mutex_t locals_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct
 {
-    int local_id, pid, control, code;
+    int local_id, pid, control, code;  /* local_id -1: a process outside the PS4's 7 */
     char image[260];             /* the program (argv[1]: a Windows or Unix path) */
     struct local_stats stats;    /* the last it sent */
-} locals[MAX_LOCAL];
+} locals[MAX_PROCS];
 static int local_count;
 static int local_state;            /* 0: not tried yet, 1: the PS4 starts them, -1: refused */
+static int outside_state;          /* processes outside the 7: 0 not tried yet, 1 they start, -1 they don't */
+static int outside_budget = 1;     /* they leave the app's budget (0: their exec failed that way) */
 static int app_id = -1;
 static int wake[2] = { -1, -1 };   /* wakes the monitor when a process is added */
 static pthread_once_t monitor_once = PTHREAD_ONCE_INIT;
+
+/* the pids started outside the 7 (their sockets tell their ends: the reaper leaves them alone) */
+static int outside_pids[64];
+static unsigned int outside_next;
 
 /* a message from fd within timeout_ms: 1, or 0 (nothing in time, or the socket's end) */
 static int read_msg( int fd, struct local_msg *msg, int timeout_ms )
@@ -171,14 +189,15 @@ static void control_event( int fd )
     close( fd );
     locals[i] = locals[--local_count];
     pthread_mutex_unlock( &locals_lock );
-    sceSystemServiceKillLocalProcess( app_id, local_id );  /* (its entry, if the system still has one) */
+    if (local_id >= 0) sceSystemServiceKillLocalProcess( app_id, local_id );  /* (its entry, if the system still has one) */
+    else kill( pid, SIGKILL );  /* (a socket closed early: what is left of it) */
     ps4_process_ended( pid, code );
 }
 
 /* the desktop: every local process's socket, for its end */
 static void *local_monitor( void *arg )
 {
-    struct pollfd fds[MAX_LOCAL + 1];
+    struct pollfd fds[MAX_PROCS + 1];
     char buf[16];
     int n, i;
 
@@ -218,22 +237,172 @@ static int skip_env( const char *var )  /* the child's own (the lifeline is the 
     return !strncmp( var, "WINESERVERSOCKET=", 17 ) || !strncmp( var, "WINEPS4_LIFELINE=", 17 );
 }
 
-/* Has the PS4 start argv (argv[0] /app0/wineps4.bin) as a local process with the environment envp,
- * fd0, fd1 and fd2 as its standard input, output and error and server_fd as its wineserver socket
- * (-1: none): its pid, or -errno; -ENOSYS: the PS4 refuses local processes to the app (the caller
- * forks instead). With ps4_spawn_lock held. */
-int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, int fd2, int server_fd )
+/* Windows' background programs and the helpers of programs: outside the PS4's 7 first */
+static const char *const background_programs[] =
+{
+    /* Windows' services, and the tools installers and scripts run */
+    "services.exe", "winedevice.exe", "plugplay.exe", "svchost.exe", "rpcss.exe", "dllhost.exe",
+    "msiexec.exe", "conhost.exe", "spoolsv.exe", "tabtip.exe", "werfault.exe", "wusa.exe",
+    "cmd.exe", "rundll32.exe", "regsvr32.exe", "reg.exe", "sc.exe", "net.exe", "schtasks.exe",
+    "taskkill.exe", "tasklist.exe", "timeout.exe", "ping.exe", "ipconfig.exe", "netsh.exe",
+    "hostname.exe", "whoami.exe", "where.exe", "find.exe", "findstr.exe", "attrib.exe", "xcopy.exe",
+    "expand.exe", "extrac32.exe", "icacls.exe", "cacls.exe", "fsutil.exe", "cscript.exe",
+    "wscript.exe", "certutil.exe", "systeminfo.exe", "wmic.exe", "powershell.exe",
+    /* Steam's */
+    "steamservice.exe", "steamerrorreporter.exe", "steamerrorreporter64.exe",
+    /* Chrome's: Google's updater, crash handlers */
+    "updater.exe", "googleupdate.exe", "googlecrashhandler.exe", "googlecrashhandler64.exe",
+    "crashpad_handler.exe", "elevation_service.exe", "notification_helper.exe",
+    /* games' crash reporters */
+    "unitycrashhandler32.exe", "unitycrashhandler64.exe", "crashreportclient.exe", "bssndrpt.exe",
+    "bssndrpt64.exe", "crashsender1403.exe",
+    NULL
+};
+
+static int outside_allowed( void )
+{
+    const char *env = getenv( "WINEPS4_OUTSIDE" );
+    return outside_state >= 0 && (!env || strcmp( env, "0" ));
+}
+
+static int background_program( const char *image )
+{
+    const char *name = image, *p;
+    int i;
+
+    for (p = image; *p; p++)
+        if (*p == '\\' || *p == '/') name = p + 1;
+    for (i = 0; background_programs[i]; i++)
+        if (!strcasecmp( name, background_programs[i] )) return 1;
+    return 0;
+}
+
+/* a pid started outside the 7 (the reaper leaves its end to its socket) */
+int ps4_outside_child( int pid )
+{
+    unsigned int i;
+
+    for (i = 0; i < sizeof(outside_pids) / sizeof(outside_pids[0]); i++)
+        if (outside_pids[i] == pid) return 1;
+    return 0;
+}
+
+/* how many run outside the 7 now */
+static int outside_count( void )
+{
+    int i, n = 0;
+
+    for (i = 0; i < local_count; i++) n += locals[i].local_id < 0;
+    return n;
+}
+
+/* The PS4 starts a local process of the app, and it says HELLO: 1, with *sock (the desktop's end of
+ * its socket), *id and *pid; 0: it did not answer; -1: the PS4 runs 7 (0x80aa0008); -2: it starts
+ * none for the app (the first one refused). */
+static int start_local( int *sock, int *id_out, int *pid_out )
 {
     static const char *const local_argv[] = { LOCAL_ARG, NULL };
+    uint32_t param[0x8c / 4];
+    struct local_msg msg;
+    int sv[2], id;
+
+    if (socketpair( AF_UNIX, SOCK_STREAM, 0, sv ) == -1) return 0;
+    fcntl( sv[0], F_SETFD, FD_CLOEXEC );
+    fcntl( sv[1], F_SETFD, FD_CLOEXEC );
+
+    /* the request as the PS4's own PS2 emulator makes it: size, the child's socket, crash reports */
+    memset( param, 0, sizeof(param) );
+    param[0] = sizeof(param);
+    param[1] = sv[1];
+    param[2] = 1;
+    id = sceSystemServiceAddLocalProcess( app_id, "/app0/wineps4.bin", local_argv, param );
+    if (id < 0)
+    {
+        fprintf( stderr, "wineps4: the PS4 did not start a local process (0x%08x)%s\n", id,
+                 local_state ? "" : ": programs are forked (close the app with Power > Exit only)" );
+        close( sv[0] );
+        close( sv[1] );
+        if (local_state) return -1;  /* (0x80aa0008: 7 already run, the most an app has) */
+        local_state = -1;
+        return -2;
+    }
+    /* HELLO: it runs (our copy of its socket is kept until then: a unix socket whose every
+     * descriptor is in flight can arrive emptied) */
+    if (!read_msg( sv[0], &msg, LOCAL_TIMEOUT_MS ) || msg.magic != MSG_HELLO)
+    {
+        fprintf( stderr, "wineps4: local process %d did not answer\n", id );
+        sceSystemServiceKillLocalProcess( app_id, id );
+        close( sv[0] );
+        close( sv[1] );
+        if (local_state) return 0;
+        local_state = -1;  /* (the first one: the PS4 starts them, but not this way) */
+        return -2;
+    }
+    close( sv[1] );
+    *sock = sv[0];
+    *id_out = id;
+    *pid_out = msg.value;
+    return 1;
+}
+
+/* The desktop starts a process outside the PS4's 7 (/app0/wineps4.bin OUTSIDE_ARG, its socket as
+ * descriptor 3, out of the app's budget), and it says HELLO: 1, with *sock and *pid. The first that
+ * fails is tried again in the app's budget; when that fails too, none start outside any more. */
+static int start_outside( int *sock, int *pid_out )
+{
+    static char *outside_argv[] = { (char *)"/app0/wineps4.bin", (char *)OUTSIDE_ARG, NULL };
+    static char *no_env[] = { NULL };
+    struct local_msg msg;
+    int sv[2], pid;
+
+    while (outside_allowed())
+    {
+        if (socketpair( AF_UNIX, SOCK_STREAM, 0, sv ) == -1) return 0;
+        fcntl( sv[0], F_SETFD, FD_CLOEXEC );
+        fcntl( sv[1], F_SETFD, FD_CLOEXEC );
+        pid = ps4_spawn_outside( outside_argv[0], outside_argv, no_env, sv[1], outside_budget );
+        close( sv[1] );  /* (the child has it as its 3: its end is the socket's end) */
+        if (pid > 0)
+        {
+            outside_pids[outside_next++ % (sizeof(outside_pids) / sizeof(outside_pids[0]))] = pid;
+            if (read_msg( sv[0], &msg, LOCAL_TIMEOUT_MS ) && msg.magic == MSG_HELLO)
+            {
+                if (outside_state != 1)
+                    fprintf( stderr, "wineps4: processes past the PS4's 7 start outside it (%s)\n",
+                             outside_budget ? "each out of the app's budget" : "in the app's budget" );
+                outside_state = 1;
+                *sock = sv[0];
+                *pid_out = pid;
+                return 1;
+            }
+            kill( pid, SIGKILL );
+        }
+        fprintf( stderr, "wineps4: a process outside the PS4's 7 did not start (%s%s)\n",
+                 pid > 0 ? "no answer" : strerror( errno ), outside_budget ? ", out of the app's budget" : "" );
+        close( sv[0] );
+        if (outside_state == 1) return 0;  /* (they did before: this one only) */
+        if (outside_budget) outside_budget = 0;  /* again, in the app's budget */
+        else outside_state = -1;
+    }
+    return 0;
+}
+
+/* Has the PS4 start argv (argv[0] /app0/wineps4.bin) as a local process with the environment envp,
+ * fd0, fd1 and fd2 as its standard input, output and error and server_fd as its wineserver socket
+ * (-1: none), or starts it outside the PS4's 7 (Windows' background programs first; any once the 7
+ * run): its pid, or -errno; -ENOSYS: the PS4 refuses local processes to the app (the caller forks
+ * instead). With ps4_spawn_lock held. */
+int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, int fd2, int server_fd )
+{
     union { struct cmsghdr align; char buf[CMSG_SPACE( 4 * sizeof(int) )]; } control;
     struct spawn_header header = { LOCAL_MAGIC };
     const int send_fds[4] = { fd0, fd1, fd2, server_fd };
-    uint32_t param[0x8c / 4];
+    const char *image = argv[1] ? argv[1] : "";
     struct local_msg msg;
     struct msghdr m;
     struct cmsghdr *cmsg;
     struct iovec iov;
-    int sv[2], fds[4], nfds = 0, i, id, pid, ret = -EIO;
+    int sock = -1, fds[4], nfds = 0, i, id = -1, pid = -1, ret = -EIO, started;
     char *strings = NULL, *p;
     size_t size = 0;
 
@@ -255,41 +424,23 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
     for (p = strings, i = 0; argv[i]; i++) p = stpcpy( p, argv[i] ) + 1;
     for (i = 0; envp[i]; i++)
         if (!skip_env( envp[i] )) p = stpcpy( p, envp[i] ) + 1;
-    if (socketpair( AF_UNIX, SOCK_STREAM, 0, sv ) == -1)
-    {
-        ret = -errno;
-        free( strings );
-        return ret;
-    }
-    fcntl( sv[0], F_SETFD, FD_CLOEXEC );
-    fcntl( sv[1], F_SETFD, FD_CLOEXEC );
 
-    /* the request as the PS4's own PS2 emulator makes it: size, the child's socket, crash reports */
-    memset( param, 0, sizeof(param) );
-    param[0] = sizeof(param);
-    param[1] = sv[1];
-    param[2] = 1;
-    id = sceSystemServiceAddLocalProcess( app_id, "/app0/wineps4.bin", local_argv, param );
-    if (id < 0)
+    /* a background program outside the 7 if it can be; else a local process, outside once 7 run */
+    started = background_program( image ) && start_outside( &sock, &pid );
+    if (!started)
     {
-        fprintf( stderr, "wineps4: the PS4 did not start a local process (0x%08x)%s\n", id,
-                 local_state ? "" : ": programs are forked (close the app with Power > Exit only)" );
-        /* (0x80aa0008: 7 already run, the most an app has) */
-        if (local_state) ps4_shell_notice( "The PS4 runs 7 Windows processes at once at most: close a program first" );
-        ret = local_state ? -EAGAIN : -ENOSYS;
-        if (!local_state) local_state = -1;
-        goto done;
+        const int local = start_local( &sock, &id, &pid );
+
+        if (local == -1 && start_outside( &sock, &pid )) started = 1;
+        else if (local == 1) started = 1;
+        else
+        {
+            if (local == -1) ps4_shell_notice( "The PS4 runs 7 Windows processes at once at most: close a program first" );
+            ret = local == -2 ? -ENOSYS : local == -1 ? -EAGAIN : -EIO;
+            free( strings );
+            return ret;
+        }
     }
-    /* HELLO: it runs (our copy of its socket is kept until then: a unix socket whose every
-     * descriptor is in flight can arrive emptied) */
-    if (!read_msg( sv[0], &msg, LOCAL_TIMEOUT_MS ) || msg.magic != MSG_HELLO)
-    {
-        fprintf( stderr, "wineps4: local process %d did not answer\n", id );
-        goto failed;
-    }
-    pid = msg.value;
-    close( sv[1] );
-    sv[1] = -1;
 
     memset( &m, 0, sizeof(m) );
     iov.iov_base = &header;
@@ -307,45 +458,49 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
         cmsg->cmsg_len = CMSG_LEN( nfds * sizeof(int) );
         memcpy( CMSG_DATA( cmsg ), fds, nfds * sizeof(int) );
     }
-    while (sendmsg( sv[0], &m, 0 ) == -1)
+    while (sendmsg( sock, &m, 0 ) == -1)
         if (errno != EINTR) goto failed;
-    if (!write_all( sv[0], strings, size ) || !read_msg( sv[0], &msg, LOCAL_TIMEOUT_MS ) || msg.magic != MSG_READY)
+    if (!write_all( sock, strings, size ) || !read_msg( sock, &msg, LOCAL_TIMEOUT_MS ) || msg.magic != MSG_READY)
     {
-        fprintf( stderr, "wineps4: local process %d (pid %d) did not take its hand-off\n", id, pid );
+        fprintf( stderr, "wineps4: %s process %d (pid %d) did not take its hand-off\n", id >= 0 ? "local" : "outside",
+                 id, pid );
         goto failed;
     }
 
-    local_state = 1;
+    if (id >= 0) local_state = 1;
     pthread_once( &monitor_once, start_monitor );
     pthread_mutex_lock( &locals_lock );
-    if (local_count < MAX_LOCAL)
+    if (local_count < MAX_PROCS)
     {
         memset( &locals[local_count], 0, sizeof(locals[local_count]) );
         locals[local_count].local_id = id;
         locals[local_count].pid = pid;
-        locals[local_count].control = sv[0];
+        locals[local_count].control = sock;
         locals[local_count].code = -1;
-        snprintf( locals[local_count].image, sizeof(locals[local_count].image), "%s", argv[1] ? argv[1] : "" );
+        snprintf( locals[local_count].image, sizeof(locals[local_count].image), "%s", image );
         local_count++;
-        sv[0] = -1;
+        sock = -1;
+        if (id < 0)
+            fprintf( stderr, "wineps4: %s runs outside the PS4's 7 (process %d, %d outside now)\n", image, pid,
+                     outside_count() );
     }
     pthread_mutex_unlock( &locals_lock );
-    if (sv[0] != -1) goto failed;  /* (more than the PS4 allows: refused above already) */
+    if (sock != -1) goto failed;  /* (more than this table holds) */
     ps4_child_started( pid );
     if (wake[1] != -1) write( wake[1], "", 1 );
     ret = pid;
     goto done;
 
 failed:
-    sceSystemServiceKillLocalProcess( app_id, id );
-    if (!local_state)  /* (the first one: the PS4 starts them, but not this way) */
+    if (id >= 0) sceSystemServiceKillLocalProcess( app_id, id );
+    else kill( pid, SIGKILL );
+    if (id >= 0 && !local_state)  /* (the first one: the PS4 starts them, but not this way) */
     {
         local_state = -1;
         ret = -ENOSYS;
     }
 done:
-    if (sv[0] != -1) close( sv[0] );
-    if (sv[1] != -1) close( sv[1] );
+    if (sock != -1) close( sock );
     free( strings );
     return ret;
 }
@@ -354,20 +509,21 @@ done:
  * reach the monitor; how many there were */
 int ps4_local_kill_all( void )
 {
-    int ids[MAX_LOCAL], pids[MAX_LOCAL], n, i;
+    int ids[MAX_PROCS], pids[MAX_PROCS], n, i;
 
     pthread_mutex_lock( &locals_lock );
     for (n = 0; n < local_count; n++) ids[n] = locals[n].local_id, pids[n] = locals[n].pid;
     pthread_mutex_unlock( &locals_lock );
     for (i = 0; i < n; i++)
     {
-        sceSystemServiceKillLocalProcess( app_id, ids[i] );
+        if (ids[i] >= 0) sceSystemServiceKillLocalProcess( app_id, ids[i] );
         kill( pids[i], SIGKILL );
     }
     return n;
 }
 
-/* Task Manager's list (shell.h): the local processes, with their programs and last figures */
+/* Task Manager's list (shell.h): the local processes and the ones outside the 7, with their
+ * programs and last figures */
 int ps4_process_list( struct ps4_process_info *list, int max )
 {
     int i, n = 0;
@@ -379,6 +535,7 @@ int ps4_process_list( struct ps4_process_info *list, int max )
         snprintf( list[n].image, sizeof(list[n].image), "%s", locals[i].image );
         list[n].cpu_seconds = locals[i].stats.cpu_us / 1e6;
         list[n].memory = locals[i].stats.memory;
+        list[n].outside = locals[i].local_id < 0;
     }
     pthread_mutex_unlock( &locals_lock );
     return n;
@@ -393,7 +550,7 @@ void ps4_local_kill( int pid )
     for (i = 0; i < local_count; i++)
         if (locals[i].pid == pid) id = locals[i].local_id;
     pthread_mutex_unlock( &locals_lock );
-    if (id != -1) sceSystemServiceKillLocalProcess( app_id, id );
+    if (id >= 0) sceSystemServiceKillLocalProcess( app_id, id );
     kill( pid, SIGKILL );
 }
 
@@ -432,19 +589,24 @@ static void *stats_thread( void *arg )
     return NULL;
 }
 
-/* Is this a local process (argv has LOCAL_ARG)? */
+/* Is this a local process (argv has LOCAL_ARG: 1) or one the desktop started outside the PS4's 7
+ * (OUTSIDE_ARG: 2)? */
 int ps4_local_child( int argc, char **argv )
 {
     int i;
 
     for (i = 0; i < argc; i++)
+    {
         if (argv[i] && !strcmp( argv[i], LOCAL_ARG )) return 1;
+        if (argv[i] && !strcmp( argv[i], OUTSIDE_ARG )) return 2;
+    }
     return 0;
 }
 
-/* A local process: the desktop's hand-off over the system's socket. Sets the environment and the
- * standard descriptors and returns the program's arguments; 0: no hand-off. */
-int ps4_local_child_setup( int *argc_out, char ***argv_out )
+/* A local process: the desktop's hand-off over the system's socket (outside the 7: its descriptor
+ * 3). Sets the environment and the standard descriptors and returns the program's arguments; 0: no
+ * hand-off. */
+int ps4_local_child_setup( int outside, int *argc_out, char ***argv_out )
 {
     union { struct cmsghdr align; char buf[CMSG_SPACE( 4 * sizeof(int) )]; } control;
     struct spawn_header header;
@@ -454,7 +616,7 @@ int ps4_local_child_setup( int *argc_out, char ***argv_out )
     struct iovec iov;
     pthread_attr_t attr;
     pthread_t thread;
-    int sock = sceSystemServiceGetParentSocket(), got[4], ngot = 0, fds[4] = { -1, -1, -1, -1 }, i, k;
+    int sock = outside ? 3 : sceSystemServiceGetParentSocket(), got[4], ngot = 0, fds[4] = { -1, -1, -1, -1 }, i, k;
     char **list, *strings, *p, *end, number[16];
     ssize_t n;
 
