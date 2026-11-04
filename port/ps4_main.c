@@ -637,6 +637,14 @@ static const struct reg_edit startup_edits[] =
     { "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\RunServices", "\"winemenubuilder\"=", NULL, "winemenubuilder" },
 };
 
+/* the same, for every key whose name starts with the key's: a program's services (their names carry
+ * its version). Chrome's updater, left by an installer that did not finish, started 3-4 processes at
+ * every start of Windows (v00.48/49): on demand now, as Chrome's installer asks for it. */
+static const struct reg_edit startup_prefix_edits[] =
+{
+    { "System\\\\ControlSet001\\\\Services\\\\GoogleUpdater", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "GoogleUpdater" },
+};
+
 /* one edit of the registry file's text (*size: its length): whether it applied */
 static int apply_reg_edit( char *text, size_t *size, const struct reg_edit *edit )
 {
@@ -662,6 +670,30 @@ static int apply_reg_edit( char *text, size_t *size, const struct reg_edit *edit
         return 1;
     }
     return 0;
+}
+
+/* an edit (its "to" as long as its "from") in every key starting with edit->key: how many */
+static int apply_reg_edit_all( char *text, size_t size, const struct reg_edit *edit )
+{
+    const size_t from_len = strlen( edit->from );
+    char header[160], *at = text, *line, *end;
+    int count = 0;
+
+    snprintf( header, sizeof(header), "\n[%s", edit->key );
+    while ((at = strstr( at, header )))
+    {
+        line = at + strlen( header );
+        if (!(end = strstr( line, "\n[" ))) end = text + size;
+        for (; (line = memchr( line, '\n', end - line )); line++)
+            if (!strncmp( line + 1, edit->from, from_len ))
+            {
+                memcpy( line + 1, edit->to, from_len );
+                count++;
+                break;
+            }
+        at = end;
+    }
+    return count;
 }
 
 static void trim_windows_startup( void )
@@ -690,6 +722,12 @@ static void trim_windows_startup( void )
         {
             strcat( startup_edits[i].to ? demand : off, " " );
             strcat( startup_edits[i].to ? demand : off, startup_edits[i].name );
+        }
+    for (i = 0; len && i < sizeof(startup_prefix_edits) / sizeof(startup_prefix_edits[0]); i++)
+        if (apply_reg_edit_all( text, len, &startup_prefix_edits[i] ) && strlen( demand ) < sizeof(demand) - 40)
+        {
+            strcat( demand, " " );
+            strcat( demand, startup_prefix_edits[i].name );
         }
     if ((demand[0] || off[0]) && (f = fopen( PREFIX_DIR "/system.reg.new", "wb" )))
     {
@@ -809,6 +847,8 @@ static int read_program( const char *path, int remove_it, char **args, int max )
 }
 
 extern void ps4_files_watch( void );
+extern void ps4_budget_log( const char *why );
+extern void ps4_budget_probe( void );
 
 /* the console's open files, every 5 s (port/ps4_wine_dirs.c; Settings > Diagnostics > Open files) */
 static void *files_thread( void *arg )
@@ -853,6 +893,13 @@ static void *setup_thread( void *arg )
         if (!getrlimit( 8 /* RLIMIT_NOFILE */, &files ))
             logf_( "wineps4: open files: %llu at once (the most allowed %llu)\n", (unsigned long long)files.rlim_cur,
                    (unsigned long long)files.rlim_max );
+    }
+    /* the PS4's budget for the app (its open files are the ones that ran out), and whether a process
+     * of the app may leave it (Settings > Diagnostics > Budget log) */
+    if (!files_log || strcmp( files_log, "0" ))
+    {
+        ps4_budget_log( "the app's, at start" );
+        ps4_budget_probe();
     }
     wine_ready = 1;
     if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );

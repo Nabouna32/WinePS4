@@ -62,3 +62,37 @@ one process" turns it off (WINEPS4_CHROMIUM_ONE_PROCESS=0).
 
 Next, by cost: rpcss started on demand and ended when idle; then a pdfork probe pkg, if a console that
 may panic is acceptable for the test.
+
+## The app's budget, and the 7 again (v00.50, 2026-11-04)
+
+v00.49's log showed two walls: dllhost.exe and steamservice.exe refused at 7 processes (Chrome's
+leftover GoogleUpdater service started 3-4 processes at every boot), and Steam's web helper dying on
+its own DLLs with "Too many open files" while it had 60 descriptors (a new process: 12), although
+every process may have 12556. The PS5_MihawkOS project (Wine on the PS5, same Sony services:
+github.com/mihawk-99/PS5_MihawkOS, docs/WINDOWS_PROCESSES.md and its history) measured both:
+
+- **One budget of about 250 open files for an app and all its local processes**, folders included. A
+  file counts once however many processes hold it; dups, copies passed over a socket, sockets, pipes,
+  kqueues, anonymous shared memory and mapped files whose descriptor is closed cost nothing. It is the
+  kernel's budget: Orbis budgets per app Dmem, Vmem, Fmem, CpuSet, **File**, Socket, Equeue, Pipe,
+  Device, Thread, IpSocket, each with a total and its use (RPCSX's Budget.hpp; budget_getid 609,
+  budget_get 570, budget_set 571).
+- **7 local processes for an app**, a count (128 MB children stop at the same number), nested or not
+  (a local process asking gets the same "with 7 alive"). Past it on the PS5: processes started by the
+  jailbreak's payload loader (elfldr: rfork from its own process, the child leaves its budget with
+  budget_set(0)), outside every app: 32 ran at once, each with its own file budget (636), ending
+  themselves when their stream closed.
+
+v00.50 does what the measurements say: wineserver **parks** idle files (server/fd.c: beyond 128
+parkable ones the least recently used are closed and opened again by name at the same file pointer;
+not while locked, polled, lent to a program until that thread's next request, or when a dup's partner
+is open) and programs no longer cache file descriptors of files and folders; each process's folder log
+is opened per use (2 files for good in each before). Chrome's updater starts on demand; Steam's
+start-up probes, install scripts and overlay are refused (Settings > Apps); wine.log has the kernel's
+budget table at start and in every census, and a probe: whether a vfork child of the app may
+budget_set(0) (it then ends at once).
+
+Past 7 on the PS4, if the probe says a child may leave the budget: a process forked from the app that
+leaves it, runs from a copy of wineps4.bin outside /app0 (the sandbox's unmount waited for ours, v00.4x),
+uses no direct memory and ends itself when its control socket closes; the panic at the app's close
+(v00.30-00.42) is the test it has to pass, on a console that may crash.

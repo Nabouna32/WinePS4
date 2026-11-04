@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/31] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/33] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/31] WinePS4: wineserver main fixes
+Subject: [PATCH 02/33] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/31] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/33] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/31] server: send the first thread its request pipe in the
+Subject: [PATCH 04/33] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/31] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/33] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/31] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/33] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/31] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/33] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/31] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/33] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/31] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/33] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/31] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/33] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -893,7 +893,7 @@ index a06aa83..81e8555 100644
 From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:21:33 +0300
-Subject: [PATCH 11/31] WinePS4: a process per program: wineserver listens
+Subject: [PATCH 11/33] WinePS4: a process per program: wineserver listens
  (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
  thr_kill2 across processes
 
@@ -1048,7 +1048,7 @@ index 122208b..44fcfa7 100644
 From cc36d27af8fac614b7694b55514cd924bbb9c85f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:51:49 +0300
-Subject: [PATCH 12/31] WinePS4: the app wineserver never closes its socket
+Subject: [PATCH 12/33] WinePS4: the app wineserver never closes its socket
  (callers logged); no wineboot at program start
 
 ---
@@ -1094,7 +1094,7 @@ index 44fcfa7..e66524f 100644
 From 2651912be3a1aad91a90a2833e1312a0ec3eb967 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 03:11:50 +0300
-Subject: [PATCH 13/31] programs fill the shared data page themselves (wineboot
+Subject: [PATCH 13/33] programs fill the shared data page themselves (wineboot
  is skipped)
 
 ---
@@ -1124,7 +1124,7 @@ index f40d41f..41f5884 100644
 From 90e29674410e9ad3ffc58dffb83a893ff33a1a5f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:24:13 +0300
-Subject: [PATCH 14/31] wineps4.drv display driver + the desktop input pipe in
+Subject: [PATCH 14/33] wineps4.drv display driver + the desktop input pipe in
  the server
 
 ---
@@ -2056,7 +2056,7 @@ index 3e8ab2e..3048ccf 100644
 From 6b5c634711a7fbcdc1e41eb6abd45444b9921f57 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:34:30 +0300
-Subject: [PATCH 15/31] wineps4.drv: work area above the 60 px taskbar
+Subject: [PATCH 15/33] wineps4.drv: work area above the 60 px taskbar
 
 ---
  dlls/wineps4.drv/display.c | 2 +-
@@ -2082,7 +2082,7 @@ index 93fdcfb..e947d31 100755
 From af0965aa6bc9f2a34ff5586844a0660da1f53b2a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:12:22 +0300
-Subject: [PATCH 16/31] programs start programs with one fork (an orphan cannot
+Subject: [PATCH 16/33] programs start programs with one fork (an orphan cannot
  exec on the PS4); exec failures logged
 
 ---
@@ -2152,7 +2152,7 @@ index 4c2e7eb..67836bb 100644
 From e522bb1370611936c26405c3b984e0e2e9009f29 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:37:29 +0300
-Subject: [PATCH 17/31] spawn steps and failed children logged
+Subject: [PATCH 17/33] spawn steps and failed children logged
 
 ---
  dlls/ntdll/unix/process.c | 26 ++++++++++++++++++++++++++
@@ -2230,7 +2230,7 @@ index 67836bb..3007370 100644
 From ea3cbbf972e23f2ee73cabc6cfe3f2795c620466 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:45:16 +0300
-Subject: [PATCH 18/31] programs start processes from an app thread with an
+Subject: [PATCH 18/33] programs start processes from an app thread with an
  ordinary stack (ps4_spawn)
 
 ---
@@ -2326,7 +2326,7 @@ index 3007370..1bd8aee 100644
 From 491ce5e30e62e7650c69a8ab3ee8d50cb070cc3a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 06:06:53 +0300
-Subject: [PATCH 19/31] the new process environment strings in malloc memory
+Subject: [PATCH 19/33] the new process environment strings in malloc memory
 
 ---
  dlls/ntdll/unix/process.c | 11 +++++++----
@@ -2368,7 +2368,7 @@ index 1bd8aee..88d28c6 100644
 From 892873489067b68defd34126bf97af98365560ab Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 09:28:47 +0300
-Subject: [PATCH 20/31] WinePS4: wineboot runs once per app start (the desktop
+Subject: [PATCH 20/33] WinePS4: wineboot runs once per app start (the desktop
  starts it with WINEPS4_BOOT); programs wait for its event
 
 ---
@@ -2415,7 +2415,7 @@ index 88d28c6..9b07ec0 100644
 From b13ad1ef3a4578b1ff346c0643100095216d0473 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:13:44 +0300
-Subject: [PATCH 21/31] PS4: programs never run wineboot (the desktop does,
+Subject: [PATCH 21/33] PS4: programs never run wineboot (the desktop does,
  once); spawned processes logged
 
 ---
@@ -2449,7 +2449,7 @@ index e0d4c6d..9a22128 100644
 From 947f88752bee92f5fc6d1713481c88db741cf0d8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:14:01 +0300
-Subject: [PATCH 22/31] PS4: processes started from programs are logged
+Subject: [PATCH 22/33] PS4: processes started from programs are logged
 
 ---
  dlls/ntdll/unix/process.c | 1 +
@@ -2474,7 +2474,7 @@ index 9b07ec0..8460cd3 100644
 From 8d9d4ac998d9294c83655eed440a04ae1893e3df Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:36:46 +0300
-Subject: [PATCH 23/31] PS4: the desktop can have the server kill every program
+Subject: [PATCH 23/33] PS4: the desktop can have the server kill every program
  process; unwinding skips addresses outside the app
 
 ---
@@ -2600,7 +2600,7 @@ index 9408763..ccca2bd 100755
 From 4fca7680a58381e89d92907a71ea7cdcc408d85d Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 19:45:19 +0300
-Subject: [PATCH 24/31] PS4: a new process keeps the shared syscall dispatcher
+Subject: [PATCH 24/33] PS4: a new process keeps the shared syscall dispatcher
  pointer instead of writing back its own 0
 
 ---
@@ -2655,7 +2655,7 @@ index 6d01de4..ccb9716 100644
 From b1111f49eb0fc917c258af3125209a48761e7cc8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 20:00:09 +0300
-Subject: [PATCH 25/31] PS4: CreateProcess has the desktop start the process
+Subject: [PATCH 25/33] PS4: CreateProcess has the desktop start the process
  (it collects every one)
 
 ---
@@ -2692,7 +2692,7 @@ index 8460cd3..84b5a3a 100644
 From fde1c22fc589c56b5b2ece770adb9a36904c353c Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 00:22:33 +0300
-Subject: [PATCH 26/31] PS4: the desktop stays when its last program ends
+Subject: [PATCH 26/33] PS4: the desktop stays when its last program ends
  (explorer.exe runs with the app)
 
 ---
@@ -2732,7 +2732,7 @@ index a36253e..6fb58db 100644
 From a078eaa8946d422fc5fc5238759cdcb6d527358b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 01:20:23 +0300
-Subject: [PATCH 27/31] PS4: crypt32 reads its root certificates from WinePS4
+Subject: [PATCH 27/33] PS4: crypt32 reads its root certificates from WinePS4
  (the package, or the data folder)
 
 ---
@@ -2763,7 +2763,7 @@ index 345051c..22113be 100644
 From a4ee9e980578a46ec12489bd0386904b790637db Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 02:29:46 +0300
-Subject: [PATCH 28/31] PS4: windows report their title bar, client area and
+Subject: [PATCH 28/33] PS4: windows report their title bar, client area and
  state; the desktop sends window commands (title bar buttons, taskbar)
 
 ---
@@ -2975,7 +2975,7 @@ index ccca2bd..cf8302b 100755
 From 76fa2947684d2ed3e8d51497e4f13173da3eae96 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 02:32:19 +0300
-Subject: [PATCH 29/31] PS4: a process the desktop starts is named by its image
+Subject: [PATCH 29/33] PS4: a process the desktop starts is named by its image
  path, not the command line's first word
 
 ---
@@ -3027,7 +3027,7 @@ index 84b5a3a..fa78872 100644
 From b22b25456d9d9d9c046f487ce3dff35f86248b7b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 03:15:35 +0300
-Subject: [PATCH 30/31] PS4: a window gets a taskbar button by Windows' rule
+Subject: [PATCH 30/33] PS4: a window gets a taskbar button by Windows' rule
  (not owned, not a tool window, or WS_EX_APPWINDOW)
 
 ---
@@ -3057,7 +3057,7 @@ index 5413f34..6da5fbe 100755
 From 5c3b61688fcf27b7b59bbc1fc07529fad2b4d4ec Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 04:45:01 +0300
-Subject: [PATCH 31/31] PS4: a Chromium browser's first process gets the
+Subject: [PATCH 31/33] PS4: a Chromium browser's first process gets the
  switches that keep it in one process (the PS4 runs 7 for the app)
 
 ---
@@ -3150,6 +3150,577 @@ index fa78872..6827f0e 100644
      env_size = get_env_size( params, &winedebug );
  
      if ((status = alloc_object_attributes( process_attr, &objattr, &attr_len ))) goto done;
+-- 
+2.53.0
+
+
+From 97928f88d49902c3e15ff5a818ce77d1f423a329 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Wed, 4 Nov 2026 05:46:17 +0300
+Subject: [PATCH 32/33] PS4: wineserver parks idle files for the app's budget
+ of open files (about 250 for all its processes): closed, opened again by name
+ at the same file pointer when next used; files lent to programs are not kept
+ in their fd cache
+
+---
+ server/fd.c      | 283 ++++++++++++++++++++++++++++++++++++++++++++++-
+ server/mapping.c |  12 ++
+ server/request.c |   8 ++
+ server/thread.h  |   3 +
+ 4 files changed, 304 insertions(+), 2 deletions(-)
+
+diff --git a/server/fd.c b/server/fd.c
+index f70bec3..2b7fb5c 100644
+--- a/server/fd.c
++++ b/server/fd.c
+@@ -162,11 +162,27 @@ struct fd
+     struct completion   *completion;  /* completion object attached to this fd */
+     apc_param_t          comp_key;    /* completion key to set in completion events */
+     unsigned int         comp_flags;  /* completion flags */
++#ifdef __PS4_WINE__
++    int                  unix_flags;  /* how it was opened, to open it again when parked (-1: it can't be) */
++    off_t                park_pos;    /* its file pointer when it was parked */
++    unsigned int         parked :1;   /* closed for the app's file budget, opened again when next used */
++    unsigned int         in_lru :1;   /* in park_lru (open, and could be parked) */
++    unsigned int         is_dup :1;   /* made by dup_fd_object: shares its file pointer with others */
++    unsigned int         last_used;   /* the request that last used it (ps4_request_seq) */
++    struct thread       *pin_thread;  /* lent to this thread (get_handle_fd) until its next request */
++    unsigned int         pin_requests;/* (that thread's requests when it was lent) */
++    struct list          park_entry;  /* entry in park_lru */
++#endif
+ };
+ 
+ static void fd_dump( struct object *obj, int verbose );
+ static struct object *fd_get_sync( struct object *obj );
+ static void fd_destroy( struct object *obj );
++#ifdef __PS4_WINE__
++static void park_untrack( struct fd *fd );  /* (the PS4's file budget, below) */
++static void park_touch( struct fd *fd );
++static int unpark_fd( struct fd *fd );
++#endif
+ 
+ static const struct object_ops fd_ops =
+ {
+@@ -1281,6 +1297,10 @@ static int set_unix_lock( struct fd *fd, file_pos_t start, file_pos_t end, int t
+         if (!end || end > max_unix_offset) fl.l_len = 0;
+         else fl.l_len = end - start;
+         if (fcntl( fd->unix_fd, F_SETLK, &fl ) != -1) return 1;
++#ifdef __PS4_WINE__
++    if (fd->parked && !unpark_fd( fd )) return 0;
++    park_touch( fd );
++#endif
+ 
+         switch(errno)
+         {
+@@ -1596,6 +1616,10 @@ static void fd_destroy( struct object *obj )
+ 
+     if (fd->map_addr) free_map_addr( fd->map_addr, fd->map_size );
+     if (fd->completion) release_object( fd->completion );
++#ifdef __PS4_WINE__
++    park_untrack( fd );
++    if (fd->pin_thread) release_object( fd->pin_thread );
++#endif
+     remove_fd_locks( fd );
+     list_remove( &fd->inode_entry );
+     if (fd->poll_index != -1) remove_poll_user( fd, fd->poll_index );
+@@ -1700,6 +1724,187 @@ static inline void unmount_fd( struct fd *fd )
+     fd->fs_locks = 0;
+ }
+ 
++#ifdef __PS4_WINE__
++/* --- The PS4's file budget ------------------------------------------------------------------------
++ * The PS4 counts the files an app has open, all its processes together, and stops at about 250
++ * (PS5_MihawkOS measured it on the PS5; WinePS4 v00.49: Steam's web helper could not load its DLLs,
++ * "Too many open files" with about 190 open here). Every file of every program is open here, in
++ * wineserver, and most sit idle (a DLL's image once mapped, a log between writes): beyond PARK_HIGH the
++ * least recently used are closed ("parked"), and opened again by name, at the same file pointer, when
++ * next used. A file lent to a program (get_handle_fd) stays open until that thread's next request, by
++ * when it has closed its copy: programs keep no files or folders in their fd cache (get_handle_fd). */
++#define PARK_HIGH 128
++#define PARK_LOW  100
++
++unsigned int ps4_request_seq;                          /* counts the requests (call_req_handler) */
++static struct list park_lru = LIST_INIT( park_lru );   /* parkable fds that are open, most recently used first */
++static unsigned int park_open, park_count, reopen_count, reopen_failures, park_next_log = 1;
++
++/* for port/ps4_wine_dirs.c's census: open, parked so far, opened again, failed */
++void ps4_park_stats( unsigned int stats[4] )
++{
++    stats[0] = park_open;
++    stats[1] = park_count;
++    stats[2] = reopen_count;
++    stats[3] = reopen_failures;
++}
++
++static void park_init( struct fd *fd )
++{
++    fd->unix_flags = -1;
++    fd->park_pos = 0;
++    fd->parked = fd->in_lru = fd->is_dup = 0;
++    fd->last_used = 0;
++    fd->pin_thread = NULL;
++    fd->pin_requests = 0;
++    list_init( &fd->park_entry );
++}
++
++static void park_untrack( struct fd *fd )
++{
++    if (!fd->in_lru) return;
++    list_remove( &fd->park_entry );
++    list_init( &fd->park_entry );
++    fd->in_lru = 0;
++    park_open--;
++}
++
++static void park_touch( struct fd *fd )
++{
++    fd->last_used = ps4_request_seq;
++    if (!fd->in_lru) return;
++    list_remove( &fd->park_entry );
++    list_add_head( &park_lru, &fd->park_entry );
++}
++
++/* lent to a thread that has not made a request since */
++static int fd_lent( struct fd *fd )
++{
++    if (!fd->pin_thread) return 0;
++    if (fd->pin_thread->state != TERMINATED && fd->pin_thread->ps4_requests == fd->pin_requests) return 1;
++    release_object( fd->pin_thread );
++    fd->pin_thread = NULL;
++    return 0;
++}
++
++static int fd_parkable( struct fd *fd )
++{
++    struct fd *other;
++
++    if (!fd->in_lru || fd->unix_fd == -1) return 0;
++    if (fd->last_used == ps4_request_seq) return 0;  /* (this request may be using its descriptor) */
++    if (!list_empty( &fd->inode->locks )) return 0;  /* (the app's POSIX locks on the file would go) */
++    if (fd->poll_index != -1 && pollfd[fd->poll_index].fd != -1) return 0;
++    if (async_queued( &fd->read_q ) || async_queued( &fd->write_q ) || async_queued( &fd->wait_q )) return 0;
++    if (fd_lent( fd )) return 0;
++    /* a dup and the fd it came from share one file pointer (and one place in the budget): neither
++     * while the other is open */
++    LIST_FOR_EACH_ENTRY( other, &fd->inode->open, struct fd, inode_entry )
++        if (other != fd && other->unix_fd != -1 && (fd->is_dup || other->is_dup)) return 0;
++    return 1;
++}
++
++static void park_fd( struct fd *fd )
++{
++    struct stat st;
++
++    /* (one deleted under its name could not be opened again: it stays) */
++    if (fstat( fd->unix_fd, &st ) == -1 || !st.st_nlink)
++    {
++        park_untrack( fd );
++        return;
++    }
++    fd->park_pos = lseek( fd->unix_fd, 0, SEEK_CUR );
++    close( fd->unix_fd );
++    fd->unix_fd = -1;
++    if (fd->closed) fd->closed->unix_fd = -1;
++    fd->parked = 1;
++    park_untrack( fd );
++    park_count++;
++}
++
++/* parks the least recently used ones until keep are open */
++static void park_files( unsigned int keep )
++{
++    struct list *ptr, *prev;
++
++    for (ptr = list_tail( &park_lru ); ptr && park_open > keep; ptr = prev)
++    {
++        prev = list_prev( &park_lru, ptr );
++        if (fd_parkable( LIST_ENTRY( ptr, struct fd, park_entry ))) park_fd( LIST_ENTRY( ptr, struct fd, park_entry ));
++    }
++    if (park_count >= park_next_log)
++    {
++        fprintf( stderr, "wineps4: files: %u parked, %u opened again (%u failed), %u open now\n",
++                 park_count, reopen_count, reopen_failures, park_open );
++        park_next_log = park_count < 1000 ? park_count + 100 : park_count + 2000;
++    }
++}
++
++/* the budget is out (an open got EMFILE or ENFILE): everything parked that can be (mapping.c too) */
++void ps4_park_all( void )
++{
++    park_files( 0 );
++}
++
++/* open, and once more after parking all it can when the app's budget is out */
++static int park_open_file( const char *name, int flags, mode_t mode )
++{
++    int unix_fd = open( name, flags, mode );
++
++    if (unix_fd == -1 && (errno == EMFILE || errno == ENFILE))
++    {
++        park_files( 0 );
++        unix_fd = open( name, flags, mode );
++    }
++    return unix_fd;
++}
++
++/* an fd of a file or folder opened by name: parked when unused for long */
++static void park_track( struct fd *fd, int unix_flags )
++{
++    if (!fd->inode || !fd->unix_name || unix_flags == -1 || fd->unix_fd == -1) return;
++    fd->unix_flags = unix_flags & ~(O_CREAT | O_EXCL | O_TRUNC);
++    fd->last_used = ps4_request_seq;
++    if (!fd->in_lru)
++    {
++        list_add_head( &park_lru, &fd->park_entry );
++        fd->in_lru = 1;
++        park_open++;
++    }
++    if (park_open > PARK_HIGH) park_files( PARK_LOW );
++}
++
++/* a parked fd opened again: 0 (the error set) when its name has another file now, or none */
++static int unpark_fd( struct fd *fd )
++{
++    struct stat st;
++    int unix_fd;
++
++    if (!fd->parked) return 1;
++    if ((unix_fd = park_open_file( fd->unix_name, fd->unix_flags, 0 )) == -1)
++    {
++        file_set_error();
++        reopen_failures++;
++        return 0;
++    }
++    if (fstat( unix_fd, &st ) == -1 || st.st_ino != fd->inode->ino || st.st_dev != fd->inode->device->dev)
++    {
++        close( unix_fd );
++        set_error( STATUS_FILE_INVALID );
++        reopen_failures++;
++        return 0;
++    }
++    if (fd->park_pos > 0 && !(fd->unix_flags & O_APPEND)) lseek( unix_fd, fd->park_pos, SEEK_SET );
++    fd->unix_fd = unix_fd;
++    if (fd->closed) fd->closed->unix_fd = unix_fd;
++    fd->parked = 0;
++    reopen_count++;
++    park_track( fd, fd->unix_flags );
++    return 1;
++}
++#endif
++
+ /* allocate an fd object, without setting the unix fd yet */
+ static struct fd *alloc_fd_object(void)
+ {
+@@ -1731,6 +1936,9 @@ static struct fd *alloc_fd_object(void)
+     init_async_queue( &fd->wait_q );
+     list_init( &fd->inode_entry );
+     list_init( &fd->locks );
++#ifdef __PS4_WINE__
++    park_init( fd );
++#endif
+ 
+     if (!(fd->sync = create_internal_sync( 1, 1 ))) goto error;
+     if ((fd->poll_index = add_poll_user( fd )) == -1) goto error;
+@@ -1774,6 +1982,9 @@ struct fd *alloc_pseudo_fd( const struct fd_ops *fd_user_ops, struct object *use
+     init_async_queue( &fd->wait_q );
+     list_init( &fd->inode_entry );
+     list_init( &fd->locks );
++#ifdef __PS4_WINE__
++    park_init( fd );
++#endif
+ 
+     if (!(fd->sync = create_internal_sync( 1, 1 )))
+     {
+@@ -1787,9 +1998,12 @@ struct fd *alloc_pseudo_fd( const struct fd_ops *fd_user_ops, struct object *use
+ struct fd *dup_fd_object( struct fd *orig, unsigned int access, unsigned int sharing, unsigned int options )
+ {
+     unsigned int err;
+-    struct fd *fd = alloc_fd_object();
++    struct fd *fd;
+ 
+-    if (!fd) return NULL;
++#ifdef __PS4_WINE__
++    if (orig->parked && !unpark_fd( orig )) return NULL;
++#endif
++    if (!(fd = alloc_fd_object())) return NULL;
+ 
+     fd->options    = options;
+     fd->cacheable  = orig->cacheable;
+@@ -1826,6 +2040,10 @@ struct fd *dup_fd_object( struct fd *orig, unsigned int access, unsigned int sha
+             set_error( err );
+             goto failed;
+         }
++#ifdef __PS4_WINE__
++        fd->is_dup = 1;
++        park_track( fd, orig->unix_flags );
++#endif
+     }
+     else if ((fd->unix_fd = dup( orig->unix_fd )) == -1)
+     {
+@@ -1925,6 +2143,9 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
+     int root_fd = -1;
+     int rw_mode;
+     char *path;
++#ifdef __PS4_WINE__
++    int open_flags = -1;
++#endif
+ 
+     if (((options & FILE_DELETE_ON_CLOSE) && !(access & DELETE)) ||
+         ((options & FILE_DIRECTORY_FILE) && (flags & O_TRUNC)))
+@@ -1974,13 +2195,22 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
+     }
+     else rw_mode = O_RDONLY;
+ 
++#ifdef __PS4_WINE__
++    open_flags = rw_mode | (flags & ~O_TRUNC);
++    if ((fd->unix_fd = park_open_file( name, open_flags, *mode )) == -1)
++#else
+     if ((fd->unix_fd = open( name, rw_mode | (flags & ~O_TRUNC), *mode )) == -1)
++#endif
+     {
+         /* if we tried to open a directory for write access, retry read-only */
+         if (errno == EISDIR)
+         {
+             if ((access & FILE_UNIX_WRITE_ACCESS) || (flags & O_CREAT))
++#ifdef __PS4_WINE__
++                fd->unix_fd = park_open_file( name, open_flags = O_RDONLY | (flags & ~(O_TRUNC | O_CREAT | O_EXCL)), *mode );
++#else
+                 fd->unix_fd = open( name, O_RDONLY | (flags & ~(O_TRUNC | O_CREAT | O_EXCL)), *mode );
++#endif
+         }
+ 
+         if (fd->unix_fd == -1)
+@@ -2027,6 +2257,9 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
+         fd->cacheable = !inode->device->removable;
+         list_add_head( &inode->open, &fd->inode_entry );
+         closed_fd = NULL;
++#ifdef __PS4_WINE__
++        park_track( fd, open_flags );
++#endif
+ 
+         /* check directory options */
+         if ((options & FILE_DIRECTORY_FILE) && !S_ISDIR(st.st_mode))
+@@ -2143,6 +2376,10 @@ int is_fd_overlapped( struct fd *fd )
+ /* retrieve the unix fd for an object */
+ int get_unix_fd( struct fd *fd )
+ {
++#ifdef __PS4_WINE__
++    if (fd->parked && !unpark_fd( fd )) return -1;
++    park_touch( fd );
++#endif
+     if (fd->unix_fd == -1) set_error( fd->no_fd_status );
+     return fd->unix_fd;
+ }
+@@ -2767,6 +3004,10 @@ static struct fd *get_handle_fd_obj( struct process *process, obj_handle_t handl
+ static void set_fd_disposition( struct fd *fd, unsigned int flags )
+ {
+     struct stat st;
++#ifdef __PS4_WINE__
++    if (fd->parked && !unpark_fd( fd )) return;
++    park_touch( fd );
++#endif
+ 
+     if (!fd->inode)
+     {
+@@ -2842,6 +3083,10 @@ static void set_fd_name( struct fd *fd, struct fd *root, const char *nameptr, da
+     struct stat st, st2;
+     char *name;
+     const unsigned int replace = flags & FILE_RENAME_REPLACE_IF_EXISTS;
++#ifdef __PS4_WINE__
++    if (fd->parked && !unpark_fd( fd )) return;
++    park_touch( fd );
++#endif
+ 
+     if (!fd->inode || !fd->unix_name)
+     {
+@@ -2964,8 +3209,29 @@ static void set_fd_name( struct fd *fd, struct fd *root, const char *nameptr, da
+ 
+     free( fd->nt_name );
+     fd->nt_name = dup_nt_name( root, nt_name, &fd->nt_namelen );
++#ifdef __PS4_WINE__
++    {
++        /* (the file's other fds open it again by name when parked) */
++        char *old_name = fd->unix_name;
++        struct fd *other;
++
++        fd->closed->unix_name = fd->unix_name = realpath( name, NULL );
++        if (old_name && fd->unix_name)
++            LIST_FOR_EACH_ENTRY( other, &fd->inode->open, struct fd, inode_entry )
++            {
++                char *copy;
++                if (other == fd || !other->unix_name || strcmp( other->unix_name, old_name )) continue;
++                if (!(copy = strdup( fd->unix_name ))) continue;
++                if (other->closed && other->closed->unix_name == other->unix_name) other->closed->unix_name = copy;
++                free( other->unix_name );
++                other->unix_name = copy;
++            }
++        free( old_name );
++    }
++#else
+     free( fd->unix_name );
+     fd->closed->unix_name = fd->unix_name = realpath( name, NULL );
++#endif
+     free( name );
+     if (!fd->unix_name)
+         set_error( STATUS_NO_MEMORY );
+@@ -2978,6 +3244,10 @@ failed:
+ static void set_fd_eof( struct fd *fd, file_pos_t eof )
+ {
+     struct stat st;
++#ifdef __PS4_WINE__
++    if (fd->parked && !unpark_fd( fd )) return;
++    park_touch( fd );
++#endif
+ 
+     if (!fd->inode)
+     {
+@@ -3118,6 +3388,15 @@ DECL_HANDLER(get_handle_fd)
+     {
+         int unix_fd = get_unix_fd( fd );
+         reply->cacheable = fd->cacheable;
++#ifdef __PS4_WINE__
++        if (unix_fd != -1 && fd->unix_flags != -1)  /* lent: see park_files */
++        {
++            reply->cacheable = 0;
++            if (fd->pin_thread) release_object( fd->pin_thread );
++            fd->pin_thread = (struct thread *)grab_object( current );
++            fd->pin_requests = current->ps4_requests;
++        }
++#endif
+         if (unix_fd != -1)
+         {
+             reply->type = fd->fd_ops->get_fd_type( fd );
+diff --git a/server/mapping.c b/server/mapping.c
+index 0f787a1..85ea73a 100644
+--- a/server/mapping.c
++++ b/server/mapping.c
+@@ -324,6 +324,10 @@ int grow_file( int unix_fd, file_pos_t new_size )
+     return 0;
+ }
+ 
++#ifdef __PS4_WINE__
++extern void ps4_park_all( void );  /* fd.c: the files wineserver holds closed for the app's budget */
++#endif
++
+ /* simplified version of mkstemps() */
+ static int make_temp_file( char name[16] )
+ {
+@@ -335,6 +339,14 @@ static int make_temp_file( char name[16] )
+     {
+         snprintf( name, 16, "tmpmap-%08x", value );
+         fd = open( name, O_RDWR | O_CREAT | O_EXCL, 0600 );
++#ifdef __PS4_WINE__
++        if (fd == -1 && (errno == EMFILE || errno == ENFILE))  /* (the PS4's budget of open files is out) */
++        {
++            ps4_park_all();
++            fd = open( name, O_RDWR | O_CREAT | O_EXCL, 0600 );
++            if (fd == -1 && (errno == EMFILE || errno == ENFILE)) break;
++        }
++#endif
+     }
+     return fd;
+ }
+diff --git a/server/request.c b/server/request.c
+index e66524f..5f68e39 100644
+--- a/server/request.c
++++ b/server/request.c
+@@ -289,11 +289,19 @@ static void send_reply( union generic_reply *reply )
+ }
+ 
+ /* call a request handler */
++#ifdef __PS4_WINE__
++extern unsigned int ps4_request_seq;
++#endif
++
+ static void call_req_handler( struct thread *thread )
+ {
+     union generic_reply reply;
+     enum request req = thread->req.request_header.req;
+ 
++#ifdef __PS4_WINE__
++    ps4_request_seq++;
++    thread->ps4_requests++;
++#endif
+     current = thread;
+     current->reply_size = 0;
+     clear_error();
+diff --git a/server/thread.h b/server/thread.h
+index 77ea355..87e214b 100644
+--- a/server/thread.h
++++ b/server/thread.h
+@@ -76,6 +76,9 @@ struct thread
+     struct fd             *reply_fd;      /* fd to send a reply to a client */
+     struct fd             *wait_fd;       /* fd to use to wake a sleeping client */
+     enum run_state         state;         /* running state */
++#ifdef __PS4_WINE__
++    unsigned int           ps4_requests;  /* requests made so far (a file lent to it: fd.c) */
++#endif
+     int                    exit_code;     /* thread exit code */
+     int                    unix_pid;      /* Unix pid of client */
+     int                    unix_tid;      /* Unix tid of client */
+-- 
+2.53.0
+
+
+From 74314df563b182f74f63b1fe82406aaa58cd2b59 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Wed, 4 Nov 2026 05:46:17 +0300
+Subject: [PATCH 33/33] PS4: helper programs that would only take one of the 7
+ processes are refused (Steam's start-up probes, install scripts and overlay)
+
+---
+ dlls/ntdll/unix/process.c | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/dlls/ntdll/unix/process.c b/dlls/ntdll/unix/process.c
+index 6827f0e..ad54f06 100644
+--- a/dlls/ntdll/unix/process.c
++++ b/dlls/ntdll/unix/process.c
+@@ -827,6 +827,30 @@ static WCHAR *ps4_one_process_cmdline( const char *unix_name, const UNICODE_STRI
+     MESSAGE( "wineps4: %s runs in one process (a Chromium program)\n", slash + 1 );
+     return ret;
+ }
++
++/* Programs left out (Settings > Apps, on by default; WINEPS4_PROCESS_RULES=0 runs them all): each would
++ * take one of the 7 processes the PS4 runs for the app, and they do nothing useful here: Steam's
++ * start-up probes, its install-script runner and its overlay window (PS5_MihawkOS left out the same
++ * on the PS5). Refused as Windows refuses a program it may not run: the one asking goes on without it. */
++static BOOL ps4_refused_program( const char *unix_name, const UNICODE_STRING *cmdline )
++{
++    static const char *const refused[] = { "steamsysinfo.exe", "gldriverquery.exe", "gldriverquery64.exe",
++                                           "vulkandriverquery.exe", "vulkandriverquery64.exe", "gameoverlayui.exe",
++                                           "gameoverlayui64.exe" };
++    const char *setting = getenv( "WINEPS4_PROCESS_RULES" ), *slash;
++    unsigned int i;
++
++    if ((setting && !strcmp( setting, "0" )) || !unix_name || !(slash = strrchr( unix_name, '/' ))) return FALSE;
++    for (i = 0; i < ARRAY_SIZE(refused); i++)
++        if (!strcasecmp( slash + 1, refused[i] )) break;
++    /* (SteamService.exe /installscript: the redistributables' installers; as a service it stays) */
++    if (i == ARRAY_SIZE(refused) &&
++        (strcasecmp( slash + 1, "steamservice.exe" ) ||
++         !ps4_has_switch( cmdline->Buffer, cmdline->Length / sizeof(WCHAR), "/installscript" )))
++        return FALSE;
++    MESSAGE( "wineps4: %s left out (it would take one of the PS4's 7 processes)\n", slash + 1 );
++    return TRUE;
++}
+ #endif
+ 
+ /**********************************************************************
+@@ -923,6 +947,13 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
+         }
+         goto done;
+     }
++#ifdef __PS4_WINE__
++    if (ps4_refused_program( unix_name, &params->CommandLine ))
++    {
++        status = STATUS_ACCESS_DENIED;
++        goto done;
++    }
++#endif
+     if (!machine)
+     {
+         machine = pe_info.machine;
 -- 
 2.53.0
 

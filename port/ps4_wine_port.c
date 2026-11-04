@@ -593,6 +593,60 @@ static long fork_exec( long syscall_number, struct spawn_request *req, long *chi
     return 0;
 }
 
+/* --- More than 7 processes: a first look ----------------------------------------------------------
+ * The PS4 runs 7 local processes for an app (sceSystemServiceAddLocalProcess refuses the 8th, nested
+ * or not, whatever their memory: PS5_MihawkOS measured the same on the PS5). Processes forked by the
+ * app are not counted, but closing the app from the PS4 menu tore the app down under them (a kernel
+ * panic, v00.30-00.42). On the PS5 the payload loader starts processes outside every app: the child
+ * leaves its budget (budget_set 571 with 0), so it is no app's. Whether a process of this app may do
+ * that on the PS4 is what this asks, with a child that does only that and ends at once: vfork (the
+ * parent waits, the memory shared: the child's answers land here), only system calls in the child. */
+void ps4_budget_probe( void )
+{
+    static long result[4];  /* budget_set's result and failure, then budget_getid's */
+    sigset_t all, old;
+    long ret, flag;
+
+    memset( result, 0, sizeof(result) );
+    sigfillset( &all );
+    pthread_sigmask( SIG_SETMASK, &all, &old );
+    __asm__ volatile( "syscall\n\t"
+                      "jnc 1f\n\t"
+                      "movq $-1,%%rdx\n\t"          /* failed: rax = errno */
+                      "jmp 9f\n"
+                      "1:\ttestq %%rdx,%%rdx\n\t"   /* rdx: 0 in the parent, 1 in the child */
+                      "jz 9f\n\t"
+                      /* the child: budget_set( 0 ), budget_getid(), exit( 0 ) */
+                      "xorl %%edi,%%edi\n\t"
+                      "movl $571,%%eax\n\t"
+                      "syscall\n\t"
+                      "movq %%rax,0(%%rbx)\n\t"
+                      "sbbq %%rax,%%rax\n\t"
+                      "movq %%rax,8(%%rbx)\n\t"
+                      "movl $609,%%eax\n\t"
+                      "syscall\n\t"
+                      "movq %%rax,16(%%rbx)\n\t"
+                      "sbbq %%rax,%%rax\n\t"
+                      "movq %%rax,24(%%rbx)\n\t"
+                      "xorl %%edi,%%edi\n\t"
+                      "movl $1,%%eax\n\t"
+                      "syscall\n"
+                      "9:"
+                      : "=a" (ret), "=d" (flag)
+                      : "a" (66 /* SYS_vfork */), "b" (result)
+                      : "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory", "cc" );
+    pthread_sigmask( SIG_SETMASK, &old, NULL );
+    if (flag < 0)
+    {
+        fprintf( stderr, "wineps4: budget probe: vfork refused (errno %ld)\n", ret );
+        return;
+    }
+    fprintf( stderr, "wineps4: budget probe: the app's budget %ld; a child of the app %s (budget_set: %s %ld), "
+             "its budget then %s%ld\n", raw_syscall3( 609 /* budget_getid */, 0, 0, 0 ),
+             result[1] ? "may not leave it" : "left it", result[1] ? "errno" : "result", result[0],
+             result[3] ? "unknown, errno " : "", result[2] );
+}
+
 /* Starts path (the app) as a new process: vfork, which the PS4 may not have (then fork). envp,
  * argv and their strings must be malloc'd (see struct spawn_request). */
 pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 )

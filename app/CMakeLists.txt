@@ -70,6 +70,7 @@ add_custom_command(
     OUTPUT ${SERVER_ONE}
     COMMAND ld.lld-$ENV{CLANG_VER} -r -o ${SERVER_ONE}.tmp $<TARGET_OBJECTS:wine_server>
     COMMAND llvm-objcopy-$ENV{CLANG_VER} --keep-global-symbol=ps4_wineserver_main --keep-global-symbol=ps4_server_input --keep-global-symbol=ps4_ended_pids --keep-global-symbol=ps4_ended_count --keep-global-symbol=ps4_end_done
+        --keep-global-symbol=ps4_park_stats
         ${SERVER_ONE}.tmp ${SERVER_ONE}
     DEPENDS $<TARGET_OBJECTS:wine_server>
     COMMAND_EXPAND_LISTS

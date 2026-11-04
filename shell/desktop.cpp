@@ -1087,7 +1087,7 @@ const Toggle TOGGLES[] = {
     {"Hang report", "Writes where Wine is stuck to hang.log when a program runs for 20 s and more", "WINEPS4_HANG_DUMP", "20", ""},
     {"Wine debug messages", "Exceptions and DLL loading in wine.log (WINEDEBUG=+seh,+loaddll)", "WINEDEBUG", "+seh,+loaddll", ""},
     {"Memory log", "Every mapping of WinePS4's memory layer in wine.log (slow)", "WINEPS4_VM_LOG", "1", ""},
-    {"Open files log", "The console's open files in wine.log, and what holds them when they run out", "WINEPS4_FILES_LOG", "", "0"},
+    {"Budget log", "The PS4's budget for the app (open files, threads, memory) in wine.log, what holds files when they run out", "WINEPS4_FILES_LOG", "", "0"},
 };
 
 bool toggle_on(const Toggle &t) {
@@ -2530,7 +2530,7 @@ void open_menu(const std::string &target, float px, float py) {
         } else if (w->kind == Kind::Files && part == "menusort") {
             static const char *const sorts[] = {"Name", "Date modified", "Type", "Size"};
             for (int i = 0; i < 4; i++)
-                items.push_back({std::string(w->sort_by == i ? (w->sort_down ? "â " : "â ") : "    ") + sorts[i],
+                items.push_back({std::string(w->sort_by == i ? (w->sort_down ? "\xe2\x86\x93 " : "\xe2\x86\x91 ") : "    ") + sorts[i],
                                  "sort" + std::to_string(i), !w->path.empty()});
         } else if (w->kind == Kind::Files && row_part) {
             const int row = number_after(part, part[0] == 'r' ? "row" : "check");
@@ -2950,9 +2950,11 @@ Rect speed_button(const Window &w, int i) {  // 0 slower, 1 faster: the bar betw
     return Rect{i ? c.x + c.w - 60 : c.x + c.w - 380, c.y + 28, 40, 36};
 }
 // Apps: a row for each program installed, with its Uninstall button
-// (under the card for Chromium programs: in one process, the PS4 runs 7 for the app)
+// (under the cards for Chromium programs in one process and for helpers left out: the PS4 runs 7
+// processes for the app)
 Rect chromium_card(const Window &w) { return card_at(w, 56, 84); }
-Rect app_row(const Window &w, int i) { return card_at(w, 196 + i * 70, 62); }
+Rect rules_card(const Window &w) { return card_at(w, 150, 84); }
+Rect app_row(const Window &w, int i) { return card_at(w, 290 + i * 70, 62); }
 Rect app_uninstall(const Window &w, int i) { const Rect r = app_row(w, i); return Rect{r.x + r.w - 140, r.y + 13, 120, 36}; }
 
 // --- typing on a USB keyboard: characters, edit boxes ---------------------------------------------
@@ -4506,6 +4508,8 @@ std::string settings_hit(const Window &w, float px, float py) {
     } else if (w.page == PAGE_APPS) {
         if (chromium_card(w).contains(px, py))
             return "chromium";
+        if (rules_card(w).contains(px, py))
+            return "rules";
         for (int i = 0; i < static_cast<int>(installed_apps().size()); i++)
             if (app_uninstall(w, i).contains(px, py))
                 return "uninstall" + std::to_string(i);
@@ -4730,10 +4734,10 @@ void settings_click(Window &w, const std::string &part) {
         if (direct_keyboard)
             hwkeyboard_open();
         save_desktop();
-    } else if (part == "chromium") {
-        const bool on = env_get("WINEPS4_CHROMIUM_ONE_PROCESS") != "0";
-        env_set("WINEPS4_CHROMIUM_ONE_PROCESS", on ? "0" : "");
-        toast = Toast{"Applies the next time such a program starts", now_seconds() + 3};
+    } else if (part == "chromium" || part == "rules") {
+        const char *key = part == "chromium" ? "WINEPS4_CHROMIUM_ONE_PROCESS" : "WINEPS4_PROCESS_RULES";
+        env_set(key, env_get(key) != "0" ? "0" : "");
+        toast = Toast{"Applies the next time WinePS4 starts", now_seconds() + 3};
     } else if (part.rfind("uninstall", 0) == 0) {
         const auto &apps = installed_apps();
         const int i = number_after(part, "uninstall");
@@ -5711,7 +5715,15 @@ void draw_apps_page(Canvas &c, const Window &w) {
     c.text(cr.x + 66, cr.y + 58, "Steam, Chrome, Edge, Discord: the PS4 runs 7 processes for the app, they would take more", 13, TEXT3,
            Weight::Regular, cr.w - 180);
     draw_switch(c, cr, env_get("WINEPS4_CHROMIUM_ONE_PROCESS") != "0");
-    c.text(a.x, a.y + 172, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
+    // helper programs that would only take processes (Steam's start-up probes, its overlay)
+    const Rect rr = rules_card(w);
+    panel(c, rr.x, rr.y, rr.w, rr.h, 6, hover == id + "rules" ? CARD_HOT : CARD, CARD_BORDER);
+    draw_icon(c, Icon::Gauge, rr.x + 34, rr.y + rr.h / 2.f, 26);
+    c.text(rr.x + 66, rr.y + 34, "Leave out helpers that only take processes", 16, TEXT);
+    c.text(rr.x + 66, rr.y + 58, "Steam's start-up probes, its install scripts and its overlay window", 13, TEXT3,
+           Weight::Regular, rr.w - 180);
+    draw_switch(c, rr, env_get("WINEPS4_PROCESS_RULES") != "0");
+    c.text(a.x, a.y + 266, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
                                         : "Installed apps (" + std::to_string(apps.size()) + ")",
            15, TEXT2);
     for (int i = 0; i < static_cast<int>(apps.size()); i++) {

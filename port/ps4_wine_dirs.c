@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,7 +34,6 @@ static pthread_mutex_t dirs_lock = PTHREAD_MUTEX_INITIALIZER;
 #define FOLDER_LOG "/data/WinePS4/.folders"
 
 static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
-static int log_write_fd = -1, log_read_fd = -1;
 static off_t log_read_pos;  /* how far this process has read the log */
 
 static unsigned int slot_of( dev_t dev, ino_t ino )
@@ -42,20 +42,23 @@ static unsigned int slot_of( dev_t dev, ino_t ino )
     return (unsigned int)(h ^ (h >> 29)) & (SLOTS - 1);
 }
 
-/* one line, written whole (O_APPEND: lines from several processes don't mix) */
+/* one line, written whole (O_APPEND: lines from several processes don't mix). The log is opened for
+ * each line and each read, not kept: every file held open counts in the PS4's budget of about 250
+ * open files for the whole app (two for good in each process, v00.49). */
 static void share( dev_t dev, ino_t ino, const char *path )
 {
     char line[1100];
-    int len;
+    int len, fd;
 
     if (strchr( path, '\n' )) return;
     len = snprintf( line, sizeof(line), "%llx %llx %s\n", (unsigned long long)dev, (unsigned long long)ino, path );
     if (len <= 0 || len >= (int)sizeof(line)) return;
     pthread_mutex_lock( &log_lock );
-    if (log_write_fd == -1 && (log_write_fd = open( FOLDER_LOG, O_WRONLY | O_APPEND | O_CREAT, 0666 )) != -1)
-        fcntl( log_write_fd, F_SETFD, FD_CLOEXEC );
-    if (log_write_fd != -1 && write( log_write_fd, line, len ) != len)
-        fprintf( stderr, "wineps4: %s: %s\n", FOLDER_LOG, strerror( errno ) );
+    if ((fd = open( FOLDER_LOG, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0666 )) != -1)
+    {
+        if (write( fd, line, len ) != len) fprintf( stderr, "wineps4: %s: %s\n", FOLDER_LOG, strerror( errno ) );
+        close( fd );
+    }
     pthread_mutex_unlock( &log_lock );
 }
 
@@ -101,10 +104,10 @@ static void read_shared( void )
 {
     char buffer[16384];
     ssize_t got;
+    int log_read_fd;
 
     pthread_mutex_lock( &log_lock );
-    if (log_read_fd == -1 && (log_read_fd = open( FOLDER_LOG, O_RDONLY )) != -1)
-        fcntl( log_read_fd, F_SETFD, FD_CLOEXEC );
+    log_read_fd = open( FOLDER_LOG, O_RDONLY | O_CLOEXEC );
     while (log_read_fd != -1 && (got = pread( log_read_fd, buffer, sizeof(buffer) - 1, log_read_pos )) > 0)
     {
         char *line = buffer, *end;
@@ -126,6 +129,7 @@ static void read_shared( void )
         if (line == buffer) break;  /* (a line longer than the buffer, or one still being written) */
         log_read_pos += line - buffer;
     }
+    if (log_read_fd != -1) close( log_read_fd );
     pthread_mutex_unlock( &log_lock );
 }
 
@@ -193,18 +197,109 @@ static int full_name( int dirfd, const char *name, char *out, size_t size )
     return 0;
 }
 
-/* --- Open files ----------------------------------------------------------------------------------------
- * The PS4 has room for 13952 open files on the whole console (12556 in one process), and wineserver
- * holds every program's files in the desktop's process (v00.48: during Steam's update the Chrome
- * installer's processes could not even open kernel32.dll). Every file opened by name is remembered
- * under its descriptor; when an open fails for lack of room, the log gets what this process holds:
- * by kind, by folder and the files open more than once (Settings > Diagnostics > Open files). */
+/* --- Open files, and the PS4's budget -------------------------------------------------------------------
+ * The PS4 keeps a budget for each app, all its processes together: direct and flexible memory, CPU, open
+ * files (about 250 on the PS5, folders among them; sockets, pipes and dups don't count: PS5_MihawkOS
+ * measured it), sockets, event queues, pipes, devices, threads. v00.48/49 reached the files' end with
+ * a few hundred descriptors open: Steam's update, then its web helper's DLLs ("Too many open files",
+ * EMFILE, although every process may have 12556). Wineserver keeps the files it holds under it
+ * (server/fd.c, parking); when an open fails anyway, the log gets what this process has open (by kind,
+ * by folder, the files open more than once) and the budget as the kernel counts it (Settings >
+ * Diagnostics > Budget log). */
 #define FD_NAMES 16384
 
 static struct { dev_t dev; ino_t ino; char *name; } fd_names[FD_NAMES];
 static pthread_mutex_t fd_names_lock = PTHREAD_MUTEX_INITIALIZER;
 
-int sysctlbyname( const char *name, void *old, size_t *old_size, const void *new_value, size_t new_size );
+/* the kernel's record of one budgeted thing (Orbis' BudgetInfo) */
+struct ps4_budget_item
+{
+    uint32_t resource;  /* 1 direct memory, 2 virtual memory, 3 flexible memory, 4 CPU, 5 files, ... */
+    uint32_t flags;
+    uint64_t total;
+    uint64_t used;
+};
+
+static const char *const budget_names[] = { "?", "direct memory", "virtual memory", "flexible memory", "CPU", "files",
+                                            "sockets", "event queues", "pipes", "devices", "threads", "IP sockets" };
+
+static long budget_syscall( long number, long a, long b, long c )
+{
+    long ret;
+    unsigned char failed;
+
+    __asm__ volatile( "syscall\n\tsetc %1"
+                      : "=a" (ret), "=qm" (failed)
+                      : "a" (number), "D" (a), "S" (b), "d" (c)
+                      : "rcx", "r8", "r9", "r10", "r11", "memory", "cc" );
+    if (failed)
+    {
+        errno = (int)ret;
+        return -1;
+    }
+    return ret;
+}
+
+/* this process's budget (budget_getid 609, budget_get 570): its id, or -1 (errno set) */
+static int read_budget( struct ps4_budget_item *items, int *count )
+{
+    long id;
+
+    memset( items, 0, *count * sizeof(*items) );
+    if ((id = budget_syscall( 609, 0, 0, 0 )) < 0) return -1;
+    if (budget_syscall( 570, id, (long)items, (long)count ) < 0) return -1;
+    return (int)id;
+}
+
+/* the app's files, as the budget counts them: 1, or 0 when it can't be read */
+static int budget_files( unsigned long long *used, unsigned long long *total )
+{
+    struct ps4_budget_item items[16];
+    int count = 16, i;
+
+    if (read_budget( items, &count ) < 0) return 0;
+    for (i = 0; i < count && i < 16; i++)
+        if (items[i].resource == 5)
+        {
+            *used = items[i].used;
+            *total = items[i].total;
+            return 1;
+        }
+    return 0;
+}
+
+/* the app's budget in the log (why: when) */
+void ps4_budget_log( const char *why )
+{
+    struct ps4_budget_item items[16];
+    char line[700];
+    int count = 16, id, len = 0, i, saved = errno;
+
+    if ((id = read_budget( items, &count )) < 0)
+    {
+        fprintf( stderr, "wineps4: budget (%s): the kernel does not say it (errno %d)\n", why, errno );
+        errno = saved;
+        return;
+    }
+    line[0] = 0;
+    for (i = 0; i < count && i < 16 && len < (int)sizeof(line) - 80; i++)
+    {
+        const unsigned int r = items[i].resource;
+        const char *name = r < sizeof(budget_names) / sizeof(budget_names[0]) ? budget_names[r] : "?";
+
+        if (r >= 1 && r <= 3)  /* (memory, in MiB) */
+            len += snprintf( line + len, sizeof(line) - len, "%s%s %llu of %llu MiB", len ? ", " : "", name,
+                             (unsigned long long)(items[i].used >> 20), (unsigned long long)(items[i].total >> 20) );
+        else
+            len += snprintf( line + len, sizeof(line) - len, "%s%s %llu of %llu", len ? ", " : "", name,
+                             (unsigned long long)items[i].used, (unsigned long long)items[i].total );
+    }
+    fprintf( stderr, "wineps4: budget %d (%s): %s\n", id, why, line );
+    errno = saved;
+}
+
+/* server/fd.c's parking: open, parked so far, opened again, failed (zeros where wineserver doesn't run) */
+extern void ps4_park_stats( unsigned int stats[4] );
 
 static void note_fd( int fd, const struct stat *st, const char *path )
 {
@@ -220,13 +315,6 @@ static void note_fd( int fd, const struct stat *st, const char *path )
     fd_names[fd].name = name;
     pthread_mutex_unlock( &fd_names_lock );
     free( old );
-}
-
-static int kernel_int( const char *name )
-{
-    int value = -1;
-    size_t size = sizeof(value);
-    return sysctlbyname( name, &value, &size, NULL, 0 ) ? -1 : value;
 }
 
 struct tally { char *key; unsigned int count; };
@@ -270,17 +358,18 @@ static void tally_print( struct tally *table, unsigned int size, const char *wha
     free( table );
 }
 
-/* what this process has open, and the console in all, in the log */
+/* what this process has open, and the app's budget, in the log */
 void ps4_files_census( const char *why )
 {
     static const char *const kind_names[] = { "files", "folders", "sockets", "pipes", "devices", "other" };
-    unsigned int kinds[6] = { 0 }, total = 0, unnamed = 0, i;
+    unsigned int kinds[6] = { 0 }, total = 0, unnamed = 0, i, park[4];
     struct tally *folders = calloc( 1024, sizeof(*folders) ), *files = calloc( 8192, sizeof(*files) );
     char line[256];
     struct rlimit limit;
     int fd, max = FD_NAMES, saved = errno, len;
 
-    if (!getrlimit( RLIMIT_NOFILE, &limit ) && limit.rlim_cur < (rlim_t)max) max = (int)limit.rlim_cur;
+    /* (8: FreeBSD's RLIMIT_NOFILE; this file has the C library's Linux numbers, where 7 is NOFILE) */
+    if (!getrlimit( 8, &limit ) && limit.rlim_cur < (rlim_t)max) max = (int)limit.rlim_cur;
     for (fd = 0; fd < max; fd++)
     {
         struct stat st;
@@ -321,9 +410,13 @@ void ps4_files_census( const char *why )
     len = 0;
     for (i = 0; i < 6; i++)
         if (kinds[i]) len += snprintf( line + len, sizeof(line) - len, "%s%u %s", len ? ", " : "", kinds[i], kind_names[i] );
-    fprintf( stderr, "wineps4: open files (%s): %u in this process (%s; %u files without a name), %d of %d on the "
-             "console (%d for one process)\n", why, total, line, unnamed, kernel_int( "kern.openfiles" ),
-             kernel_int( "kern.maxfiles" ), kernel_int( "kern.maxfilesperproc" ) );
+    fprintf( stderr, "wineps4: open files (%s): %u in this process (%s; %u files without a name)\n", why, total, line,
+             unnamed );
+    ps4_park_stats( park );
+    if (park[0] || park[1])
+        fprintf( stderr, "wineps4:   wineserver: %u files open that it can park, %u parked so far, %u opened again (%u failed)\n",
+                 park[0], park[1], park[2], park[3] );
+    ps4_budget_log( "the app's, now" );
     if (folders) tally_print( folders, 1024, "in", 8, 2 );
     if (files) tally_print( files, 8192, "times", 6, 2 );
     errno = saved;
@@ -339,29 +432,33 @@ static void census_after_failure( void )
 
     if ((on && !strcmp( on, "0" )) || now - last < 30) return;
     last = now;
-    ps4_files_census( saved == EMFILE ? "an open failed: this process is full" : "an open failed: the console is full" );
+    ps4_files_census( "an open failed: the app's files are used up" );
     errno = saved;
 }
 
-/* the desktop, every few seconds (Settings > Diagnostics > Open files): the console's count when it
- * has grown by a thousand since the last line, the census when it nears the end */
+/* the desktop, every few seconds (Settings > Diagnostics > Budget log): the app's open files as the
+ * budget counts them when they changed by 20 since the last line, the census when they near the end */
 void ps4_files_watch( void )
 {
-    static int logged = -1, census_done;
-    int open_now = kernel_int( "kern.openfiles" ), max = kernel_int( "kern.maxfiles" );
+    static long long logged = -1;
+    static int census_done;
+    unsigned long long used, total;
 
-    if (open_now < 0) return;
-    if (logged < 0 || open_now >= logged + 1000 || open_now <= logged - 1000)
+    if (!budget_files( &used, &total ) || !total) return;
+    if (logged < 0 || (long long)used >= logged + 20 || (long long)used <= logged - 20)
     {
-        fprintf( stderr, "wineps4: open files on the console: %d of %d\n", open_now, max );
-        logged = open_now;
+        unsigned int park[4];
+        ps4_park_stats( park );
+        fprintf( stderr, "wineps4: the app's open files: %llu of %llu (wineserver: %u it can park open, %u parked so far)\n",
+                 used, total, park[0], park[1] );
+        logged = (long long)used;
     }
-    if (max > 0 && open_now > max * 85 / 100 && !census_done)
+    if (used > total * 85 / 100 && !census_done)
     {
         census_done = 1;
-        ps4_files_census( "the console is almost full" );
+        ps4_files_census( "the app's files are almost used up" );
     }
-    else if (max > 0 && open_now < max * 70 / 100) census_done = 0;
+    else if (used < total * 70 / 100) census_done = 0;
 }
 
 /* fcntl with the kernel's struct flock (the compat header's lock types are already its numbers) */
