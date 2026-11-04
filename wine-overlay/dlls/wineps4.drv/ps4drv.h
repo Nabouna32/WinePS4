@@ -36,6 +36,8 @@ extern void PS4DRV_DestroyWindow( HWND hwnd );
 extern void PS4DRV_SetWindowText( HWND hwnd, LPCWSTR text );
 extern void PS4DRV_ActivateWindow( HWND hwnd, HWND previous );
 extern LRESULT PS4DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT *pos );
+extern BOOL PS4DRV_SetIMECompositionRect( HWND hwnd, RECT rect );
+extern void PS4DRV_NotifyIMEStatus( HWND hwnd, UINT status );
 
 /* ps4drv_main.c: the desktop's socket */
 extern BOOL ps4drv_send( const struct ps4_display_header *header, const void *data, UINT data_size );

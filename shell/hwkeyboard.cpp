@@ -1,8 +1,9 @@
-// WinePS4's USB keyboard (hwkeyboard.h). libSceKeyboard tells which keys are held now (USB HID usage
-// IDs, the modifiers as bits), so the presses and releases are the difference to the last read, and
-// the auto-repeat is made here, as Windows' keyboard driver makes it. libSceKeyboard is linked, but its
-// module (system module 0x106) is loaded here: a call into a system library whose module isn't loaded
-// ends the app (input.cpp), so the keyboard is only used once it is.
+// WinePS4's USB keyboard (hwkeyboard.h). libSceIme's keyboard gives its presses and releases (USB HID
+// usage IDs, the modifiers as bits); libSceKeyboard, tried when that doesn't open, tells which keys are
+// held now. Either way the keys held make a read, the presses and releases are the difference to the
+// last read, and the auto-repeat is made here, as Windows' keyboard driver makes it. The libraries are
+// linked, but their modules (system modules 0x95, 0x106) are loaded here: a call into a system library
+// whose module isn't loaded ends the app (input.cpp), so a keyboard is only used once it is.
 #include "hwkeyboard.h"
 
 #include <algorithm>
@@ -48,6 +49,52 @@ int32_t sceKeyboardClose(int32_t handle);
 int32_t sceKeyboardReadState(int32_t handle, KeyboardData *data);
 }
 bool keyboard_loaded = false;
+
+// libSceIme's keyboard: what the PS4 gives an app of its USB keyboards. libSceKeyboard opened, read and
+// said connected here, but never had a key (v00.55's log): the system hands those to the process it gives
+// the keyboard's focus. These come from sceImeUpdate, once a frame. The layouts are shadPS4's
+// (ime_common.h).
+constexpr uint16_t IME_MODULE = 0x95;
+struct ImeKeycode {
+    uint16_t keycode;  // USB HID usage
+    char16_t character;
+    uint32_t status;   // 1 the key code is valid, 8 and 0x10 from the system's keyboard; the modifiers
+                       // (mods' bits) at bit 8, the lights at bit 16
+    uint32_t layout;
+    int32_t user;
+    uint32_t resource;  // which keyboard
+    uint64_t timestamp;
+};
+struct ImeEvent {
+    uint32_t id;
+    union {
+        ImeKeycode keycode;
+        struct {
+            int32_t user;
+            uint32_t resource[5];  // the keyboards (0: none)
+        } keyboards;
+        int8_t reserved[64];
+    } param;
+};
+static_assert(sizeof(ImeKeycode) == 32 && offsetof(ImeEvent, param) == 8 && sizeof(ImeEvent) == 72, "libSceIme's event");
+using ImeHandler = void (*)(void *arg, const ImeEvent *event);
+struct ImeKeyboardParam {
+    uint32_t option;
+    int8_t reserved1[4];
+    void *arg;
+    ImeHandler handler;
+    int8_t reserved2[8];
+};
+static_assert(sizeof(ImeKeyboardParam) == 32, "libSceIme's keyboard parameters");
+extern "C" {
+int32_t sceImeKeyboardOpen(int32_t user, const ImeKeyboardParam *param);
+int32_t sceImeKeyboardClose(int32_t user);
+int32_t sceImeUpdate(ImeHandler handler);
+}
+constexpr uint32_t IME_OPENED = 256, IME_DOWN = 257, IME_UP = 258, IME_REPEAT = 259, IME_CONNECTED = 260,
+                   IME_DISCONNECTED = 261, IME_ABORTED = 262;
+constexpr uint32_t IME_KEYCODE_VALID = 0x1, IME_FROM_SYSTEM_KEYBOARD = 0x8 | 0x10;
+constexpr int32_t USER_EVERYONE = 254;  // SCE_USER_SERVICE_USER_ID_EVERYONE: every user's keyboard
 
 // A key as Windows gets it (KEYBDINPUT): virtual key, set-1 scan code, E0 prefix
 struct Key {
@@ -229,6 +276,165 @@ void open_keyboard() {
         last_answer = handle;  // (once per answer: this is tried every second)
         trace(handle >= 0 ? "keyboard opened" : "sceKeyboardOpen failed", handle);
     }
+}
+
+// libSceIme's keyboard, as its events left it
+bool ime_loaded = false, ime_open = false, ime_wanted = false;  // (wanted: it opened once; again after an abort)
+float ime_reopen = 0;
+int ime_keyboards = 0;
+std::vector<uint8_t> ime_held;    // the keys held, in the order pressed (not the modifiers)
+std::vector<uint8_t> ime_tapped;  // pressed since the last read: one let go already is held for that read
+uint32_t ime_mods = 0, ime_tap_mods = 0, ime_lights = 0;
+bool ime_drop = false;  // the system's keyboard dialog was up: the presses of the next update went to it
+struct {
+    unsigned presses, releases, repeats, other;
+} ime_counts{};  // (the keyboard log)
+
+void ime_forget() {
+    ime_held.clear();
+    ime_tapped.clear();
+    ime_mods = ime_tap_mods = 0;
+}
+
+void ime_event(void *, const ImeEvent *e) {
+    switch (e->id) {
+    case IME_OPENED:
+        ime_keyboards = 0;
+        for (const uint32_t resource : e->param.keyboards.resource)
+            ime_keyboards += resource != 0;
+        trace("libSceIme keyboard: keyboards at its start", ime_keyboards);
+        break;
+    case IME_CONNECTED:
+        ime_keyboards++;
+        trace("libSceIme keyboard: a keyboard connected", ime_keyboards);
+        break;
+    case IME_DISCONNECTED:
+        ime_keyboards = std::max(0, ime_keyboards - 1);
+        ime_forget();
+        trace("libSceIme keyboard: a keyboard disconnected", ime_keyboards);
+        break;
+    case IME_ABORTED:
+        ime_open = false;
+        ime_reopen = 2.f;
+        ime_forget();
+        trace("libSceIme keyboard: ended by the system (opened again in 2 s)", 0);
+        break;
+    case IME_DOWN:
+    case IME_UP:
+    case IME_REPEAT: {
+        const ImeKeycode &k = e->param.keycode;
+        if (!(k.status & IME_KEYCODE_VALID) || (k.status & IME_FROM_SYSTEM_KEYBOARD)) {
+            ime_counts.other++;
+            break;
+        }
+        (e->id == IME_DOWN ? ime_counts.presses : e->id == IME_UP ? ime_counts.releases : ime_counts.repeats)++;
+        ime_keyboards = std::max(ime_keyboards, 1);  // (a key: there is a keyboard)
+        uint32_t mods = (k.status >> 8) & 0xff;
+        ime_lights = (k.status >> 16) & (NUM_LOCK | CAPS_LOCK | SCROLL_LOCK);
+        if (k.keycode >= USAGE_MODIFIERS && k.keycode < USAGE_MODIFIERS + 8) {
+            const uint32_t bit = 1u << (k.keycode - USAGE_MODIFIERS);
+            mods = e->id == IME_UP ? mods & ~bit : mods | bit;
+        } else if (k.keycode < KEYS.size() && e->id != IME_REPEAT && !(ime_drop && e->id == IME_DOWN)) {
+            const uint8_t usage = static_cast<uint8_t>(k.keycode);
+            const auto at = std::find(ime_held.begin(), ime_held.end(), usage);
+            if (e->id == IME_UP) {
+                if (at != ime_held.end())
+                    ime_held.erase(at);
+            } else {
+                if (at == ime_held.end())
+                    ime_held.push_back(usage);
+                if (std::find(ime_tapped.begin(), ime_tapped.end(), usage) == ime_tapped.end())
+                    ime_tapped.push_back(usage);
+                ime_tap_mods |= mods;
+            }
+        }
+        ime_mods = mods;
+        break;
+    }
+    }
+}
+
+// Opens libSceIme's keyboard: every user's, else the first user's
+bool open_ime() {
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        const int loaded = sceSysmoduleLoadModule(IME_MODULE);
+        ime_loaded = loaded == 0;
+        if (!ime_loaded)
+            trace("libSceIme did not load", loaded);
+    }
+    if (!ime_loaded || ime_open)
+        return ime_open;
+    if (user < 0) {
+        int32_t initial = -1;
+        if (sceUserServiceGetInitialUser(&initial) == 0)
+            user = initial;
+    }
+    ImeKeyboardParam param{};
+    param.option = 0;  // (no repeat of its own: Windows' is made here)
+    param.handler = ime_event;
+    static int last_answer = -1;
+    int result = sceImeKeyboardOpen(USER_EVERYONE, &param);
+    if (result < 0 && user >= 0)
+        result = sceImeKeyboardOpen(user, &param);
+    if (result != last_answer) {
+        last_answer = result;
+        trace(result >= 0 ? "libSceIme keyboard opened" : "sceImeKeyboardOpen failed", result);
+    }
+    ime_open = result >= 0;
+    ime_wanted |= ime_open;
+    return ime_open;
+}
+
+// Keyboard log: what libSceIme's events were, a line a second at most (never which keys)
+void ime_log(float dt) {
+    static const bool on = [] {
+        const char *v = std::getenv("WINEPS4_KEY_LOG");
+        return !v || std::strcmp(v, "0") != 0;
+    }();
+    static unsigned lines = 0;
+    static float wait = 0;
+    if (!on || lines >= 400 || (wait -= dt) > 0 ||
+        !(ime_counts.presses | ime_counts.releases | ime_counts.repeats | ime_counts.other))
+        return;
+    wait = 1.f;
+    lines++;
+    std::fprintf(stderr, "shell: hwkeyboard: libSceIme: %u presses, %u releases, %u repeats, %u without a key; %d keyboards\n",
+                 ime_counts.presses, ime_counts.releases, ime_counts.repeats, ime_counts.other, ime_keyboards);
+    ime_counts = {};
+}
+
+// libSceIme's keyboard as a read of libSceKeyboard's (false: it isn't open)
+bool ime_read(KeyboardData &data, float dt) {
+    if (!ime_open && ime_wanted && (ime_reopen -= dt) <= 0) {
+        ime_reopen = 2.f;
+        open_ime();
+    }
+    if (!ime_open)
+        return false;
+    const int updated = sceImeUpdate(ime_event);
+    static int last_error = 0;
+    if (updated < 0 && updated != last_error) {
+        last_error = updated;
+        trace("sceImeUpdate failed", updated);
+    }
+    ime_drop = false;
+    data.connected = ime_keyboards > 0;
+    data.mods = ime_mods | (ime_tapped.empty() ? 0 : ime_tap_mods);
+    data.lights = ime_lights;
+    int n = 0;
+    for (const uint8_t usage : ime_held)
+        if (n < 16)
+            data.keys[n++] = usage;
+    for (const uint8_t usage : ime_tapped)
+        if (n < 16 && std::find(ime_held.begin(), ime_held.end(), usage) == ime_held.end())
+            data.keys[n++] = usage;
+    data.count = n;
+    ime_tapped.clear();
+    ime_tap_mods = 0;
+    ime_log(dt);
+    return true;
 }
 
 uint32_t lock_of(unsigned usage) {
@@ -419,8 +625,15 @@ void log_shape(const KeyboardData &data, const std::vector<KeyEvent> &events) {
 } // namespace
 
 void hwkeyboard_open() {
+    if (open_ime() || ime_wanted)
+        return;
     load_keyboard();
     open_keyboard();
+}
+
+void hwkeyboard_dialog_closed() {
+    ime_forget();
+    ime_drop = true;
 }
 
 std::vector<KeyEvent> hwkeyboard_poll(float dt) {
@@ -431,7 +644,9 @@ std::vector<KeyEvent> hwkeyboard_poll(float dt) {
     }
     KeyboardData data{};
     int result = -1;
-    if (keyboard >= 0) {
+    if (ime_read(data, dt)) {
+        result = 0;
+    } else if (keyboard >= 0) {
         result = sceKeyboardReadState(keyboard, &data);
         if (result < 0) {
             static int last_error = 0;

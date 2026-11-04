@@ -8,7 +8,7 @@
 #                                      0x60000000, off 0x400000: see app/launcher/main.c)
 # /app0/wine/lib/wine/x86_64-windows   Wine's 64-bit PE DLLs and programs (no import libraries)
 # /app0/wine/lib/wine/i386-windows     its 32-bit ones (WoW64: 32-bit programs in the 64-bit process)
-# /app0/wine/share/wine                nls files, wine.inf
+# /app0/wine/share/wine                nls files, wine.inf, fonts (Wine's and app/windows-fonts)
 # /app0/wine/share/ca-certificates.crt the root certificates (crypt32)
 # /app0/wine/prefix                    the prefix without dosdevices/ and without system32's and
 #                                      syswow64's copies of the DLLs above (system32-from-lib.txt lists
@@ -37,6 +37,11 @@ cp "$ROOT/app/sce_sys/icon0.png" "$STAGE/sce_sys/"
 rsync -a --exclude '*.a' "$HOSTWINE/lib/wine/x86_64-windows/" "$STAGE/wine/lib/wine/x86_64-windows/"
 rsync -a --exclude '*.a' "$HOSTWINE/lib/wine/i386-windows/" "$STAGE/wine/lib/wine/i386-windows/"
 rsync -a "$HOSTWINE/share/wine" "$STAGE/wine/share/"
+# Arial, Times New Roman and Courier New for Windows programs: Liberation 2 (metric-compatible, SIL
+# OFL 1.1, Ubuntu's fonts-liberation), beside Wine's own fonts so win32u lists them in the registry,
+# where DirectWrite looks; the names map to them in user.reg (port/ps4_main.c)
+cp "$ROOT"/app/windows-fonts/*.ttf "$STAGE/wine/share/wine/fonts/"
+cp "$ROOT/app/windows-fonts/LICENSE-Liberation.txt" "$STAGE/wine/share/"
 # the root certificates Windows programs trust (crypt32, Wine patch): Mozilla's list (Ubuntu's
 # ca-certificates, MPL 2.0); the console has none of its own
 cp "$ROOT/app/certs/ca-certificates.crt" "$STAGE/wine/share/ca-certificates.crt"

@@ -77,10 +77,12 @@ Color BUTTON, BUTTON_HOT, BUTTON_BORDER, CARD, CARD_HOT, CARD_BORDER, TRACK, ICO
 const Color CLOSE_RED = rgb(0xc42b1c);
 bool light_theme = false;
 
-// Settings > Bluetooth & devices: the mouse's speed (1-20, as Windows' slider), and whether a USB
-// keyboard types straight into programs (else the PS4's keyboard opens for text, Triangle)
+// Settings > Bluetooth & devices: the mouse's speed (1-20, as Windows' slider), whether a USB
+// keyboard types straight into programs (else the PS4's keyboard opens for text, Triangle), and
+// whether the PS4's keyboard opens by itself for a text field clicked
 int pointer_speed = 10;
 bool direct_keyboard = false;
+bool auto_keyboard = true;
 
 void apply_theme(bool light) {
     light_theme = light;
@@ -319,6 +321,7 @@ void save_desktop() {
         std::fprintf(f, "background=%s\n", background_spec(background).c_str());
         std::fprintf(f, "pointer=%d\n", pointer_speed);
         std::fprintf(f, "keyboard=%s\n", direct_keyboard ? "direct" : "ps4");
+        std::fprintf(f, "keyboard_by_itself=%d\n", auto_keyboard ? 1 : 0);
         std::fclose(f);
     }
 }
@@ -374,6 +377,8 @@ void load_desktop() {
                 pointer_speed = std::clamp(std::atoi(l.c_str() + 8), 1, 20);
             else if (l == "keyboard=direct")
                 direct_keyboard = true;
+            else if (l == "keyboard_by_itself=0")
+                auto_keyboard = false;
         }
         std::fclose(f);
     }
@@ -1268,6 +1273,44 @@ struct TextRequest {
 };
 TextRequest text_request;
 bool input_held_back = false;  // after the keyboard closes: until the buttons that closed it are let go
+
+// The PS4's keyboard for a text field clicked in a program (Settings: auto_keyboard): a caret its display
+// driver shows near the click (Windows' text boxes), or Chromium's text services focusing a field (Steam's
+// sign-in), within a few seconds of the click; what's typed goes to the program (TextFor::Wine). Not while
+// a USB keyboard types straight into programs.
+struct ProgramClick {
+    uint64_t hwnd = 0;
+    int pid = 0;
+    float x = 0, y = 0;
+    double when = -100;
+};
+ProgramClick program_click;
+std::map<int, uint32_t> program_field;  // what Chromium's text services focus, by process (PS4_TEXT_*)
+
+void program_text_events(double t) {
+    for (const WinTextEvent &e : winwin_text_events()) {
+        const uint32_t kind = e.flags & (PS4_TEXT_FIELD | PS4_TEXT_PASSWORD);
+        if (!(e.flags & PS4_TEXT_CARET)) {
+            uint32_t &before = program_field[e.pid];
+            const bool changed = before != kind;
+            before = kind;
+            if (!kind || !changed)
+                continue;
+        } else if (e.hwnd != program_click.hwnd ||
+                   std::fabs((e.top + e.bottom) / 2.f - program_click.y) > std::max(40, e.bottom - e.top + 24)) {
+            continue;  // (a caret away from the click: not one it put there)
+        }
+        if (!auto_keyboard || keyboard_active() || (direct_keyboard && hwkeyboard_connected()) ||
+            e.pid != program_click.pid || t - program_click.when > 3)
+            continue;
+        program_click.when = -100;  // (once a click)
+        const std::string title = winwin_title(e.pid);
+        if (keyboard_open(title.empty() ? "Type into the program" : "Type into " + title, "", kind == PS4_TEXT_PASSWORD)) {
+            text_request = TextRequest{};
+            text_request.what = TextFor::Wine;
+        }
+    }
+}
 
 // A window being resized by an edge: which ones (1 left, 2 right, 4 top, 8 bottom)
 int resizing = 0, resize_edges = 0;
@@ -2955,7 +2998,8 @@ Rect toggle_rect(const Window &w, int i) { const Rect a = settings_area(w); retu
 Rect card_at(const Window &w, int top, int h) { const Rect a = settings_area(w); return Rect{a.x, a.y + top, a.w, h}; }
 Rect mouse_card(const Window &w) { return card_at(w, 56, 92); }
 Rect keyboard_card(const Window &w) { return card_at(w, 160, 120); }
-Rect controller_card(const Window &w) { return card_at(w, 292, 120); }
+Rect autokb_card(const Window &w) { return card_at(w, 292, 80); }
+Rect controller_card(const Window &w) { return card_at(w, 384, 120); }
 Rect speed_button(const Window &w, int i) {  // 0 slower, 1 faster: the bar between them
     const Rect c = mouse_card(w);
     return Rect{i ? c.x + c.w - 60 : c.x + c.w - 380, c.y + 28, 40, 36};
@@ -3734,6 +3778,8 @@ std::string editor_hit(const Window &w, float px, float py) {
 }
 
 int selecting = 0;  // a Notepad window whose text the pointer is choosing (pressed in it, not let go)
+int note_type_window = 0;  // a Notepad window clicked: the PS4's keyboard opens for it (the main loop)
+double note_type_when = 0;
 
 // the pointer at (px, py) in Notepad's text: the line and column there
 void note_point(Window &w, float px, float py, bool extend) {
@@ -4559,6 +4605,8 @@ std::string settings_hit(const Window &w, float px, float py) {
             if (segment(keyboard_card(w), i, 2, 170).contains(px, py))
                 return "kbmode" + std::to_string(i);
         }
+        if (autokb_card(w).contains(px, py))
+            return "autokb";
     } else if (w.page == PAGE_APPS) {
         if (chromium_card(w).contains(px, py))
             return "chromium";
@@ -4789,6 +4837,9 @@ void settings_click(Window &w, const std::string &part) {
         direct_keyboard = number_after(part, "kbmode") == 1;
         if (direct_keyboard)
             hwkeyboard_open();
+        save_desktop();
+    } else if (part == "autokb") {
+        auto_keyboard = !auto_keyboard;
         save_desktop();
     } else if (part == "chromium" || part == "rules" || part == "outside") {
         const char *key = part == "chromium" ? "WINEPS4_CHROMIUM_ONE_PROCESS"
@@ -5750,6 +5801,14 @@ void draw_devices_page(Canvas &c, const Window &w) {
                                    : "Triangle over a program opens the PS4's keyboard, which a USB keyboard plugged in types into too.",
                    14, TEXT3, r.w - 88, 20);
 
+    r = autokb_card(w);
+    panel(c, r.x, r.y, r.w, r.h, 6, hover == id + "autokb" ? CARD_HOT : CARD, CARD_BORDER);
+    c.text(r.x + 22, r.y + 33, "Open the PS4's keyboard for a text field clicked", 16, TEXT);
+    c.text(r.x + 22, r.y + 58,
+           "In programs (Steam's sign-in, Windows' text boxes) and Notepad; not while a USB keyboard types straight into programs.",
+           14, TEXT3, Weight::Regular, r.w - 140);
+    draw_switch(c, r, auto_keyboard);
+
     r = controller_card(w);
     panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
     draw_icon(c, Icon::Pad, r.x + 34, r.y + 40, 32);
@@ -6385,6 +6444,7 @@ extern "C" void ps4_shell_run(const char *) {
                 finish_text(text);
             else
                 text_request = TextRequest{};
+            hwkeyboard_dialog_closed();
             input_held_back = true;  // until the buttons that closed it are let go
             dirty = true;
         }
@@ -6435,6 +6495,7 @@ extern "C" void ps4_shell_run(const char *) {
         // it's let go. Triangle opens the system keyboard for it.
         if (winwin_changed())
             dirty = true;
+        program_text_events(t);
         program_tasks = winwin_tasks();
         if (icons_changed.exchange(false))
             dirty = true;
@@ -6541,8 +6602,10 @@ extern "C" void ps4_shell_run(const char *) {
             constexpr uint32_t MOVE = 0x0001, LEFTDOWN = 0x0002, LEFTUP = 0x0004, RIGHTDOWN = 0x0008,
                                RIGHTUP = 0x0010, WHEEL = 0x0800;
             uint32_t flags = in.moved ? MOVE : 0;
-            if (over_wine && (in.pressed & BTN_CLICK))
+            if (over_wine && (in.pressed & BTN_CLICK)) {
                 flags |= LEFTDOWN, wine_buttons |= BTN_CLICK;
+                program_click = ProgramClick{over_wine, winwin_pid(over_wine), in.x, in.y, t};
+            }
             if ((in.released & BTN_CLICK) && (wine_buttons & BTN_CLICK))
                 flags |= LEFTUP, wine_buttons &= ~BTN_CLICK;
             if (over_wine && (in.pressed & BTN_MENU))
@@ -6569,6 +6632,7 @@ extern "C" void ps4_shell_run(const char *) {
             dirty = true;
         }
         if (live && (in.pressed & BTN_CLICK)) {
+            note_type_window = 0;  // (a second click, or one elsewhere: Notepad's keyboard waits for none)
             const bool twice = hover == last_click_key && t - last_click_time < 0.5;
             last_click_key = twice ? std::string() : hover;
             last_click_time = t;
@@ -6631,10 +6695,13 @@ extern "C" void ps4_shell_run(const char *) {
             if (in.moved)
                 dirty = true;
         }
-        // text chosen in Notepad with the pointer held
+        // text chosen in Notepad with the pointer held; a click that chose none: the PS4's keyboard types
+        // there, once no second click came (a double click chooses a word)
         if (selecting) {
             Window *w = find_window(selecting);
             if (!w || !w->text || !(in.held & BTN_CLICK)) {
+                if (w && w->text && !note_has_selection(*w->text))
+                    note_type_window = selecting, note_type_when = t;
                 selecting = 0;
             } else if (in.moved) {
                 const Rect a = note_area(*w);
@@ -6645,6 +6712,13 @@ extern "C" void ps4_shell_run(const char *) {
                 note_point(*w, in.x, in.y, true);
                 dirty = true;
             }
+        }
+        if (note_type_window && t - note_type_when > 0.45) {
+            Window *w = find_window(note_type_window);
+            note_type_window = 0;
+            if (w && w->text && auto_keyboard && !keyboard_active() && !(direct_keyboard && hwkeyboard_connected()))
+                editor_command(*w, "note-type");
+            dirty = true;
         }
         if (in.released & BTN_CLICK) {
             if (dragged.active && live) {

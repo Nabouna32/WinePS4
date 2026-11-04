@@ -42,6 +42,7 @@ std::map<uint64_t, WinWindow> windows;
 std::set<int> connected;  // the processes whose display driver is connected
 uint64_t next_order = 1;
 std::atomic<bool> changed{false};
+std::vector<WinTextEvent> text_events;  // (PS4_DISPLAY_TEXT) until the desktop takes them
 
 // OpenOrbis' sockaddr_un is a Linux one: the PS4 (FreeBSD) has a length byte first
 struct BsdSockaddrUn {
@@ -121,6 +122,11 @@ void handle(const ps4_display_header &m, std::vector<uint8_t> &data) {
             it->second.order = next_order++;
         break;
     }
+    case PS4_DISPLAY_TEXT:
+        if (text_events.size() >= 64)
+            text_events.erase(text_events.begin());  // (a desktop that wasn't asking: the newest count)
+        text_events.push_back(WinTextEvent{m.hwnd, m.pid, m.flags, m.left, m.top, m.right, m.bottom});
+        return;  // (nothing to draw)
     }
     changed = true;
 }
@@ -338,6 +344,29 @@ void winwin_command(uint64_t hwnd, uint32_t command) {
     r.x = static_cast<int32_t>(static_cast<uint32_t>(hwnd));
     r.data = static_cast<int32_t>(command);
     send(r);
+}
+
+std::vector<WinTextEvent> winwin_text_events() {
+    std::lock_guard guard(lock);
+    std::vector<WinTextEvent> events;
+    events.swap(text_events);
+    return events;
+}
+
+int winwin_pid(uint64_t hwnd) {
+    std::lock_guard guard(lock);
+    const auto it = windows.find(hwnd);
+    return it == windows.end() ? 0 : it->second.pid;
+}
+
+std::string winwin_title(int pid) {
+    std::lock_guard guard(lock);
+    const uint64_t active = active_window(stacked());
+    std::string title;
+    for (const auto &[hwnd, w] : windows)
+        if (w.pid == pid && (w.flags & PS4_WINDOW_VISIBLE) && !w.title.empty() && (title.empty() || hwnd == active))
+            title = w.title;
+    return title;
 }
 
 std::vector<WinTask> winwin_tasks() {

@@ -59,6 +59,22 @@ struct WinTask {
 // The windows a taskbar button is for (shown, not menus or dialogs), oldest first
 std::vector<WinTask> winwin_tasks();
 
+// What takes text in a program's window now, from its display driver: a caret shown or moved there
+// (Windows' edit boxes), or the field Chromium's text services focus (Steam's web pages). The desktop
+// opens the PS4's keyboard for a text field clicked.
+struct WinTextEvent {
+    uint64_t hwnd = 0;   // the top-level window (0: none had the process's focus)
+    int pid = 0;
+    uint32_t flags = 0;  // PS4_TEXT_* (port/include/ps4_display.h)
+    int left = 0, top = 0, right = 0, bottom = 0;  // the caret on the screen (PS4_TEXT_CARET)
+};
+// The ones that came since the last call, oldest first
+std::vector<WinTextEvent> winwin_text_events();
+// The window's process (0: no such window)
+int winwin_pid(uint64_t hwnd);
+// The title of a shown window of the process (its active one's if it has it)
+std::string winwin_title(int pid);
+
 // Input for the wineserver: the pointer (screen pixels), buttons (MOUSEEVENTF_* flags), text, keys
 void winwin_mouse(float x, float y, uint32_t flags, int wheel = 0);
 void winwin_text(const std::string &utf8);

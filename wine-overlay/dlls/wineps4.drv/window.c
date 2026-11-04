@@ -191,6 +191,47 @@ LRESULT PS4DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT 
     return 0;
 }
 
+/* --- text: the desktop opens the PS4's keyboard for a text field clicked -------------------------- */
+
+static void send_text( HWND hwnd, UINT flags, const RECT *caret )
+{
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    static struct ps4_display_header last;
+    struct ps4_display_header msg = { .type = PS4_DISPLAY_TEXT, .hwnd = (UINT_PTR)hwnd, .flags = flags };
+    BOOL same;
+
+    if (caret)
+    {
+        msg.left   = caret->left;
+        msg.top    = caret->top;
+        msg.right  = caret->right;
+        msg.bottom = caret->bottom;
+    }
+    /* (edit boxes show their caret again after each paint: once is enough) */
+    pthread_mutex_lock( &lock );
+    same = last.type && last.hwnd == msg.hwnd && last.flags == msg.flags && last.left == msg.left &&
+           last.top == msg.top && last.right == msg.right && last.bottom == msg.bottom;
+    last = msg;
+    pthread_mutex_unlock( &lock );
+    if (!same) ps4drv_send( &msg, NULL, 0 );
+}
+
+/* a caret shown or moved (win32u: the IME's composition window follows it): hwnd is its top-level
+ * window, rect on the screen */
+BOOL PS4DRV_SetIMECompositionRect( HWND hwnd, RECT rect )
+{
+    send_text( hwnd, PS4_TEXT_CARET, &rect );
+    return TRUE;
+}
+
+/* msctf's (PS4_TEXT_STATUS): the field Chromium's text services focus now */
+void PS4DRV_NotifyIMEStatus( HWND hwnd, UINT status )
+{
+    if ((status & ~0xff) != PS4_TEXT_STATUS) return;  /* imm32's: the IME opened or closed */
+    if (hwnd) hwnd = NtUserGetAncestor( hwnd, GA_ROOT );
+    send_text( hwnd, status & (PS4_TEXT_FIELD | PS4_TEXT_PASSWORD), NULL );
+}
+
 void PS4DRV_DestroyWindow( HWND hwnd )
 {
     struct ps4_display_header msg = { .type = PS4_DISPLAY_DESTROY, .hwnd = (UINT_PTR)hwnd };

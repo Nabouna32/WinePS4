@@ -28,6 +28,8 @@ enum ps4_display_msg
     PS4_DISPLAY_TITLE,      /* UTF-8 title follows (size - header) */
     PS4_DISPLAY_DESTROY,    /* the window is gone */
     PS4_DISPLAY_RAISE,      /* the window was activated: on top */
+    PS4_DISPLAY_TEXT,       /* what takes text in the window now (flags = PS4_TEXT_*): the desktop opens
+                               the PS4's keyboard for a text field clicked */
 };
 
 #define PS4_WINDOW_VISIBLE      0x001
@@ -39,6 +41,16 @@ enum ps4_display_msg
 #define PS4_WINDOW_MINIMIZED    0x040
 #define PS4_WINDOW_CAN_MINIMIZE 0x080
 #define PS4_WINDOW_CAN_MAXIMIZE 0x100
+
+/* TEXT: a caret shown or moved in the window (Windows' edit boxes: left..bottom is it on the screen), or
+ * the field Chromium's text services focus (msctf: none, a text field or a password field) */
+#define PS4_TEXT_NONE     0x0
+#define PS4_TEXT_FIELD    0x1
+#define PS4_TEXT_PASSWORD 0x2
+#define PS4_TEXT_CARET    0x4
+/* msctf tells the display driver through NotifyIMEStatus: this or'ed with NONE, FIELD or PASSWORD
+ * (imm32's own statuses are the IME's open state, 0 or 1) */
+#define PS4_TEXT_STATUS   0x57505300
 
 struct ps4_display_header
 {

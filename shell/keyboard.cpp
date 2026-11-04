@@ -77,7 +77,7 @@ std::string to_utf8(const char16_t *in) {
 
 } // namespace
 
-bool keyboard_open(const std::string &title, const std::string &text) {
+bool keyboard_open(const std::string &title, const std::string &text, bool password) {
     if (open)
         return false;
     static bool loaded = false;
@@ -94,7 +94,7 @@ bool keyboard_open(const std::string &title, const std::string &text) {
     OrbisImeDialogSetting setting{};
     setting.userId = static_cast<uint32_t>(user);
     setting.type = ORBIS_TYPE_DEFAULT;
-    setting.option = 0x2;  // no automatic capital letters: file names
+    setting.option = 0x2 | (password ? 0x4 : 0);  // no automatic capital letters (file names); hidden
     setting.maxTextLength = MAX_TEXT;
     setting.inputTextBuffer = reinterpret_cast<wchar_t *>(text_buffer);
     setting.posx = 1920.f / 2;
@@ -104,7 +104,7 @@ bool keyboard_open(const std::string &title, const std::string &text) {
     setting.title = reinterpret_cast<const wchar_t *>(title_buffer);
     int32_t result = sceImeDialogInit(&setting, nullptr);
     if (result < 0) {
-        setting.option = 0;  // the plainest
+        setting.option = password ? 0x4 : 0;  // the plainest
         result = sceImeDialogInit(&setting, nullptr);
     }
     trace("opened", result);

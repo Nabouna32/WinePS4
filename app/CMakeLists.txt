@@ -177,7 +177,7 @@ target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/in
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a ${PS4_SYSROOT}/lib/libcrypto.a)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
-target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceImeDialog SceCommonDialog SceNetCtl)
+target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceIme SceImeDialog SceCommonDialog SceNetCtl)
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FFMPEG}/lib/libavformat.a ${WINEPS4_FFMPEG}/lib/libavcodec.a
     ${WINEPS4_FFMPEG}/lib/libswscale.a ${WINEPS4_FFMPEG}/lib/libavutil.a)
 ps4_kit_app(wineps4)

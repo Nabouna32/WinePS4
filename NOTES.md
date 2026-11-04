@@ -232,3 +232,48 @@ v00.55:
   found by reading. Settings > Diagnostics > Keyboard log (WINEPS4_KEY_LOG, on by default for now)
   logs the shape of each new read (count, slots, high bits, keys the table doesn't know) and where
   the presses went each second, never which keys.
+
+## Steam's text, the PS4's keyboard for text fields, and Crash Bandicoot (v00.56, 2026-11-05)
+
+v00.55 (logs/v00.55): the socket option numbers worked. Steam's quick pings of the login servers
+succeed (174 ms), it connects to one and the sign-in page's QR code comes through it; polling that
+sign-in fails ("Failed to poll auth session. Result 2. Transport Error: 2") only when the server ends
+the connection, about 70 s after it was made ('Try another CM': nobody signed in on it). The user's
+screenshot showed the sign-in window with its boxes, check box, button and QR code but no text at
+all. Blink's last-resort font (Arial, Sans, MS UI Gothic, Microsoft Sans Serif, Segoe UI, Calibri,
+Times New Roman, Courier New) was found nowhere (cef_log: remote_font_face_source.cc(392)
+NOTREACHED, its loading fallback): DirectWrite's system fonts are the registry's Fonts key, and the
+prefix had only Wine's Tahoma, Marlett, Symbol, Webdings and Wingdings (no C:\windows\Fonts at all).
+
+The USB keyboard: libSceKeyboard's reads said a keyboard was connected but never had a key in the
+whole session. The library has sceKeyboardSetProcessFocus: the system gives the keys to the process
+it focuses. Apps get keyboards from libSceIme's keyboard (sceImeKeyboardOpen, events in sceImeUpdate).
+
+Crash Bandicoot N. Sane Trilogy: it started (process 472), connected to the display,
+then wrote nothing for 147 s, and ended (code 0) as Steam was started. It never asked for a D3D11
+device in that time, and none could be made: Wine has no Vulkan here and wined3d's OpenGL finds no
+pixel format (steam.exe's own D3D check: "Wine was built without Vulkan support", "Failed to find a
+suitable pixel format"). 3D games need a GPU path (RADV, winevulkan, DXVK): not in v00.56.
+
+v00.56:
+- app/windows-fonts: Liberation 2.1.5 (Sans, Serif, Mono; SIL OFL 1.1, Ubuntu's fonts-liberation)
+  beside Wine's own fonts in the package (/app0/wine/share/wine/fonts), so win32u lists them in the
+  registry, where DirectWrite looks. port/ps4_main.c map_font_names adds the names programs ask for
+  to HKCU\Software\Wine\Fonts\Replacements in user.reg before wineserver loads it (only the ones the
+  key lacks): Arial, Helvetica, Segoe UI, Microsoft Sans Serif, Verdana, Calibri: Liberation Sans;
+  Times New Roman, Georgia: Liberation Serif; Courier New, Consolas, Lucida Console: Liberation Mono.
+- The USB keyboard through libSceIme's keyboard (system module 0x95; every user's keyboard, else the
+  first user's): its presses and releases of USB HID usages make the held keys libSceKeyboard's reads
+  gave (a key pressed and let go between two frames is held for one), so Windows' keys, its repeat
+  and the lock lights are made as before; libSceKeyboard only if it doesn't open. What was typed while
+  the system's keyboard dialog was up is dropped (it went there). The keyboard log adds a line a
+  second of libSceIme's counts (presses, releases, repeats; never which keys).
+- The PS4's keyboard opens by itself for a text field clicked (Settings > Bluetooth & devices, on by
+  default; not while a USB keyboard types straight into programs). In a program: within 3 s of a
+  click, its display driver tells of a caret shown or moved near the click (win32u's
+  SetIMECompositionRect: Windows' text boxes), or of Chromium's text services focusing a text field
+  (msctf's ThreadMgr_SetFocus, Wine patch: the focused document's context has a text store that
+  isn't read-only; with its keyboard disabled it is a password field, and the PS4's keyboard hides
+  what's typed): NotifyIMEStatus with PS4_TEXT_STATUS, PS4_DISPLAY_TEXT to the desktop. In the
+  desktop's Notepad: half a second after a click in the text that chose nothing (a double click
+  still chooses a word).

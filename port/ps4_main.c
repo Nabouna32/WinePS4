@@ -808,6 +808,80 @@ static void trim_windows_startup( void )
     free( text );
 }
 
+/* Font names Windows programs ask for, given the package's Liberation 2 fonts (metric-compatible with
+ * Arial, Times New Roman and Courier New; app/package.sh puts them beside Wine's own). DirectWrite and
+ * win32u both read HKCU\Software\Wine\Fonts\Replacements, and leave a name alone when a font has it.
+ * Before, Chromium (Steam's web helper) found none of its last resorts (Arial, Segoe UI, Microsoft Sans
+ * Serif, Times New Roman, Courier New...: Wine's Tahoma is not one of them) and drew no text at all
+ * (v00.55). Added to user.reg before wineserver loads it: only the names the key lacks (the user may
+ * have changed one). */
+static const char *const font_names[][2] =
+{
+    { "Arial", "Liberation Sans" },
+    { "Helvetica", "Liberation Sans" },
+    { "Segoe UI", "Liberation Sans" },
+    { "Microsoft Sans Serif", "Liberation Sans" },
+    { "Verdana", "Liberation Sans" },
+    { "Calibri", "Liberation Sans" },
+    { "Times New Roman", "Liberation Serif" },
+    { "Georgia", "Liberation Serif" },
+    { "Courier New", "Liberation Mono" },
+    { "Consolas", "Liberation Mono" },
+    { "Lucida Console", "Liberation Mono" },
+};
+
+static void map_font_names( void )
+{
+    static const char header[] = "\n[Software\\\\Wine\\\\Fonts\\\\Replacements]";
+    char *text, *key = NULL, *end = NULL, *body = NULL, *at, lines[1024] = "", name[96], added[256] = "";
+    unsigned int i;
+    long size;
+    FILE *f = fopen( PREFIX_DIR "/user.reg", "rb" );
+
+    if (!f) return;
+    fseek( f, 0, SEEK_END );
+    size = ftell( f );
+    fseek( f, 0, SEEK_SET );
+    if (size <= 0 || !(text = malloc( size + 1 )))
+    {
+        fclose( f );
+        return;
+    }
+    if (fread( text, 1, size, f ) != (size_t)size) size = 0;
+    fclose( f );
+    text[size > 0 ? size : 0] = 0;
+    if (size > 0 && (key = strstr( text, header )))
+    {
+        if (!(end = strstr( key + 1, "\n[" ))) end = text + size;  /* (the key's lines end at the next key) */
+        body = strchr( key + 1, '\n' );  /* after its line, and its #time= line */
+        while (body && body < end && body[1] == '#') body = strchr( body + 1, '\n' );
+    }
+    for (i = 0; size > 0 && i < sizeof(font_names) / sizeof(font_names[0]); i++)
+    {
+        snprintf( name, sizeof(name), "\n\"%s\"=", font_names[i][0] );
+        if (key && (at = strstr( key, name )) && at < end) continue;
+        snprintf( lines + strlen( lines ), sizeof(lines) - strlen( lines ), "\"%s\"=\"%s\"\n", font_names[i][0],
+                  font_names[i][1] );
+        snprintf( added + strlen( added ), sizeof(added) - strlen( added ), "%s%s", added[0] ? ", " : " ",
+                  font_names[i][0] );
+    }
+    if (lines[0] && (f = fopen( PREFIX_DIR "/user.reg.new", "wb" )))
+    {
+        int ok;
+
+        if (body && body < end)
+            ok = fwrite( text, 1, body + 1 - text, f ) == (size_t)(body + 1 - text) && fputs( lines, f ) >= 0 &&
+                 fwrite( body + 1, 1, text + size - (body + 1), f ) == (size_t)(text + size - (body + 1));
+        else
+            ok = fwrite( text, 1, size, f ) == (size_t)size &&
+                 fprintf( f, "%s[Software\\\\Wine\\\\Fonts\\\\Replacements] %lu\n%s", text[size - 1] == '\n' ? "\n" : "\n\n",
+                          (unsigned long)time( NULL ), lines ) > 0;
+        if (!fclose( f ) && ok && !rename( PREFIX_DIR "/user.reg.new", PREFIX_DIR "/user.reg" ))
+            logf_( "wineps4: font names now Liberation's:%s\n", added );
+    }
+    free( text );
+}
+
 /* Wine's startup, once per app start: wineboot --init (this machine's registry keys, then
  * services.exe, which stays), and beside it the Windows desktop, explorer.exe /desktop, which stays
  * too (the wineserver no longer closes the desktop when its last program ends: server/winstation.c).
@@ -942,6 +1016,7 @@ static void *setup_thread( void *arg )
     setup_prefix();
     make_user_folders();
     trim_windows_startup();
+    map_font_names();
     ps4_start_wineserver_listening();
     /* (its socket is there once the thread has opened it, before the registry loads: the first
      * program queues; a server that can't start ends at once) */

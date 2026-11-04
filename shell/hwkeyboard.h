@@ -16,10 +16,14 @@ struct KeyEvent {
     bool down;       // pressed (true) or released (false); auto-repeat comes as extra presses
 };
 
-// The USB keyboard (libSceKeyboard). Call once after the user service is up (shell/input.cpp's input_open()).
+// The USB keyboard (libSceIme's keyboard, else libSceKeyboard). Call once after the user service is up
+// (shell/input.cpp's input_open()).
 void hwkeyboard_open();
 // Once per frame (dt in seconds): what changed since the last call, in order, auto-repeat included.
 std::vector<KeyEvent> hwkeyboard_poll(float dt);
+// The system's keyboard dialog closed: what was typed while it was up went to it, and the keys held
+// before are let go (their releases went to it too)
+void hwkeyboard_dialog_closed();
 // A keyboard is connected now
 bool hwkeyboard_connected();
 
