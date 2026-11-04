@@ -277,3 +277,7 @@ v00.56:
   what's typed): NotifyIMEStatus with PS4_TEXT_STATUS, PS4_DISPLAY_TEXT to the desktop. In the
   desktop's Notepad: half a second after a click in the text that chose nothing (a double click
   still chooses a word).
+- A field already focused when clicked (Steam's sign-in focuses its first box itself) gives no news:
+  one still focused 1.2 s after a click on its process's window, with no news meanwhile, opens the
+  keyboard too. If the system refuses its keyboard dialog while libSceIme's keyboard is open, that
+  keyboard is closed, the dialog tried again, and the keyboard opened again when the dialog closes.

@@ -24,6 +24,9 @@ std::vector<KeyEvent> hwkeyboard_poll(float dt);
 // The system's keyboard dialog closed: what was typed while it was up went to it, and the keys held
 // before are let go (their releases went to it too)
 void hwkeyboard_dialog_closed();
+// The system's keyboard dialog didn't open: libSceIme's keyboard is closed until it closes (true if it was
+// open: the dialog may be tried again)
+bool hwkeyboard_pause();
 // A keyboard is connected now
 bool hwkeyboard_connected();
 

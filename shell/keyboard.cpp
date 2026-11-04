@@ -1,6 +1,7 @@
 // WinePS4's text entry (keyboard.h): sceImeDialog, as HENkaku's ps4_keyboard.cpp opens it. Its
 // text is UTF-16 (the PS4's wchar_t is 16 bits), the desktop's UTF-8.
 #include "keyboard.h"
+#include "hwkeyboard.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -102,10 +103,18 @@ bool keyboard_open(const std::string &title, const std::string &text, bool passw
     setting.horizontalAlignment = ORBIS_H_CENTER;
     setting.verticalAlignment = ORBIS_V_CENTER;
     setting.title = reinterpret_cast<const wchar_t *>(title_buffer);
+    const uint32_t option = setting.option;
     int32_t result = sceImeDialogInit(&setting, nullptr);
     if (result < 0) {
         setting.option = password ? 0x4 : 0;  // the plainest
         result = sceImeDialogInit(&setting, nullptr);
+    }
+    if (result < 0 && hwkeyboard_pause()) {
+        // (libSceIme's keyboard was open: tried again without it, which comes back when this closes)
+        trace("refused", result);
+        setting.option = option;
+        if ((result = sceImeDialogInit(&setting, nullptr)) < 0)
+            hwkeyboard_dialog_closed();
     }
     trace("opened", result);
     open = result >= 0;

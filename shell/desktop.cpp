@@ -1278,37 +1278,51 @@ bool input_held_back = false;  // after the keyboard closes: until the buttons t
 // driver shows near the click (Windows' text boxes), or Chromium's text services focusing a field (Steam's
 // sign-in), within a few seconds of the click; what's typed goes to the program (TextFor::Wine). Not while
 // a USB keyboard types straight into programs.
+// A field that had the focus before the click (Steam's sign-in focuses its first one) gives no news when
+// clicked: one still focused 1.2 s after a click, with no news of the process meanwhile, was clicked again.
 struct ProgramClick {
     uint64_t hwnd = 0;
     int pid = 0;
     float x = 0, y = 0;
     double when = -100;
+    bool news = false;  // the process's text services told of a field after it
 };
 ProgramClick program_click;
 std::map<int, uint32_t> program_field;  // what Chromium's text services focus, by process (PS4_TEXT_*)
 
 void program_text_events(double t) {
+    const auto open_for = [&](int pid, bool password) {
+        if (!auto_keyboard || keyboard_active() || (direct_keyboard && hwkeyboard_connected()) || pid != program_click.pid ||
+            t - program_click.when > 3)
+            return;
+        program_click.when = -100;  // (once a click)
+        const std::string title = winwin_title(pid);
+        if (keyboard_open(title.empty() ? "Type into the program" : "Type into " + title, "", password)) {
+            text_request = TextRequest{};
+            text_request.what = TextFor::Wine;
+        }
+    };
     for (const WinTextEvent &e : winwin_text_events()) {
         const uint32_t kind = e.flags & (PS4_TEXT_FIELD | PS4_TEXT_PASSWORD);
         if (!(e.flags & PS4_TEXT_CARET)) {
             uint32_t &before = program_field[e.pid];
             const bool changed = before != kind;
             before = kind;
+            if (e.pid == program_click.pid)
+                program_click.news = true;
             if (!kind || !changed)
                 continue;
         } else if (e.hwnd != program_click.hwnd ||
                    std::fabs((e.top + e.bottom) / 2.f - program_click.y) > std::max(40, e.bottom - e.top + 24)) {
             continue;  // (a caret away from the click: not one it put there)
         }
-        if (!auto_keyboard || keyboard_active() || (direct_keyboard && hwkeyboard_connected()) ||
-            e.pid != program_click.pid || t - program_click.when > 3)
-            continue;
-        program_click.when = -100;  // (once a click)
-        const std::string title = winwin_title(e.pid);
-        if (keyboard_open(title.empty() ? "Type into the program" : "Type into " + title, "", kind == PS4_TEXT_PASSWORD)) {
-            text_request = TextRequest{};
-            text_request.what = TextFor::Wine;
-        }
+        open_for(e.pid, kind == PS4_TEXT_PASSWORD);
+    }
+    if (!program_click.news && t - program_click.when > 1.2 && t - program_click.when < 3) {
+        const auto it = program_field.find(program_click.pid);
+        if (it != program_field.end() && it->second)
+            open_for(program_click.pid, it->second == PS4_TEXT_PASSWORD);
+        program_click.news = true;  // (asked once)
     }
 }
 
@@ -6604,7 +6618,7 @@ extern "C" void ps4_shell_run(const char *) {
             uint32_t flags = in.moved ? MOVE : 0;
             if (over_wine && (in.pressed & BTN_CLICK)) {
                 flags |= LEFTDOWN, wine_buttons |= BTN_CLICK;
-                program_click = ProgramClick{over_wine, winwin_pid(over_wine), in.x, in.y, t};
+                program_click = ProgramClick{over_wine, winwin_pid(over_wine), in.x, in.y, t, false};
             }
             if ((in.released & BTN_CLICK) && (wine_buttons & BTN_CLICK))
                 flags |= LEFTUP, wine_buttons &= ~BTN_CLICK;

@@ -280,6 +280,8 @@ void open_keyboard() {
 
 // libSceIme's keyboard, as its events left it
 bool ime_loaded = false, ime_open = false, ime_wanted = false;  // (wanted: it opened once; again after an abort)
+bool ime_paused = false;  // closed while the system's keyboard dialog is up (hwkeyboard_pause)
+int32_t ime_user = -1;    // whose keyboards it has
 float ime_reopen = 0;
 int ime_keyboards = 0;
 std::vector<uint8_t> ime_held;    // the keys held, in the order pressed (not the modifiers)
@@ -375,9 +377,10 @@ bool open_ime() {
     param.option = 0;  // (no repeat of its own: Windows' is made here)
     param.handler = ime_event;
     static int last_answer = -1;
-    int result = sceImeKeyboardOpen(USER_EVERYONE, &param);
+    ime_user = USER_EVERYONE;
+    int result = sceImeKeyboardOpen(ime_user, &param);
     if (result < 0 && user >= 0)
-        result = sceImeKeyboardOpen(user, &param);
+        result = sceImeKeyboardOpen(ime_user = user, &param);
     if (result != last_answer) {
         last_answer = result;
         trace(result >= 0 ? "libSceIme keyboard opened" : "sceImeKeyboardOpen failed", result);
@@ -407,7 +410,7 @@ void ime_log(float dt) {
 
 // libSceIme's keyboard as a read of libSceKeyboard's (false: it isn't open)
 bool ime_read(KeyboardData &data, float dt) {
-    if (!ime_open && ime_wanted && (ime_reopen -= dt) <= 0) {
+    if (!ime_open && ime_wanted && !ime_paused && (ime_reopen -= dt) <= 0) {
         ime_reopen = 2.f;
         open_ime();
     }
@@ -634,6 +637,21 @@ void hwkeyboard_open() {
 void hwkeyboard_dialog_closed() {
     ime_forget();
     ime_drop = true;
+    if (ime_paused) {
+        ime_paused = false;
+        ime_reopen = 0;  // (opened again at the next poll)
+    }
+}
+
+bool hwkeyboard_pause() {
+    if (!ime_open)
+        return false;
+    const int closed = sceImeKeyboardClose(ime_user);
+    trace("libSceIme keyboard closed for the system's keyboard dialog", closed);
+    ime_open = false;
+    ime_paused = true;
+    ime_forget();
+    return true;
 }
 
 std::vector<KeyEvent> hwkeyboard_poll(float dt) {
