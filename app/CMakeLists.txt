@@ -129,8 +129,10 @@ function(wine_module_unixlib name dir)
     set(${name}_ONE ${${name}_ONE} PARENT_SCOPE)
 endfunction()
 wine_module_unixlib(ws2_32 ws2_32 SOURCES unixlib.c DEFS _WS2_32_)
-# (nsiproxy: needs net/if.h, if_nameindex: not in the PS4 libc yet)
-# wine_module_unixlib(nsiproxy nsiproxy.sys SOURCES icmp_echo.c ip.c ndis.c nsi.c tcp.c udp.c)
+# (nsiproxy: the network interfaces and the TCP/UDP tables for iphlpapi; getifaddrs and
+# if_nameindex from the PS4's kernel, port/ps4_ifaddrs.c: the C library's ask Linux's netlink.
+# Steam takes its web helper's connection only when the TCP table names its owner, v00.51)
+wine_module_unixlib(nsiproxy nsiproxy.sys SOURCES icmp_echo.c ip.c ndis.c nsi.c tcp.c udp.c DEFS HAVE_NET_IF_H=1 _GNU_SOURCE)
 # (dnsapi: needs libresolv; DNS will go through the PS4 resolver)
 # wine_module_unixlib(dnsapi dnsapi SOURCES libresolv.c)
 wine_module_unixlib(mountmgr mountmgr.sys SOURCES cred.c dbus.c diskarb.c unixlib.c)
@@ -142,7 +144,7 @@ wine_module_unixlib(opengl32 opengl32 SOURCES unix_thunks.c unix_wgl.c DEFS _OPE
 # (dwrite: DirectWrite's fonts through FreeType; Chromium (Steam's web view, Chrome) draws every
 # letter with it)
 wine_module_unixlib(dwrite dwrite SOURCES freetype.c INCLUDES ${WINEPS4_FREETYPE}/include)
-set(MODULE_UNIXLIBS ws2_32 mountmgr crypt32 opengl32 dwrite)
+set(MODULE_UNIXLIBS ws2_32 nsiproxy mountmgr crypt32 opengl32 dwrite)
 set(MODULE_UNIXLIB_OBJECTS)
 set(MODULE_UNIXLIB_TARGETS)
 foreach(m ${MODULE_UNIXLIBS})
@@ -164,7 +166,7 @@ target_compile_options(wine_shell PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++20> 
 
 # --- The app -------------------------------------------------------------------------------------
 add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/ps4_wine_dirs.c ${PORT}/unused_reals.c ${PORT}/ps4_spawn_desk.c
-    ${PORT}/ps4_unixlibs.c ${PORT}/ps4_net.c
+    ${PORT}/ps4_unixlibs.c ${PORT}/ps4_net.c ${PORT}/ps4_ifaddrs.c
     $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} ${MODULE_UNIXLIB_OBJECTS} $<TARGET_OBJECTS:wine_shell>)
 add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one ${MODULE_UNIXLIB_TARGETS})
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include ${WINEPS4_FREETYPE}/include)

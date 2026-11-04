@@ -122,11 +122,13 @@ void ps4_kit_configure_heap( ps4_kit_heap_options *options )
     {
         /* outside the system's processes of the app: none of the app's direct memory (what the
          * PS4's suspend and close of the app tear down, v00.42) and none of its system pool;
-         * regular flexible memory, which nothing limits there: 96 MiB at most for the heap */
+         * regular flexible memory, from one pool all of them share (v00.51: 96 MiB heaps took it
+         * all by the third): 16 MiB, and 16 MiB more at a time as the heap fills, 7 times at most */
         ps4_outside_process = 1;
         options->log_tag = "outside";
         options->regular_only = 1;
-        options->regular_max = 96u << 20;
+        options->regular_max = 16u << 20;
+        options->max_overflow_heaps = 7;
         return;
     }
     options->log_tag = "program";
@@ -652,9 +654,10 @@ static void disable_prefix_update( void )
  * processes: ps4_spawn_desk.c), and every start of the app waited for each of these (about a second
  * a process):
  *  - services the prefix starts with Windows (Start 2) that start here only when something asks for
- *    them (3): Eventlog (an svchost.exe), PlugPlay (plugplay.exe), NDIS and nsiproxy (the network
- *    drivers; nsiproxy.so isn't built yet). They took 2 of the 7 (v00.43: a second Window test found
- *    no room for its explorer.exe).
+ *    them (3): Eventlog (an svchost.exe), PlugPlay (plugplay.exe) and NDIS (a network driver). They
+ *    took 2 of the 7 (v00.43: a second Window test found no room for its explorer.exe). nsiproxy (the
+ *    network tables: interfaces, TCP) was one of them until its Unix half was built (v00.52): it
+ *    starts with Windows again, in MountMgr's winedevice.exe (their group); nsi.dll only opens it.
  *  - the root devices of drivers that aren't built in, winebus and winebth: services.exe starts the
  *    driver of every root device whatever its Start, a winedevice.exe each that failed (c0000135);
  *    without their Service value they are left alone.
@@ -675,10 +678,15 @@ static const struct reg_edit startup_edits[] =
     { "System\\\\ControlSet001\\\\Services\\\\Eventlog", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "Eventlog" },
     { "System\\\\ControlSet001\\\\Services\\\\PlugPlay", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "PlugPlay" },
     { "System\\\\ControlSet001\\\\Services\\\\NDIS", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "NDIS" },
-    { "System\\\\ControlSet001\\\\Services\\\\nsiproxy", "\"Start\"=dword:00000002", "\"Start\"=dword:00000003", "nsiproxy" },
     { "System\\\\ControlSet001\\\\Enum\\\\ROOT\\\\WINE\\\\WINEBUS", "\"Service\"=\"winebus\"", NULL, "winebus" },
     { "System\\\\ControlSet001\\\\Enum\\\\ROOT\\\\WINE\\\\WINEBTH", "\"Service\"=\"winebth\"", NULL, "winebth" },
     { "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\RunServices", "\"winemenubuilder\"=", NULL, "winemenubuilder" },
+};
+
+/* what earlier versions trimmed, back as the prefix has it */
+static const struct reg_edit startup_restore_edits[] =
+{
+    { "System\\\\ControlSet001\\\\Services\\\\nsiproxy", "\"Start\"=dword:00000003", "\"Start\"=dword:00000002", "nsiproxy" },
 };
 
 /* the same, for every key whose name starts with the key's: a program's services (their names carry
@@ -742,7 +750,7 @@ static int apply_reg_edit_all( char *text, size_t size, const struct reg_edit *e
 
 static void trim_windows_startup( void )
 {
-    char *text, demand[128] = "", off[128] = "";
+    char *text, demand[128] = "", off[128] = "", back[128] = "";
     unsigned int i;
     size_t len;
     long size;
@@ -773,13 +781,20 @@ static void trim_windows_startup( void )
             strcat( demand, " " );
             strcat( demand, startup_prefix_edits[i].name );
         }
-    if ((demand[0] || off[0]) && (f = fopen( PREFIX_DIR "/system.reg.new", "wb" )))
+    for (i = 0; len && i < sizeof(startup_restore_edits) / sizeof(startup_restore_edits[0]); i++)
+        if (apply_reg_edit( text, &len, &startup_restore_edits[i] ))
+        {
+            strcat( back, " " );
+            strcat( back, startup_restore_edits[i].name );
+        }
+    if ((demand[0] || off[0] || back[0]) && (f = fopen( PREFIX_DIR "/system.reg.new", "wb" )))
     {
         const int ok = fwrite( text, 1, len, f ) == len;
         if (!fclose( f ) && ok && !rename( PREFIX_DIR "/system.reg.new", PREFIX_DIR "/system.reg" ))
         {
             if (demand[0]) logf_( "wineps4: Windows services that start only when asked for now:%s\n", demand );
             if (off[0]) logf_( "wineps4: no longer started with Windows:%s\n", off );
+            if (back[0]) logf_( "wineps4: started with Windows again:%s\n", back );
         }
     }
     free( text );

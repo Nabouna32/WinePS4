@@ -133,3 +133,33 @@ v00.51:
   Power > Exit kills them with the rest. Closing from the PS4 menu is the test they have to pass.
 - Settings > Apps > "More than 7 processes (test)" (WINEPS4_OUTSIDE=0 turns it off); Task Manager
   marks them "(outside the 7)" and its Performance page counts both.
+
+## Steam's window, and the outside processes' memory (v00.52, 2026-11-04)
+
+v00.51's log (logs/v00.51, with Steam's own logs): the processes outside the 7 started (services,
+winedevice and rpcss outside, budget 0, "regular flexible memory runs code"), and Chromium's 32 GiB
+reservations went high (four at 0xf3c0000000 and below). Steam's web helper then ran: it made its
+window, loaded Steam's UI (steamloopback.host/index.html) and tried to reach steam.exe over a
+websocket on 127.0.0.1, which steam.exe rejected every time (transport_steamui.txt: "Websocket
+connection from: https://steamloopback.host ... TCP connection request ... Connection rejected"),
+until it gave up and restarted itself. steam.exe takes the connection only from its own web helper,
+whose process it finds in the TCP table (GetExtendedTcpTable's owning pid; Wine's wineserver keeps
+that table, get_tcp_connections), and the table comes through nsiproxy.sys, whose Unix half was not
+built: every program also had "GetAdaptersAddresses failed: 2".
+
+The processes outside the 7 share one pool of regular flexible memory, ~420 MiB at the start, the
+local processes have their own (803 MiB each): services.exe took ~160 MiB of it (a 96 MiB heap,
+mapped whole), winedevice ~130, and rpcss.exe (COM), steamservice.exe and Steam's error reporter
+found 29, 5 and 7 MiB: none started.
+
+v00.52:
+- nsiproxy.so built in (app/CMakeLists.txt), with port/ps4_ifaddrs.c: getifaddrs, if_nameindex,
+  if_nametoindex, if_indextoname from FreeBSD's SIOCGIFCONF (the C library's are musl's and ask a
+  netlink socket the PS4 doesn't have), FreeBSD's ioctl numbers through the raw system call (the
+  headers have Linux's), and ndis.c's hardware address from the link level entries (Wine patch).
+  The service starts with Windows again (it was on demand since v00.44), in MountMgr's
+  winedevice.exe (same group): no process more.
+- The outside processes' heap: 16 MiB, then overflow heaps of 16 MiB of regular flexible memory as
+  it fills (ps4-kit: regular_only now has them; a bigger request gets one its size), 7 at most.
+- Each outside process sends the pool's free memory with its figures; below 80 MiB no other starts
+  outside: it goes among the 7.

@@ -55,6 +55,7 @@ static const struct ps4_symbol wineps4drv_symbols[] =
         { NULL, NULL } \
     };
 MODULE_WOW64(ws2_32)
+MODULE(nsiproxy)
 MODULE(mountmgr)
 MODULE_WOW64(crypt32)
 MODULE_WOW64(opengl32)
@@ -85,6 +86,7 @@ const struct ps4_unixlib ps4_unixlibs[] =
     { "win32u.so", win32u_symbols },
     { "wineps4.so", wineps4drv_symbols },
     { "ws2_32.so", ws2_32_symbols },
+    { "nsiproxy.so", nsiproxy_symbols },
     { "mountmgr.so", mountmgr_symbols },
     { "crypt32.so", crypt32_symbols },
     { "opengl32.so", opengl32_symbols },

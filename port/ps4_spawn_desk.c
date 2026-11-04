@@ -121,7 +121,17 @@ struct local_stats
 {
     uint64_t cpu_us;  /* the process's CPU time */
     uint64_t memory;  /* what its memory layer has backed (port/ps4_wine_vm.c) */
+    uint64_t pool;    /* outside the 7: the memory all of those share, free (the kernel's figure) */
 };
+
+/* A process outside the 7 starts only while the memory they share has room for it: about 60 MiB
+ * each (a 16 MiB heap, the eboot, Wine's DLLs and stacks); v00.51 ran it out by the fourth, and
+ * rpcss.exe and steamservice.exe did not start. Without it the program goes among the 7. */
+#define OUTSIDE_MIN_POOL (80ull << 20)
+static uint64_t outside_pool = ~0ull;  /* the last figure one of them sent */
+
+extern int ps4_outside_process;
+int32_t sceKernelAvailableFlexibleMemorySize( size_t *size );
 
 int sceSystemServiceAddLocalProcess( int app_id, const char *path, const char *const *argv, const void *param );
 int sceSystemServiceKillLocalProcess( int app_id, int local_id );
@@ -179,7 +189,11 @@ static void control_event( int fd )
     if (i == local_count || got > 0)
     {
         if (i < local_count && got == sizeof(msg) && msg.magic == MSG_EXIT) locals[i].code = msg.value;
-        if (i < local_count && have_stats) locals[i].stats = stats;
+        if (i < local_count && have_stats)
+        {
+            locals[i].stats = stats;
+            if (locals[i].local_id < 0 && stats.pool) outside_pool = stats.pool;
+        }
         pthread_mutex_unlock( &locals_lock );
         return;
     }
@@ -190,7 +204,11 @@ static void control_event( int fd )
     locals[i] = locals[--local_count];
     pthread_mutex_unlock( &locals_lock );
     if (local_id >= 0) sceSystemServiceKillLocalProcess( app_id, local_id );  /* (its entry, if the system still has one) */
-    else kill( pid, SIGKILL );  /* (a socket closed early: what is left of it) */
+    else
+    {
+        kill( pid, SIGKILL );  /* (a socket closed early: what is left of it) */
+        outside_pool = ~0ull;  /* (its memory is free again: the next figure tells) */
+    }
     ps4_process_ended( pid, code );
 }
 
@@ -355,6 +373,12 @@ static int start_outside( int *sock, int *pid_out )
     struct local_msg msg;
     int sv[2], pid;
 
+    if (outside_allowed() && outside_pool < OUTSIDE_MIN_POOL)
+    {
+        fprintf( stderr, "wineps4: the memory the processes outside the PS4's 7 share has %llu MiB free: "
+                 "this one starts among the 7\n", (unsigned long long)(outside_pool >> 20) );
+        return 0;
+    }
     while (outside_allowed())
     {
         if (socketpair( AF_UNIX, SOCK_STREAM, 0, sv ) == -1) return 0;
@@ -583,6 +607,11 @@ static void *stats_thread( void *arg )
             m.stats.cpu_us = (uint64_t)(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1000000 +
                              usage.ru_utime.tv_usec + usage.ru_stime.tv_usec;
         m.stats.memory = ps4_vm_backed_bytes();
+        if (ps4_outside_process)
+        {
+            size_t pool = 0;
+            if (!sceKernelAvailableFlexibleMemorySize( &pool )) m.stats.pool = pool ? pool : 1;
+        }
         if (!write_all( sock, &m, sizeof(m) )) break;
         sleep( 1 );
     }
