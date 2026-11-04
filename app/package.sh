@@ -64,7 +64,8 @@ mkdir -p "$STAGE/wallpapers"
 cp "$ROOT"/app/wallpapers/*.jpg "$STAGE/wallpapers/"   # the default photos (scripts/make-wallpapers.py)
 echo "staged $(wc -l < "$STAGE/wine/system32-from-lib.txt") system32/syswow64 DLLs from lib, $(du -sh "$STAGE" | cut -f1) in all"
 
-PKG="$(NO_RIGHT_SPRX=1 bash "$PS4_KIT/scripts/make-pkg.sh" "$STAGE" WINE00002 "WinePS4" "$VERSION" WINEPS4 "$PSB/out" | tail -1)"
+# 0x800002: Cross confirms in system dialogs, and NEO mode: a PS4 Pro runs WinePS4 at its own clocks
+PKG="$(NO_RIGHT_SPRX=1 SFO_ATTRIBUTE=0x800002 bash "$PS4_KIT/scripts/make-pkg.sh" "$STAGE" WINE00002 "WinePS4" "$VERSION" WINEPS4 "$PSB/out" | tail -1)"
 mkdir -p "$ROOT/out"
 NAME="WinePS4-v$VERSION.pkg"
 cp "$PKG" "$ROOT/out/$NAME"

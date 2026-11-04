@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -21,7 +22,8 @@ namespace shell {
 namespace {
 
 // MOUSEEVENTF_* and KEYEVENTF_* (winuser.h)
-constexpr uint32_t KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_UNICODE = 0x0004;
+constexpr uint32_t KEYEVENTF_EXTENDEDKEY = 0x0001, KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_UNICODE = 0x0004;
+constexpr int CORNER = 8;  // the rounded corners of a window with a title bar of ours
 
 struct WinWindow {
     int pid = 0;
@@ -31,6 +33,8 @@ struct WinWindow {
     std::vector<uint32_t> pixels;         // RGBA, like the canvas
     std::string title;
     uint64_t order = 0;                   // higher: nearer the top
+    int client_left = 0, client_top = 0;  // the client area's corner, on the screen
+    int caption_bottom = 0;               // where Windows' title bar ends (PS4_WINDOW_CAPTION)
 };
 
 std::mutex lock;
@@ -80,6 +84,8 @@ void handle(const ps4_display_header &m, std::vector<uint8_t> &data) {
         w.pid = m.pid;
         w.flags = m.flags;
         w.x = m.left, w.y = m.top, w.w = m.right - m.left, w.h = m.bottom - m.top;
+        w.client_left = m.client_left, w.client_top = m.client_top;
+        w.caption_bottom = (m.flags & PS4_WINDOW_CAPTION) ? m.caption_bottom : 0;
         if (m.width > 0 && m.height > 0)
             resize_pixels(w, m.width, m.height);
         if (!was_visible && (m.flags & PS4_WINDOW_VISIBLE))
@@ -169,17 +175,56 @@ void *listen_thread(void *arg) {
     }
 }
 
-// The windows bottom to top: topmost ones over the others
+// A window that covers the whole screen without a title bar: a game or a video's full screen, over
+// the taskbar as Windows has it
+bool is_full_screen(const WinWindow &w) {
+    return !w.caption_bottom && w.x <= 0 && w.y <= 0 && w.x + w.w >= PS4_DISPLAY_WIDTH && w.y + w.h >= PS4_DISPLAY_HEIGHT;
+}
+
+// The windows bottom to top (minimized ones aren't drawn): topmost ones over the others, full-screen
+// ones over all of them
 std::vector<std::pair<uint64_t, const WinWindow *>> stacked() {
     std::vector<std::pair<uint64_t, const WinWindow *>> list;
     for (const auto &[hwnd, w] : windows)
-        if ((w.flags & PS4_WINDOW_VISIBLE) && w.w > 0 && w.h > 0 && !w.pixels.empty())
+        if ((w.flags & PS4_WINDOW_VISIBLE) && !(w.flags & PS4_WINDOW_MINIMIZED) && w.w > 0 && w.h > 0 && !w.pixels.empty())
             list.emplace_back(hwnd, &w);
     std::sort(list.begin(), list.end(), [](const auto &a, const auto &b) {
+        const bool fa = is_full_screen(*a.second), fb = is_full_screen(*b.second);
+        if (fa != fb)
+            return fb;
         const bool ta = a.second->flags & PS4_WINDOW_TOPMOST, tb = b.second->flags & PS4_WINDOW_TOPMOST;
         return ta != tb ? tb : a.second->order < b.second->order;
     });
     return list;
+}
+
+// The active window: the top one that gets a taskbar button
+uint64_t active_window(const std::vector<std::pair<uint64_t, const WinWindow *>> &list) {
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+        if (!(it->second->flags & PS4_WINDOW_POPUP))
+            return it->first;
+    return 0;
+}
+
+WinFrame frame_of(uint64_t hwnd, const WinWindow &w, uint64_t active) {
+    WinFrame f;
+    f.hwnd = hwnd;
+    f.pid = w.pid;
+    f.x = w.x, f.y = w.y, f.w = w.w, f.h = w.h;
+    f.caption_bottom = w.caption_bottom;
+    f.border = w.caption_bottom ? std::clamp(w.client_left - w.x, 0, 16) : 0;
+    f.active = hwnd == active;
+    f.maximized = w.flags & PS4_WINDOW_MAXIMIZED;
+    f.can_minimize = w.flags & PS4_WINDOW_CAN_MINIMIZE;
+    f.can_maximize = w.flags & PS4_WINDOW_CAN_MAXIMIZE;
+    f.title = w.title;
+    return f;
+}
+
+// How far in from the side a row of a rounded corner starts (row 0 the corner's outer one)
+int corner_inset(int row) {
+    const float dy = CORNER - row - 0.5f;
+    return CORNER - static_cast<int>(std::sqrt(std::max(0.f, CORNER * CORNER - dy * dy)) + 0.5f);
 }
 
 void send(const ps4_input_record &r) {
@@ -213,47 +258,97 @@ void winwin_start() {
 
 bool winwin_changed() { return changed.exchange(false); }
 
-void winwin_draw(ps4ui::Canvas &c) {
+void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4ui::Canvas &, const WinFrame &)> &under,
+                 const std::function<void(ps4ui::Canvas &, const WinFrame &)> &over) {
     std::lock_guard guard(lock);
     uint32_t *const dst = c.data();
     const int cw = c.width(), ch = c.height();
-    for (const auto &[hwnd, w] : stacked()) {
-        const int x0 = std::max(0, w->x), x1 = std::min(cw, w->x + std::min(w->w, w->bw));
-        const int y0 = std::max(0, w->y), y1 = std::min(ch, w->y + std::min(w->h, w->bh));
-        if (x0 >= x1)
+    const auto list = stacked();
+    const uint64_t active = active_window(list);
+    for (const auto &[hwnd, w] : list) {
+        if (is_full_screen(*w) != (layer == WinLayer::FullScreen))
             continue;
-        for (int y = y0; y < y1; y++)
-            std::memcpy(dst + static_cast<size_t>(y) * cw + x0,
-                        &w->pixels[static_cast<size_t>(y - w->y) * w->bw + (x0 - w->x)], (x1 - x0) * 4);
+        const WinFrame f = frame_of(hwnd, *w, active);
+        under(c, f);
+        // Windows' pixels, but for its title bar (ours goes there) and outside rounded corners
+        const bool rounded = w->caption_bottom && !f.maximized;
+        const int x0 = std::max(0, w->x), x1 = std::min(cw, w->x + std::min(w->w, w->bw));
+        const int y0 = std::max({0, w->y, w->caption_bottom}), y1 = std::min(ch, w->y + std::min(w->h, w->bh));
+        for (int y = y0; y < y1 && x0 < x1; y++) {
+            int a = x0, b = x1;
+            const int from_bottom = w->y + w->h - 1 - y;
+            if (rounded && from_bottom < CORNER) {
+                const int inset = corner_inset(from_bottom);
+                a = std::max(a, w->x + inset);
+                b = std::min(b, w->x + w->w - inset);
+            }
+            if (a < b)
+                std::memcpy(dst + static_cast<size_t>(y) * cw + a,
+                            &w->pixels[static_cast<size_t>(y - w->y) * w->bw + (a - w->x)], (b - a) * 4);
+        }
+        over(c, f);
     }
 }
 
-uint64_t winwin_at(float x, float y) {
+uint64_t winwin_at(float x, float y, bool *full_screen) {
     std::lock_guard guard(lock);
     const auto list = stacked();
     for (auto it = list.rbegin(); it != list.rend(); ++it) {
         const WinWindow &w = *it->second;
-        if (x >= w.x && x < w.x + w.w && y >= w.y && y < w.y + w.h)
+        if (x >= w.x && x < w.x + w.w && y >= w.y && y < w.y + w.h) {
+            if (full_screen)
+                *full_screen = is_full_screen(w);
             return it->first;
+        }
     }
     return 0;
 }
 
-std::vector<WinTask> winwin_tasks() {
+WinRect winwin_button_rect(const WinFrame &f, int button) {
+    const int right = std::min(f.x + f.w, PS4_DISPLAY_WIDTH), top = std::max(f.y, 0);
+    return WinRect{right - WIN_BUTTON_W * (button + 1), top, WIN_BUTTON_W, std::max(0, f.caption_bottom - top)};
+}
+
+int winwin_button_at(float x, float y, uint64_t *hwnd, bool *maximized) {
     std::lock_guard guard(lock);
     const auto list = stacked();
+    for (auto it = list.rbegin(); it != list.rend(); ++it) {
+        const WinWindow &w = *it->second;
+        if (!(x >= w.x && x < w.x + w.w && y >= w.y && y < w.y + w.h))
+            continue;
+        if (!w.caption_bottom || y >= w.caption_bottom)
+            return -1;  // (the top window here has no title bar of ours, or not at this height)
+        const WinFrame f = frame_of(it->first, w, 0);
+        const int buttons = (f.can_minimize || f.can_maximize) ? 3 : 1;
+        for (int i = 0; i < buttons; i++)
+            if (winwin_button_rect(f, i).contains(x, y)) {
+                *hwnd = it->first;
+                if (maximized)
+                    *maximized = f.maximized;
+                return i;
+            }
+        return -1;
+    }
+    return -1;
+}
+
+void winwin_command(uint64_t hwnd, uint32_t command) {
+    ps4_input_record r{};
+    r.type = PS4_INPUT_SYSCOMMAND;
+    r.x = static_cast<int32_t>(static_cast<uint32_t>(hwnd));
+    r.data = static_cast<int32_t>(command);
+    send(r);
+}
+
+std::vector<WinTask> winwin_tasks() {
+    std::lock_guard guard(lock);
+    const uint64_t active = active_window(stacked());
     std::vector<WinTask> tasks;
-    uint64_t top = 0, top_order = 0;
-    for (const auto &[hwnd, w] : list)
-        if (!(w->flags & PS4_WINDOW_POPUP)) {
-            tasks.push_back(WinTask{hwnd, w->title.empty() ? std::string("Window") : w->title, false});
-            if (w->order > top_order)
-                top = hwnd, top_order = w->order;
-        }
-    std::sort(tasks.begin(), tasks.end(), [](const WinTask &a, const WinTask &b) { return a.hwnd < b.hwnd; });
-    for (WinTask &t : tasks)
-        t.active = t.hwnd == top;
-    return tasks;
+    for (const auto &[hwnd, w] : windows)
+        if ((w.flags & PS4_WINDOW_VISIBLE) && !(w.flags & PS4_WINDOW_POPUP) && w.w > 0 && w.h > 0)
+            tasks.push_back(WinTask{hwnd, w.pid, w.title.empty() ? std::string("Window") : w.title, hwnd == active,
+                                    (w.flags & PS4_WINDOW_MINIMIZED) != 0});
+    return tasks;  // (a map: oldest window first, as handles grow)
 }
 
 void winwin_mouse(float x, float y, uint32_t flags, int wheel) {
@@ -265,11 +360,12 @@ void winwin_mouse(float x, float y, uint32_t flags, int wheel) {
     send(r);
 }
 
-void winwin_key(uint16_t vkey, bool down) {
+void winwin_key(uint16_t vkey, bool down, uint16_t scan, bool extended) {
     ps4_input_record r{};
     r.type = PS4_INPUT_KEY;
     r.vkey = vkey;
-    r.flags = down ? 0 : KEYEVENTF_KEYUP;
+    r.scan = scan;
+    r.flags = (down ? 0 : KEYEVENTF_KEYUP) | (extended ? KEYEVENTF_EXTENDEDKEY : 0);
     send(r);
 }
 

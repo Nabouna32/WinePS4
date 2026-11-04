@@ -35,6 +35,8 @@ struct Input {
 void input_open();
 // Once per frame, dt in seconds
 const Input &input_poll(float dt);
+// The mouse's speed, 1-20 (Settings > Bluetooth & devices; 10 by default)
+void input_set_pointer_speed(int speed);
 // Puts the pointer at (x, y): the D-pad steps it through a menu's items
 void input_warp(float x, float y);
 

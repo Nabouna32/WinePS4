@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/27] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/29] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/27] WinePS4: wineserver main fixes
+Subject: [PATCH 02/29] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/27] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/29] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/27] server: send the first thread its request pipe in the
+Subject: [PATCH 04/29] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/27] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/29] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/27] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/29] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/27] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/29] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/27] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/29] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/27] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/29] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/27] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/29] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -893,7 +893,7 @@ index a06aa83..81e8555 100644
 From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:21:33 +0300
-Subject: [PATCH 11/27] WinePS4: a process per program: wineserver listens
+Subject: [PATCH 11/29] WinePS4: a process per program: wineserver listens
  (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
  thr_kill2 across processes
 
@@ -1048,7 +1048,7 @@ index 122208b..44fcfa7 100644
 From cc36d27af8fac614b7694b55514cd924bbb9c85f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:51:49 +0300
-Subject: [PATCH 12/27] WinePS4: the app wineserver never closes its socket
+Subject: [PATCH 12/29] WinePS4: the app wineserver never closes its socket
  (callers logged); no wineboot at program start
 
 ---
@@ -1094,7 +1094,7 @@ index 44fcfa7..e66524f 100644
 From 2651912be3a1aad91a90a2833e1312a0ec3eb967 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 03:11:50 +0300
-Subject: [PATCH 13/27] programs fill the shared data page themselves (wineboot
+Subject: [PATCH 13/29] programs fill the shared data page themselves (wineboot
  is skipped)
 
 ---
@@ -1124,7 +1124,7 @@ index f40d41f..41f5884 100644
 From 90e29674410e9ad3ffc58dffb83a893ff33a1a5f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:24:13 +0300
-Subject: [PATCH 14/27] wineps4.drv display driver + the desktop input pipe in
+Subject: [PATCH 14/29] wineps4.drv display driver + the desktop input pipe in
  the server
 
 ---
@@ -2056,7 +2056,7 @@ index 3e8ab2e..3048ccf 100644
 From 6b5c634711a7fbcdc1e41eb6abd45444b9921f57 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:34:30 +0300
-Subject: [PATCH 15/27] wineps4.drv: work area above the 60 px taskbar
+Subject: [PATCH 15/29] wineps4.drv: work area above the 60 px taskbar
 
 ---
  dlls/wineps4.drv/display.c | 2 +-
@@ -2082,7 +2082,7 @@ index 93fdcfb..e947d31 100755
 From af0965aa6bc9f2a34ff5586844a0660da1f53b2a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:12:22 +0300
-Subject: [PATCH 16/27] programs start programs with one fork (an orphan cannot
+Subject: [PATCH 16/29] programs start programs with one fork (an orphan cannot
  exec on the PS4); exec failures logged
 
 ---
@@ -2152,7 +2152,7 @@ index 4c2e7eb..67836bb 100644
 From e522bb1370611936c26405c3b984e0e2e9009f29 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:37:29 +0300
-Subject: [PATCH 17/27] spawn steps and failed children logged
+Subject: [PATCH 17/29] spawn steps and failed children logged
 
 ---
  dlls/ntdll/unix/process.c | 26 ++++++++++++++++++++++++++
@@ -2230,7 +2230,7 @@ index 67836bb..3007370 100644
 From ea3cbbf972e23f2ee73cabc6cfe3f2795c620466 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:45:16 +0300
-Subject: [PATCH 18/27] programs start processes from an app thread with an
+Subject: [PATCH 18/29] programs start processes from an app thread with an
  ordinary stack (ps4_spawn)
 
 ---
@@ -2326,7 +2326,7 @@ index 3007370..1bd8aee 100644
 From 491ce5e30e62e7650c69a8ab3ee8d50cb070cc3a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 06:06:53 +0300
-Subject: [PATCH 19/27] the new process environment strings in malloc memory
+Subject: [PATCH 19/29] the new process environment strings in malloc memory
 
 ---
  dlls/ntdll/unix/process.c | 11 +++++++----
@@ -2368,7 +2368,7 @@ index 1bd8aee..88d28c6 100644
 From 892873489067b68defd34126bf97af98365560ab Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 09:28:47 +0300
-Subject: [PATCH 20/27] WinePS4: wineboot runs once per app start (the desktop
+Subject: [PATCH 20/29] WinePS4: wineboot runs once per app start (the desktop
  starts it with WINEPS4_BOOT); programs wait for its event
 
 ---
@@ -2415,7 +2415,7 @@ index 88d28c6..9b07ec0 100644
 From b13ad1ef3a4578b1ff346c0643100095216d0473 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:13:44 +0300
-Subject: [PATCH 21/27] PS4: programs never run wineboot (the desktop does,
+Subject: [PATCH 21/29] PS4: programs never run wineboot (the desktop does,
  once); spawned processes logged
 
 ---
@@ -2449,7 +2449,7 @@ index e0d4c6d..9a22128 100644
 From 947f88752bee92f5fc6d1713481c88db741cf0d8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:14:01 +0300
-Subject: [PATCH 22/27] PS4: processes started from programs are logged
+Subject: [PATCH 22/29] PS4: processes started from programs are logged
 
 ---
  dlls/ntdll/unix/process.c | 1 +
@@ -2474,7 +2474,7 @@ index 9b07ec0..8460cd3 100644
 From 8d9d4ac998d9294c83655eed440a04ae1893e3df Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:36:46 +0300
-Subject: [PATCH 23/27] PS4: the desktop can have the server kill every program
+Subject: [PATCH 23/29] PS4: the desktop can have the server kill every program
  process; unwinding skips addresses outside the app
 
 ---
@@ -2600,7 +2600,7 @@ index 9408763..ccca2bd 100755
 From 4fca7680a58381e89d92907a71ea7cdcc408d85d Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 19:45:19 +0300
-Subject: [PATCH 24/27] PS4: a new process keeps the shared syscall dispatcher
+Subject: [PATCH 24/29] PS4: a new process keeps the shared syscall dispatcher
  pointer instead of writing back its own 0
 
 ---
@@ -2655,7 +2655,7 @@ index 6d01de4..ccb9716 100644
 From b1111f49eb0fc917c258af3125209a48761e7cc8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 20:00:09 +0300
-Subject: [PATCH 25/27] PS4: CreateProcess has the desktop start the process
+Subject: [PATCH 25/29] PS4: CreateProcess has the desktop start the process
  (it collects every one)
 
 ---
@@ -2692,7 +2692,7 @@ index 8460cd3..84b5a3a 100644
 From fde1c22fc589c56b5b2ece770adb9a36904c353c Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 00:22:33 +0300
-Subject: [PATCH 26/27] PS4: the desktop stays when its last program ends
+Subject: [PATCH 26/29] PS4: the desktop stays when its last program ends
  (explorer.exe runs with the app)
 
 ---
@@ -2732,7 +2732,7 @@ index a36253e..6fb58db 100644
 From a078eaa8946d422fc5fc5238759cdcb6d527358b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 01:20:23 +0300
-Subject: [PATCH 27/27] PS4: crypt32 reads its root certificates from WinePS4
+Subject: [PATCH 27/29] PS4: crypt32 reads its root certificates from WinePS4
  (the package, or the data folder)
 
 ---
@@ -2756,6 +2756,270 @@ index 345051c..22113be 100644
   "/etc/ssl/certs/ca-certificates.crt",
   "/etc/ssl/certs",
   "/etc/pki/tls/certs/ca-bundle.crt",
+-- 
+2.53.0
+
+
+From a4ee9e980578a46ec12489bd0386904b790637db Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Wed, 4 Nov 2026 02:29:46 +0300
+Subject: [PATCH 28/29] PS4: windows report their title bar, client area and
+ state; the desktop sends window commands (title bar buttons, taskbar)
+
+---
+ dlls/wineps4.drv/ps4_display.h | 21 +++++++++++++++++----
+ dlls/wineps4.drv/ps4drv.h      |  1 +
+ dlls/wineps4.drv/ps4drv_main.c |  1 +
+ dlls/wineps4.drv/window.c      | 34 ++++++++++++++++++++++++++++++++++
+ server/ps4_display.h           | 21 +++++++++++++++++----
+ server/ps4_input.inc           |  6 ++++++
+ 6 files changed, 76 insertions(+), 8 deletions(-)
+
+diff --git a/dlls/wineps4.drv/ps4_display.h b/dlls/wineps4.drv/ps4_display.h
+index 4accbf8..86f270d 100755
+--- a/dlls/wineps4.drv/ps4_display.h
++++ b/dlls/wineps4.drv/ps4_display.h
+@@ -30,10 +30,15 @@ enum ps4_display_msg
+     PS4_DISPLAY_RAISE,      /* the window was activated: on top */
+ };
+ 
+-#define PS4_WINDOW_VISIBLE  0x01
+-#define PS4_WINDOW_TOPMOST  0x02
+-#define PS4_WINDOW_LAYERED  0x04  /* pixels carry alpha */
+-#define PS4_WINDOW_POPUP    0x08  /* menus, tooltips, ...: no taskbar button */
++#define PS4_WINDOW_VISIBLE      0x001
++#define PS4_WINDOW_TOPMOST      0x002
++#define PS4_WINDOW_LAYERED      0x004  /* pixels carry alpha */
++#define PS4_WINDOW_POPUP        0x008  /* menus, tooltips, ...: no taskbar button */
++#define PS4_WINDOW_CAPTION      0x010  /* Windows draws a title bar (caption_*): the desktop draws its own over it */
++#define PS4_WINDOW_MAXIMIZED    0x020
++#define PS4_WINDOW_MINIMIZED    0x040
++#define PS4_WINDOW_CAN_MINIMIZE 0x080
++#define PS4_WINDOW_CAN_MAXIMIZE 0x100
+ 
+ struct ps4_display_header
+ {
+@@ -44,6 +49,9 @@ struct ps4_display_header
+     uint32_t flags;     /* PS4_WINDOW_* (WINDOW) */
+     int32_t  left, top, right, bottom;  /* WINDOW: the surface on the screen; PIXELS: the rect in it */
+     int32_t  width, height;             /* WINDOW: the surface size */
++    /* WINDOW: the client area and the title bar (the window's, with its buttons) on the screen */
++    int32_t  client_left, client_top, client_right, client_bottom;
++    int32_t  caption_left, caption_top, caption_right, caption_bottom;
+ };
+ 
+ /* --- desktop -> wineserver (the pipe) ------------------------------------------------------------ */
+@@ -53,8 +61,13 @@ enum ps4_input_type
+     PS4_INPUT_MOUSE = 1,  /* x, y in screen pixels (always absolute), flags = MOUSEEVENTF_*, data = wheel */
+     PS4_INPUT_KEY,        /* vkey + scan, flags = KEYEVENTF_* (KEYEVENTF_UNICODE: scan is the character) */
+     PS4_INPUT_END_PROGRAMS, /* the desktop is ending: every program process is killed (ps4_end_programs) */
++    PS4_INPUT_SYSCOMMAND, /* x = the window, data = SC_* (WM_SYSCOMMAND): its title bar's buttons, the taskbar */
+ };
+ 
++/* a WM_SYSCOMMAND of WinePS4's own: the window comes to the front (restored if minimized), as Windows'
++ * taskbar does it (wineps4.drv's SysCommand) */
++#define PS4_SC_ACTIVATE 0xf1f0
++
+ struct ps4_input_record
+ {
+     uint32_t type;
+diff --git a/dlls/wineps4.drv/ps4drv.h b/dlls/wineps4.drv/ps4drv.h
+index bd21c7d..a9d8a44 100755
+--- a/dlls/wineps4.drv/ps4drv.h
++++ b/dlls/wineps4.drv/ps4drv.h
+@@ -35,6 +35,7 @@ extern void PS4DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hi
+ extern void PS4DRV_DestroyWindow( HWND hwnd );
+ extern void PS4DRV_SetWindowText( HWND hwnd, LPCWSTR text );
+ extern void PS4DRV_ActivateWindow( HWND hwnd, HWND previous );
++extern LRESULT PS4DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT *pos );
+ 
+ /* ps4drv_main.c: the desktop's socket */
+ extern BOOL ps4drv_send( const struct ps4_display_header *header, const void *data, UINT data_size );
+diff --git a/dlls/wineps4.drv/ps4drv_main.c b/dlls/wineps4.drv/ps4drv_main.c
+index 114d9fb..739ac3a 100755
+--- a/dlls/wineps4.drv/ps4drv_main.c
++++ b/dlls/wineps4.drv/ps4drv_main.c
+@@ -133,6 +133,7 @@ static const struct user_driver_funcs ps4drv_funcs =
+     .pCreateWindowSurface = PS4DRV_CreateWindowSurface,
+     .pDestroyWindow = PS4DRV_DestroyWindow,
+     .pSetWindowText = PS4DRV_SetWindowText,
++    .pSysCommand = PS4DRV_SysCommand,
+     .pUpdateDisplayDevices = PS4DRV_UpdateDisplayDevices,
+     .pWindowPosChanged = PS4DRV_WindowPosChanged,
+ };
+diff --git a/dlls/wineps4.drv/window.c b/dlls/wineps4.drv/window.c
+index 0eb78b9..5413f34 100755
+--- a/dlls/wineps4.drv/window.c
++++ b/dlls/wineps4.drv/window.c
+@@ -132,10 +132,34 @@ void PS4DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
+     if ((ex_style & WS_EX_TOOLWINDOW) || (!(style & WS_CAPTION) && (style & WS_POPUP)) ||
+         NtUserGetWindowRelative( hwnd, GW_OWNER ))
+         msg.flags |= PS4_WINDOW_POPUP;
++    if (style & WS_MAXIMIZE) msg.flags |= PS4_WINDOW_MAXIMIZED;
++    if (style & WS_MINIMIZE) msg.flags |= PS4_WINDOW_MINIMIZED;
++    if (style & WS_MINIMIZEBOX) msg.flags |= PS4_WINDOW_CAN_MINIMIZE;
++    if (style & WS_MAXIMIZEBOX) msg.flags |= PS4_WINDOW_CAN_MAXIMIZE;
+     msg.left   = new_rects->visible.left;
+     msg.top    = new_rects->visible.top;
+     msg.right  = new_rects->visible.right;
+     msg.bottom = new_rects->visible.bottom;
++    msg.client_left   = new_rects->client.left;
++    msg.client_top    = new_rects->client.top;
++    msg.client_right  = new_rects->client.right;
++    msg.client_bottom = new_rects->client.bottom;
++    /* the title bar Windows draws, when the program left it to Windows (not one that draws its own
++     * over it, as browsers do: their client area takes the window's top) */
++    if ((style & WS_CAPTION) == WS_CAPTION && !(style & WS_MINIMIZE))
++    {
++        TITLEBARINFO info = { .cbSize = sizeof(info) };
++
++        if (NtUserGetTitleBarInfo( hwnd, &info ) && !(info.rgstate[0] & STATE_SYSTEM_INVISIBLE) &&
++            info.rcTitleBar.bottom > info.rcTitleBar.top && new_rects->client.top >= info.rcTitleBar.bottom)
++        {
++            msg.flags |= PS4_WINDOW_CAPTION;
++            msg.caption_left   = info.rcTitleBar.left;
++            msg.caption_top    = info.rcTitleBar.top;
++            msg.caption_right  = info.rcTitleBar.right;
++            msg.caption_bottom = info.rcTitleBar.bottom;
++        }
++    }
+     if (surface)
+     {
+         msg.width  = surface->rect.right - surface->rect.left;
+@@ -156,6 +180,16 @@ void PS4DRV_ActivateWindow( HWND hwnd, HWND previous )
+     if (is_toplevel( hwnd )) ps4drv_send( &msg, NULL, 0 );
+ }
+ 
++/* WinePS4's own command from the desktop's taskbar: the window to the front, restored if it was
++ * minimized (0: done; -1: Windows' own handling) */
++LRESULT PS4DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT *pos )
++{
++    if ((wparam & 0xfff0) != PS4_SC_ACTIVATE) return -1;
++    if (NtUserGetWindowLongW( hwnd, GWL_STYLE ) & WS_MINIMIZE) NtUserShowWindow( hwnd, SW_RESTORE );
++    NtUserSetForegroundWindow( hwnd );
++    return 0;
++}
++
+ void PS4DRV_DestroyWindow( HWND hwnd )
+ {
+     struct ps4_display_header msg = { .type = PS4_DISPLAY_DESTROY, .hwnd = (UINT_PTR)hwnd };
+diff --git a/server/ps4_display.h b/server/ps4_display.h
+index 4accbf8..86f270d 100755
+--- a/server/ps4_display.h
++++ b/server/ps4_display.h
+@@ -30,10 +30,15 @@ enum ps4_display_msg
+     PS4_DISPLAY_RAISE,      /* the window was activated: on top */
+ };
+ 
+-#define PS4_WINDOW_VISIBLE  0x01
+-#define PS4_WINDOW_TOPMOST  0x02
+-#define PS4_WINDOW_LAYERED  0x04  /* pixels carry alpha */
+-#define PS4_WINDOW_POPUP    0x08  /* menus, tooltips, ...: no taskbar button */
++#define PS4_WINDOW_VISIBLE      0x001
++#define PS4_WINDOW_TOPMOST      0x002
++#define PS4_WINDOW_LAYERED      0x004  /* pixels carry alpha */
++#define PS4_WINDOW_POPUP        0x008  /* menus, tooltips, ...: no taskbar button */
++#define PS4_WINDOW_CAPTION      0x010  /* Windows draws a title bar (caption_*): the desktop draws its own over it */
++#define PS4_WINDOW_MAXIMIZED    0x020
++#define PS4_WINDOW_MINIMIZED    0x040
++#define PS4_WINDOW_CAN_MINIMIZE 0x080
++#define PS4_WINDOW_CAN_MAXIMIZE 0x100
+ 
+ struct ps4_display_header
+ {
+@@ -44,6 +49,9 @@ struct ps4_display_header
+     uint32_t flags;     /* PS4_WINDOW_* (WINDOW) */
+     int32_t  left, top, right, bottom;  /* WINDOW: the surface on the screen; PIXELS: the rect in it */
+     int32_t  width, height;             /* WINDOW: the surface size */
++    /* WINDOW: the client area and the title bar (the window's, with its buttons) on the screen */
++    int32_t  client_left, client_top, client_right, client_bottom;
++    int32_t  caption_left, caption_top, caption_right, caption_bottom;
+ };
+ 
+ /* --- desktop -> wineserver (the pipe) ------------------------------------------------------------ */
+@@ -53,8 +61,13 @@ enum ps4_input_type
+     PS4_INPUT_MOUSE = 1,  /* x, y in screen pixels (always absolute), flags = MOUSEEVENTF_*, data = wheel */
+     PS4_INPUT_KEY,        /* vkey + scan, flags = KEYEVENTF_* (KEYEVENTF_UNICODE: scan is the character) */
+     PS4_INPUT_END_PROGRAMS, /* the desktop is ending: every program process is killed (ps4_end_programs) */
++    PS4_INPUT_SYSCOMMAND, /* x = the window, data = SC_* (WM_SYSCOMMAND): its title bar's buttons, the taskbar */
+ };
+ 
++/* a WM_SYSCOMMAND of WinePS4's own: the window comes to the front (restored if minimized), as Windows'
++ * taskbar does it (wineps4.drv's SysCommand) */
++#define PS4_SC_ACTIVATE 0xf1f0
++
+ struct ps4_input_record
+ {
+     uint32_t type;
+diff --git a/server/ps4_input.inc b/server/ps4_input.inc
+index ccca2bd..cf8302b 100755
+--- a/server/ps4_input.inc
++++ b/server/ps4_input.inc
+@@ -66,6 +66,12 @@ static void ps4_input_queue( const struct ps4_input_record *record )
+         ps4_end_programs_now();
+         return;
+     }
++    if (record->type == PS4_INPUT_SYSCOMMAND)
++    {
++        /* the desktop's title bar buttons and taskbar: what Windows' own would post the window */
++        post_message( (user_handle_t)record->x, WM_SYSCOMMAND, (unsigned int)record->data, 0 );
++        return;
++    }
+ 
+     /* none before the first program made the window station */
+     if (!(desktop = get_hardware_input_desktop( 0 ))) return;
+-- 
+2.53.0
+
+
+From 76fa2947684d2ed3e8d51497e4f13173da3eae96 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Wed, 4 Nov 2026 02:32:19 +0300
+Subject: [PATCH 29/29] PS4: a process the desktop starts is named by its image
+ path, not the command line's first word
+
+---
+ dlls/ntdll/unix/process.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/ntdll/unix/process.c b/dlls/ntdll/unix/process.c
+index 84b5a3a..fa78872 100644
+--- a/dlls/ntdll/unix/process.c
++++ b/dlls/ntdll/unix/process.c
+@@ -423,7 +423,7 @@ static pid_t ps4_spawn_loader( const RTL_USER_PROCESS_PARAMETERS *params, int so
+     static const char *const replaced[] = { "WINESERVERSOCKET=", "WINEPRELOADRESERVE=", "WINELOADERNOEXEC=", "WINEDEBUG=", "WINEPS4_BOOT=" };
+     ULONGLONG res_start = pe_info->base, res_end = pe_info->base + pe_info->map_size;
+     char socket_env[64], reserve_env[64], noexec_env[] = "WINELOADERNOEXEC=1";
+-    char **argv, **envp;
++    char **argv, **envp, *image = NULL;
+     int null_fd = -1, count = 0, n = 0, i, k;
+     pid_t pid;
+ 
+@@ -458,11 +458,24 @@ static pid_t ps4_spawn_loader( const RTL_USER_PROCESS_PARAMETERS *params, int so
+ 
+     argv = build_argv( &params->CommandLine, 2 );
+     argv[1] = (char *)"/app0/wineps4.bin";  /* the app is the loader (see loader_exec) */
++    /* the program, as the desktop names it (wine.log, Task Manager, its icon): the image's path, as
++     * the command line's first word can be cut at a space ("C:\Program" for an unquoted
++     * "C:\Program Files (x86)\...") */
++    if (argv[2] && params->ImagePathName.Length && (image = malloc( params->ImagePathName.Length * 3 / sizeof(WCHAR) + 1 )))
++    {
++        const WCHAR *name = params->ImagePathName.Buffer;
++        DWORD len = params->ImagePathName.Length / sizeof(WCHAR);
++
++        if (len > 4 && name[0] == '\\' && name[1] == '?' && name[2] == '?' && name[3] == '\\') name += 4, len -= 4;
++        image[ntdll_wcstoumbs( name, len, image, len * 3, FALSE )] = 0;
++        argv[2] = image;
++    }
+     /* (started by the desktop, which collects it: port/ps4_spawn_desk.c) */
+     pid = ps4_spawn_program( argv[1], argv + 1, envp, stdin_fd, stdout_fd, socketfd );
+     if (pid == -1) MESSAGE( "wineps4: cannot start %s: %s\n", argv[2] ? argv[2] : "?", strerror( errno ));
+     else MESSAGE( "wineps4: %s started (process %d)\n", argv[2] ? argv[2] : "?", (int)pid );
+     free( argv );
++    free( image );
+     for (i = k; envp[i]; i++) free( envp[i] );  /* the ones made above (the others are environ's) */
+     free( envp );
+     if (null_fd != -1) close( null_fd );
 -- 
 2.53.0
 

@@ -32,6 +32,20 @@ int ps4_launch_program( char *const args[] );
 /* ends every program process, before the desktop exits or restarts */
 void ps4_end_programs( void );
 
+/* Task Manager: the program processes running (local processes: port/ps4_spawn_desk.c), with what
+ * each last said of itself (every second), and ending one */
+struct ps4_process_info
+{
+    int pid;
+    char image[260];            /* the program: a Windows path (C:\...) or one of the console's */
+    double cpu_seconds;         /* its CPU time so far */
+    unsigned long long memory;  /* what Wine has mapped for it */
+};
+int ps4_process_list( struct ps4_process_info *list, int max );
+void ps4_local_kill( int pid );
+/* the desktop process's own (it runs wineserver too) */
+unsigned long long ps4_vm_backed_bytes( void );
+
 /* A program to start at the next start of the app (written by older versions; read and removed) */
 #define WINEPS4_LAUNCH_FILE "/data/WinePS4/launch.txt"
 

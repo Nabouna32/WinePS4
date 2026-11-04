@@ -107,6 +107,7 @@ void ps4_kit_configure_heap( ps4_kit_heap_options *options )
 PS4_DIAG_DATA_DIR( DATA_DIR );
 
 extern void __wine_main( int argc, char *argv[] );
+extern void ps4_dirs_reset( void );
 extern void ps4_thread_register( void );
 extern void ps4_start_hang_watch( void );
 extern void ps4_kit_set_min_thread_stack( size_t bytes );
@@ -743,6 +744,30 @@ static void boot_windows( void )
     desktop_up = 1;
 }
 
+/* The Windows user's folders (C:\users\ps4): the prefix comes from the PC, where its user had
+ * another name, so the console's had only what Wine makes on demand (AppData): no Downloads for
+ * browsers to save to, no Desktop or Documents, no AppData\LocalLow (v00.46: cryptnet's revocation
+ * cache failed in Steam) */
+static void make_user_folders( void )
+{
+    static const char *const folders[] = {
+        "AppData", "AppData/Local", "AppData/Local/Temp", "AppData/LocalLow", "AppData/Roaming",
+        "Contacts", "Desktop", "Documents", "Downloads", "Favorites", "Links", "Music", "Pictures",
+        "Saved Games", "Searches", "Videos",
+    };
+    const char *user = getenv( "USER" );
+    char path[512];
+    unsigned int i;
+
+    snprintf( path, sizeof(path), PREFIX_DIR "/drive_c/users/%s", user ? user : "ps4" );
+    mkdir( path, 0777 );
+    for (i = 0; i < sizeof(folders) / sizeof(folders[0]); i++)
+    {
+        snprintf( path, sizeof(path), PREFIX_DIR "/drive_c/users/%s/%s", user ? user : "ps4", folders[i] );
+        mkdir( path, 0777 );
+    }
+}
+
 /* the programs' ends, for the desktop */
 static void *reaper_thread( void *arg )
 {
@@ -792,6 +817,7 @@ static void *setup_thread( void *arg )
 
     ps4_shell_status( "starting" );
     setup_prefix();
+    make_user_folders();
     trim_windows_startup();
     ps4_start_wineserver_listening();
     /* (its socket is there once the thread has opened it, before the registry loads: the first
@@ -858,6 +884,7 @@ int main( int argc, char **argv )
         is_program_process();
     }
     open_log();
+    ps4_dirs_reset();  /* (the processes' shared folder paths: none from the last session) */
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );
     if (desktop_lock < 0)
         logf_( "wineps4: %s could not be locked: programs will take the system's memory\n", DESKTOP_LOCK_FILE );

@@ -30,10 +30,15 @@ enum ps4_display_msg
     PS4_DISPLAY_RAISE,      /* the window was activated: on top */
 };
 
-#define PS4_WINDOW_VISIBLE  0x01
-#define PS4_WINDOW_TOPMOST  0x02
-#define PS4_WINDOW_LAYERED  0x04  /* pixels carry alpha */
-#define PS4_WINDOW_POPUP    0x08  /* menus, tooltips, ...: no taskbar button */
+#define PS4_WINDOW_VISIBLE      0x001
+#define PS4_WINDOW_TOPMOST      0x002
+#define PS4_WINDOW_LAYERED      0x004  /* pixels carry alpha */
+#define PS4_WINDOW_POPUP        0x008  /* menus, tooltips, ...: no taskbar button */
+#define PS4_WINDOW_CAPTION      0x010  /* Windows draws a title bar (caption_*): the desktop draws its own over it */
+#define PS4_WINDOW_MAXIMIZED    0x020
+#define PS4_WINDOW_MINIMIZED    0x040
+#define PS4_WINDOW_CAN_MINIMIZE 0x080
+#define PS4_WINDOW_CAN_MAXIMIZE 0x100
 
 struct ps4_display_header
 {
@@ -44,6 +49,9 @@ struct ps4_display_header
     uint32_t flags;     /* PS4_WINDOW_* (WINDOW) */
     int32_t  left, top, right, bottom;  /* WINDOW: the surface on the screen; PIXELS: the rect in it */
     int32_t  width, height;             /* WINDOW: the surface size */
+    /* WINDOW: the client area and the title bar (the window's, with its buttons) on the screen */
+    int32_t  client_left, client_top, client_right, client_bottom;
+    int32_t  caption_left, caption_top, caption_right, caption_bottom;
 };
 
 /* --- desktop -> wineserver (the pipe) ------------------------------------------------------------ */
@@ -53,7 +61,12 @@ enum ps4_input_type
     PS4_INPUT_MOUSE = 1,  /* x, y in screen pixels (always absolute), flags = MOUSEEVENTF_*, data = wheel */
     PS4_INPUT_KEY,        /* vkey + scan, flags = KEYEVENTF_* (KEYEVENTF_UNICODE: scan is the character) */
     PS4_INPUT_END_PROGRAMS, /* the desktop is ending: every program process is killed (ps4_end_programs) */
+    PS4_INPUT_SYSCOMMAND, /* x = the window, data = SC_* (WM_SYSCOMMAND): its title bar's buttons, the taskbar */
 };
+
+/* a WM_SYSCOMMAND of WinePS4's own: the window comes to the front (restored if minimized), as Windows'
+ * taskbar does it (wineps4.drv's SysCommand) */
+#define PS4_SC_ACTIVATE 0xf1f0
 
 struct ps4_input_record
 {

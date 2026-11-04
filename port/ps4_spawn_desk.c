@@ -16,7 +16,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <unistd.h>
+
+#include "../shell/shell.h"
 
 #define SPAWN_SOCKET "/data/WinePS4/.spawn"
 #define SPAWN_MAGIC  0x50533457  /* "W4SP" */
@@ -93,6 +96,7 @@ static void socket_address( struct sockaddr_un *addr )
 #define MSG_HELLO        0x4f4c4548         /* "HELO", the pid */
 #define MSG_READY        0x59444552         /* "REDY" */
 #define MSG_EXIT         0x54495845         /* "EXIT", the exit code (port/ps4_wine_port.c) */
+#define MSG_STATS        0x54415453         /* "STAT", then struct local_stats: every second, for Task Manager */
 #define MAX_LOCAL        16                 /* SCE_LNC_UTIL_MAX_LOCAL_PROCESS_NUM */
 #define LOCAL_TIMEOUT_MS 15000
 
@@ -100,6 +104,12 @@ struct local_msg
 {
     uint32_t magic;
     int32_t value;
+};
+
+struct local_stats
+{
+    uint64_t cpu_us;  /* the process's CPU time */
+    uint64_t memory;  /* what its memory layer has backed (port/ps4_wine_vm.c) */
 };
 
 int sceSystemServiceAddLocalProcess( int app_id, const char *path, const char *const *argv, const void *param );
@@ -113,7 +123,12 @@ extern void ps4_shell_notice( const char *text );
 extern int ps4_control_fd;
 
 static pthread_mutex_t locals_lock = PTHREAD_MUTEX_INITIALIZER;
-static struct { int local_id, pid, control, code; } locals[MAX_LOCAL];
+static struct
+{
+    int local_id, pid, control, code;
+    char image[260];             /* the program (argv[1]: a Windows or Unix path) */
+    struct local_stats stats;    /* the last it sent */
+} locals[MAX_LOCAL];
 static int local_count;
 static int local_state;            /* 0: not tried yet, 1: the PS4 starts them, -1: refused */
 static int app_id = -1;
@@ -130,19 +145,23 @@ static int read_msg( int fd, struct local_msg *msg, int timeout_ms )
     return ret == 1 && read_all( fd, msg, sizeof(*msg) );
 }
 
-/* a message on a local process's socket: its exit code, or its end */
+/* a message on a local process's socket: its figures, its exit code, or its end */
 static void control_event( int fd )
 {
     struct local_msg msg;
+    struct local_stats stats;
     ssize_t got;
-    int i, pid, code, local_id;
+    int i, pid, code, local_id, have_stats = 0;
 
     while ((got = read( fd, &msg, sizeof(msg) )) == -1 && errno == EINTR) ;
+    if (got > 0 && got < (ssize_t)sizeof(msg) && read_all( fd, (char *)&msg + got, sizeof(msg) - got )) got = sizeof(msg);
+    if (got == sizeof(msg) && msg.magic == MSG_STATS) have_stats = read_all( fd, &stats, sizeof(stats) );
     pthread_mutex_lock( &locals_lock );
     for (i = 0; i < local_count && locals[i].control != fd; i++) ;
     if (i == local_count || got > 0)
     {
         if (i < local_count && got == sizeof(msg) && msg.magic == MSG_EXIT) locals[i].code = msg.value;
+        if (i < local_count && have_stats) locals[i].stats = stats;
         pthread_mutex_unlock( &locals_lock );
         return;
     }
@@ -301,10 +320,12 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
     pthread_mutex_lock( &locals_lock );
     if (local_count < MAX_LOCAL)
     {
+        memset( &locals[local_count], 0, sizeof(locals[local_count]) );
         locals[local_count].local_id = id;
         locals[local_count].pid = pid;
         locals[local_count].control = sv[0];
         locals[local_count].code = -1;
+        snprintf( locals[local_count].image, sizeof(locals[local_count].image), "%s", argv[1] ? argv[1] : "" );
         local_count++;
         sv[0] = -1;
     }
@@ -346,7 +367,24 @@ int ps4_local_kill_all( void )
     return n;
 }
 
-/* one of them (a stuck wineboot) */
+/* Task Manager's list (shell.h): the local processes, with their programs and last figures */
+int ps4_process_list( struct ps4_process_info *list, int max )
+{
+    int i, n = 0;
+
+    pthread_mutex_lock( &locals_lock );
+    for (i = 0; i < local_count && n < max; i++, n++)
+    {
+        list[n].pid = locals[i].pid;
+        snprintf( list[n].image, sizeof(list[n].image), "%s", locals[i].image );
+        list[n].cpu_seconds = locals[i].stats.cpu_us / 1e6;
+        list[n].memory = locals[i].stats.memory;
+    }
+    pthread_mutex_unlock( &locals_lock );
+    return n;
+}
+
+/* one of them (a stuck wineboot; Task Manager's End task) */
 void ps4_local_kill( int pid )
 {
     int i, id = -1;
@@ -366,6 +404,32 @@ static void *desktop_watch( void *arg )
 
     while (read( (int)(long)arg, &c, 1 ) == -1 && errno == EINTR) ;
     ps4_process_exit_now( 1 );
+}
+
+extern unsigned long long ps4_vm_backed_bytes( void );
+
+/* the process's figures for the desktop's Task Manager, every second (one write each: they don't
+ * mix with the exit code's) */
+static void *stats_thread( void *arg )
+{
+    const int sock = (int)(long)arg;
+    sigset_t all;
+
+    sigfillset( &all );
+    pthread_sigmask( SIG_BLOCK, &all, NULL );  /* (Wine's signals are its own threads') */
+    for (;;)
+    {
+        struct { struct local_msg msg; struct local_stats stats; } m = { { MSG_STATS, 0 } };
+        struct rusage usage;
+
+        if (!getrusage( RUSAGE_SELF, &usage ))
+            m.stats.cpu_us = (uint64_t)(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1000000 +
+                             usage.ru_utime.tv_usec + usage.ru_stime.tv_usec;
+        m.stats.memory = ps4_vm_backed_bytes();
+        if (!write_all( sock, &m, sizeof(m) )) break;
+        sleep( 1 );
+    }
+    return NULL;
 }
 
 /* Is this a local process (argv has LOCAL_ARG)? */
@@ -466,6 +530,7 @@ int ps4_local_child_setup( int *argc_out, char ***argv_out )
     pthread_attr_init( &attr );
     pthread_attr_setstacksize( &attr, 64 << 10 );
     if (!pthread_create( &thread, &attr, desktop_watch, (void *)(long)sock )) pthread_detach( thread );
+    if (!pthread_create( &thread, &attr, stats_thread, (void *)(long)sock )) pthread_detach( thread );
     pthread_attr_destroy( &attr );
     *argc_out = header.argc;
     *argv_out = list;

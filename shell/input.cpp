@@ -57,6 +57,7 @@ uint32_t last_mouse_buttons = 0;
 float repeat_wait = 0;
 bool finger = false;
 float finger_x = 0, finger_y = 0;
+float pointer_gain = 1.6f;  // the mouse's counts to pixels (Settings: speed 10 of 20)
 
 void trace(const char *what, int value) {
     char line[128];
@@ -117,6 +118,10 @@ void input_warp(float x, float y) {
     state.x = std::clamp(x, 0.f, static_cast<float>(SCREEN_W - 1));
     state.y = std::clamp(y, 0.f, static_cast<float>(SCREEN_H - 1));
     state.moved = true;
+}
+
+void input_set_pointer_speed(int speed) {
+    pointer_gain = std::clamp(speed, 1, 20) * 0.16f;
 }
 
 void input_open() {
@@ -187,15 +192,21 @@ const Input &input_poll(float dt) {
             last_error = n;
             trace("sceMouseRead failed", n);
         }
+        float mx = 0, my = 0;
         for (int i = 0; i < n; i++) {
             if (!events[i].connected)
                 continue;
             state.mouse = true;
-            dx += events[i].x;
-            dy += events[i].y;
+            mx += events[i].x;
+            my += events[i].y;
             state.scroll -= events[i].wheel * 3.f;
             last_mouse_buttons = events[i].buttons;
         }
+        // faster than its counts (1:1 across a 1080p screen was slow), and more for a quick move, as
+        // Windows' "enhance pointer precision": up to 1.9 times for 24 counts a frame and more
+        const float accel = 1.f + std::min(std::sqrt(mx * mx + my * my) / 24.f, 1.f) * 0.9f;
+        dx += mx * pointer_gain * accel;
+        dy += my * pointer_gain * accel;
         if (n > 0 || state.mouse) {
             if (last_mouse_buttons & 1) held |= BTN_CLICK;
             if (last_mouse_buttons & 2) held |= BTN_MENU;

@@ -133,6 +133,7 @@ static const struct user_driver_funcs ps4drv_funcs =
     .pCreateWindowSurface = PS4DRV_CreateWindowSurface,
     .pDestroyWindow = PS4DRV_DestroyWindow,
     .pSetWindowText = PS4DRV_SetWindowText,
+    .pSysCommand = PS4DRV_SysCommand,
     .pUpdateDisplayDevices = PS4DRV_UpdateDisplayDevices,
     .pWindowPosChanged = PS4DRV_WindowPosChanged,
 };

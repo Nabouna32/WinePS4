@@ -35,6 +35,7 @@ extern void PS4DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hi
 extern void PS4DRV_DestroyWindow( HWND hwnd );
 extern void PS4DRV_SetWindowText( HWND hwnd, LPCWSTR text );
 extern void PS4DRV_ActivateWindow( HWND hwnd, HWND previous );
+extern LRESULT PS4DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT *pos );
 
 /* ps4drv_main.c: the desktop's socket */
 extern BOOL ps4drv_send( const struct ps4_display_header *header, const void *data, UINT data_size );

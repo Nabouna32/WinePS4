@@ -66,6 +66,12 @@ static void ps4_input_queue( const struct ps4_input_record *record )
         ps4_end_programs_now();
         return;
     }
+    if (record->type == PS4_INPUT_SYSCOMMAND)
+    {
+        /* the desktop's title bar buttons and taskbar: what Windows' own would post the window */
+        post_message( (user_handle_t)record->x, WM_SYSCOMMAND, (unsigned int)record->data, 0 );
+        return;
+    }
 
     /* none before the first program made the window station */
     if (!(desktop = get_hardware_input_desktop( 0 ))) return;

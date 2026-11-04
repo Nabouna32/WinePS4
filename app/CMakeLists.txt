@@ -147,7 +147,7 @@ endforeach()
 # A Windows 11-style desktop on the CPU (shell/), with HENkaku's canvas (ps4_canvas.cpp).
 set(SHELL_DIR ${CMAKE_CURRENT_LIST_DIR}/../shell)
 add_library(wine_shell OBJECT ${SHELL_DIR}/desktop.cpp ${SHELL_DIR}/screen.cpp ${SHELL_DIR}/input.cpp ${SHELL_DIR}/keyboard.cpp ${SHELL_DIR}/fileops.cpp ${SHELL_DIR}/picture.cpp ${SHELL_DIR}/winwindows.cpp
-    ${SHELL_DIR}/ps4_canvas.cpp ${SHELL_DIR}/stb_impl.c)
+    ${SHELL_DIR}/exeicon.cpp ${SHELL_DIR}/hwkeyboard.cpp ${SHELL_DIR}/ps4_canvas.cpp ${SHELL_DIR}/stb_impl.c)
 # FFmpeg for the pictures stb can't read (WebP, HEIC, TIFF, ...): WinePS4's own build, image
 # decoders only (see NOTES.md)
 set(WINEPS4_FFMPEG $ENV{HOME}/wineps4-build/ffmpeg-img)
@@ -164,7 +164,7 @@ target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/in
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
-target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceImeDialog SceCommonDialog)
+target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceImeDialog SceCommonDialog)
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FFMPEG}/lib/libavformat.a ${WINEPS4_FFMPEG}/lib/libavcodec.a
     ${WINEPS4_FFMPEG}/lib/libswscale.a ${WINEPS4_FFMPEG}/lib/libavutil.a)
 ps4_kit_app(wineps4)

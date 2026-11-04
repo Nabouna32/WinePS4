@@ -125,7 +125,10 @@ static int new_chunk( void )
     return 1;
 }
 
-/* up to max pages of direct memory with consecutive physical addresses */
+/* up to max pages of direct memory with consecutive physical addresses: a run of freed pages stays
+ * in its chunk, as each chunk is an allocation of its own (v00.46: a run that went on into the next
+ * chunk's first pages was mapped past its chunk's end; the kernel refused it, EACCES, and Steam
+ * stopped with "out of memory" while 2 GiB were free) */
 static unsigned int take_direct( unsigned int max, uint32_t *first )
 {
     unsigned int n = 1;
@@ -133,7 +136,11 @@ static unsigned int take_direct( unsigned int max, uint32_t *first )
     if (free_count)
     {
         *first = free_pages[--free_count];
-        while (n < max && free_count && free_pages[free_count - 1] == *first + n) { free_count--; n++; }
+        while (n < max && free_count && free_pages[free_count - 1] == *first + n && (*first + n) % CHUNK_PAGES)
+        {
+            free_count--;
+            n++;
+        }
         return n;
     }
     if (!chunk_count || chunk_used == CHUNK_PAGES)
@@ -152,6 +159,13 @@ static void give_direct( uint32_t first, unsigned int n )
 }
 
 /* Gives the pages' memory back and unmaps the range, ours or the kernel's. */
+/* what this process has backed, for Task Manager (port/ps4_spawn_desk.c; read without the lock: a
+ * figure for the eye) */
+unsigned long long ps4_vm_backed_bytes( void )
+{
+    return (backed_direct + backed_flexible) * HOST_PAGE;
+}
+
 static int release_range( uintptr_t start, uintptr_t end )
 {
     uintptr_t addr;

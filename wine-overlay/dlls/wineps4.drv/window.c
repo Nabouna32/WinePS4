@@ -132,10 +132,34 @@ void PS4DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
     if ((ex_style & WS_EX_TOOLWINDOW) || (!(style & WS_CAPTION) && (style & WS_POPUP)) ||
         NtUserGetWindowRelative( hwnd, GW_OWNER ))
         msg.flags |= PS4_WINDOW_POPUP;
+    if (style & WS_MAXIMIZE) msg.flags |= PS4_WINDOW_MAXIMIZED;
+    if (style & WS_MINIMIZE) msg.flags |= PS4_WINDOW_MINIMIZED;
+    if (style & WS_MINIMIZEBOX) msg.flags |= PS4_WINDOW_CAN_MINIMIZE;
+    if (style & WS_MAXIMIZEBOX) msg.flags |= PS4_WINDOW_CAN_MAXIMIZE;
     msg.left   = new_rects->visible.left;
     msg.top    = new_rects->visible.top;
     msg.right  = new_rects->visible.right;
     msg.bottom = new_rects->visible.bottom;
+    msg.client_left   = new_rects->client.left;
+    msg.client_top    = new_rects->client.top;
+    msg.client_right  = new_rects->client.right;
+    msg.client_bottom = new_rects->client.bottom;
+    /* the title bar Windows draws, when the program left it to Windows (not one that draws its own
+     * over it, as browsers do: their client area takes the window's top) */
+    if ((style & WS_CAPTION) == WS_CAPTION && !(style & WS_MINIMIZE))
+    {
+        TITLEBARINFO info = { .cbSize = sizeof(info) };
+
+        if (NtUserGetTitleBarInfo( hwnd, &info ) && !(info.rgstate[0] & STATE_SYSTEM_INVISIBLE) &&
+            info.rcTitleBar.bottom > info.rcTitleBar.top && new_rects->client.top >= info.rcTitleBar.bottom)
+        {
+            msg.flags |= PS4_WINDOW_CAPTION;
+            msg.caption_left   = info.rcTitleBar.left;
+            msg.caption_top    = info.rcTitleBar.top;
+            msg.caption_right  = info.rcTitleBar.right;
+            msg.caption_bottom = info.rcTitleBar.bottom;
+        }
+    }
     if (surface)
     {
         msg.width  = surface->rect.right - surface->rect.left;
@@ -154,6 +178,16 @@ void PS4DRV_ActivateWindow( HWND hwnd, HWND previous )
 {
     struct ps4_display_header msg = { .type = PS4_DISPLAY_RAISE, .hwnd = (UINT_PTR)hwnd };
     if (is_toplevel( hwnd )) ps4drv_send( &msg, NULL, 0 );
+}
+
+/* WinePS4's own command from the desktop's taskbar: the window to the front, restored if it was
+ * minimized (0: done; -1: Windows' own handling) */
+LRESULT PS4DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT *pos )
+{
+    if ((wparam & 0xfff0) != PS4_SC_ACTIVATE) return -1;
+    if (NtUserGetWindowLongW( hwnd, GWL_STYLE ) & WS_MINIMIZE) NtUserShowWindow( hwnd, SW_RESTORE );
+    NtUserSetForegroundWindow( hwnd );
+    return 0;
 }
 
 void PS4DRV_DestroyWindow( HWND hwnd )

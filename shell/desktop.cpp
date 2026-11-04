@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cctype>
 #include <cmath>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -18,6 +19,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -25,10 +27,15 @@
 #include <dirent.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
+#include "../port/include/ps4_display.h"
+#include "exeicon.h"
 #include "fileops.h"
+#include "hwkeyboard.h"
 #include "input.h"
 #include "keyboard.h"
 #include "picture.h"
@@ -43,6 +50,9 @@
 extern "C" {
 int sceSystemServiceLoadExec(const char *path, const char *args[]);
 void ps4_boot_trace(const char *line);
+size_t sceKernelGetDirectMemorySize(void);
+int32_t sceKernelAvailableDirectMemorySize(off_t start, off_t end, size_t align, off_t *start_out, size_t *size_out);
+int32_t sceKernelIsNeoMode(void);
 }
 
 using namespace ps4ui;
@@ -64,6 +74,11 @@ Color POPUP_BG, POPUP_BORDER, MENU_TINT, CARD_TINT, DIALOG_BG, DIALOG_FOOT;
 Color BUTTON, BUTTON_HOT, BUTTON_BORDER, CARD, CARD_HOT, CARD_BORDER, TRACK, ICON_HOLE;
 const Color CLOSE_RED = rgb(0xc42b1c);
 bool light_theme = false;
+
+// Settings > Bluetooth & devices: the mouse's speed (1-20, as Windows' slider), and whether a USB
+// keyboard types straight into programs (else the PS4's keyboard opens for text, Triangle)
+int pointer_speed = 10;
+bool direct_keyboard = false;
 
 void apply_theme(bool light) {
     light_theme = light;
@@ -300,6 +315,8 @@ void save_desktop() {
     if (FILE *f = std::fopen(DESKTOP_FILE, "w")) {
         std::fprintf(f, "theme=%s\n", light_theme ? "light" : "dark");
         std::fprintf(f, "background=%s\n", background_spec(background).c_str());
+        std::fprintf(f, "pointer=%d\n", pointer_speed);
+        std::fprintf(f, "keyboard=%s\n", direct_keyboard ? "direct" : "ps4");
         std::fclose(f);
     }
 }
@@ -332,7 +349,8 @@ bool set_background(const Background &b, std::string *error = nullptr) {
     return true;
 }
 
-// desktop.ini: theme=dark|light, background=style:<n>|photo:<path>|color:<rrggbb>
+// desktop.ini: theme=dark|light, background=style:<n>|photo:<path>|color:<rrggbb>, pointer=1-20,
+// keyboard=ps4|direct
 void load_desktop() {
     bool light = false;
     Background b;
@@ -350,9 +368,14 @@ void load_desktop() {
                 b.kind = BgKind::Photo, b.photo = l.substr(17);
             else if (l.rfind("background=color:", 0) == 0)
                 b.kind = BgKind::Color, b.color = static_cast<uint32_t>(std::strtoul(l.c_str() + 17, nullptr, 16));
+            else if (l.rfind("pointer=", 0) == 0)
+                pointer_speed = std::clamp(std::atoi(l.c_str() + 8), 1, 20);
+            else if (l == "keyboard=direct")
+                direct_keyboard = true;
         }
         std::fclose(f);
     }
+    input_set_pointer_speed(pointer_speed);
     apply_theme(light);
     if (!set_background(b))
         set_background(Background{});  // (a photo since removed: the default)
@@ -488,7 +511,8 @@ Image make_pointer() {
 
 // --- icons (drawn, not pictures) -------------------------------------------------------------
 
-enum class Icon { Logo, Search, Folder, Terminal, Settings, Computer, Drive, Usb, Program, File, Power, Pad, Mouse, Up, User, Package, Picture, Brush, Info };
+enum class Icon { Logo, Search, Folder, Terminal, Settings, Computer, Drive, Usb, Program, File, Power, Pad, Mouse, Up, User, Package, Picture, Brush, Info,
+                  Keyboard, Gauge, Apps, Download, Document, Music, Video, Desktop };
 
 void arc(Canvas &c, float cx, float cy, float r, float from, float to, float t, Color col) {
     const int steps = 24;
@@ -615,6 +639,52 @@ void draw_icon(Canvas &c, Icon icon, float cx, float cy, float s) {
         c.fill_circle(cx, cy - s * 0.12f, s * 0.17f, TEXT2);
         c.fill_round_rect(x + is * 24 / 100, y + is * 58 / 100, is * 52 / 100, is * 28 / 100, is * 14 / 100, TEXT2);
         break;
+    case Icon::Keyboard:  // a keyboard: three rows of keys and a space bar
+        c.fill_round_rect(x + is * 4 / 100, y + is * 24 / 100, is * 92 / 100, is * 54 / 100, is * 9 / 100, TEXT2);
+        for (int row = 0; row < 3; row++)
+            for (int k = 0; k < 6; k++)
+                c.fill_rect(x + is * (12 + k * 13) / 100, y + is * (32 + row * 11) / 100, is * 8 / 100, is * 6 / 100, ICON_HOLE);
+        c.fill_rect(x + is * 28 / 100, y + is * 66 / 100, is * 44 / 100, is * 5 / 100, ICON_HOLE);
+        break;
+    case Icon::Gauge:  // Task Manager: a graph in a frame
+        c.fill_round_rect(x + is * 8 / 100, y + is * 12 / 100, is * 84 / 100, is * 76 / 100, is * 10 / 100, rgb(0x2f7fd6));
+        c.fill_round_rect(x + is * 13 / 100, y + is * 17 / 100, is * 74 / 100, is * 66 / 100, is * 6 / 100, rgb(0x0f2b4a));
+        c.line(cx - s * 0.30f, cy + s * 0.18f, cx - s * 0.12f, cy - s * 0.02f, s * 0.07f, rgb(0x52d1ff));
+        c.line(cx - s * 0.12f, cy - s * 0.02f, cx + s * 0.04f, cy + s * 0.12f, s * 0.07f, rgb(0x52d1ff));
+        c.line(cx + s * 0.04f, cy + s * 0.12f, cx + s * 0.30f, cy - s * 0.22f, s * 0.07f, rgb(0x52d1ff));
+        break;
+    case Icon::Apps:  // four tiles
+        for (int k = 0; k < 4; k++)
+            c.fill_round_rect(x + is * (12 + (k % 2) * 40) / 100, y + is * (12 + (k / 2) * 40) / 100, is * 34 / 100, is * 34 / 100,
+                              is * 7 / 100, k == 3 ? ACCENT : TEXT2);
+        break;
+    case Icon::Download:  // an arrow down onto a tray
+        c.line(cx, cy - s * 0.34f, cx, cy + s * 0.14f, s * 0.1f, ACCENT);
+        c.line(cx, cy + s * 0.14f, cx - s * 0.2f, cy - s * 0.06f, s * 0.1f, ACCENT);
+        c.line(cx, cy + s * 0.14f, cx + s * 0.2f, cy - s * 0.06f, s * 0.1f, ACCENT);
+        c.fill_round_rect(x + is * 14 / 100, y + is * 78 / 100, is * 72 / 100, is * 9 / 100, is * 4 / 100, TEXT2);
+        break;
+    case Icon::Document:  // a page with lines, its corner folded
+        c.fill_round_rect(x + is * 20 / 100, y + is * 8 / 100, is * 60 / 100, is * 84 / 100, is * 6 / 100, rgb(0x4f8fe8));
+        for (int k = 0; k < 3; k++)
+            c.fill_rect(x + is * 30 / 100, y + is * (40 + k * 14) / 100, is * 40 / 100, is * 5 / 100, rgb(0xdbe8fb));
+        break;
+    case Icon::Music:  // a note
+        c.fill_circle(cx - s * 0.14f, cy + s * 0.22f, s * 0.14f, rgb(0xe8508a));
+        c.line(cx - s * 0.01f, cy + s * 0.22f, cx - s * 0.01f, cy - s * 0.34f, s * 0.08f, rgb(0xe8508a));
+        c.line(cx - s * 0.01f, cy - s * 0.34f, cx + s * 0.26f, cy - s * 0.22f, s * 0.08f, rgb(0xe8508a));
+        break;
+    case Icon::Video:  // a film frame with a play mark
+        c.fill_round_rect(x + is * 8 / 100, y + is * 18 / 100, is * 84 / 100, is * 64 / 100, is * 10 / 100, rgb(0x8a5cd6));
+        c.line(cx - s * 0.08f, cy - s * 0.16f, cx - s * 0.08f, cy + s * 0.16f, s * 0.07f, rgb(0xffffff));
+        c.line(cx - s * 0.08f, cy - s * 0.16f, cx + s * 0.16f, cy, s * 0.07f, rgb(0xffffff));
+        c.line(cx - s * 0.08f, cy + s * 0.16f, cx + s * 0.16f, cy, s * 0.07f, rgb(0xffffff));
+        break;
+    case Icon::Desktop:  // a screen with a window on it
+        c.fill_round_rect(x + is * 6 / 100, y + is * 14 / 100, is * 88 / 100, is * 60 / 100, is * 7 / 100, rgb(0x2f9fd6));
+        c.fill_round_rect(x + is * 18 / 100, y + is * 26 / 100, is * 40 / 100, is * 28 / 100, is * 4 / 100, rgb(0xe8f4fb));
+        c.fill_round_rect(x + is * 28 / 100, y + is * 80 / 100, is * 44 / 100, is * 8 / 100, is * 4 / 100, rgb(0x9aa4b2));
+        break;
     }
 }
 
@@ -628,9 +698,21 @@ struct Entry {
     Icon icon = Icon::File;
 };
 
-// The places: "This PS4" (path "") lists them
+// The Windows user's own folders (C:\users\ps4\...), where programs save: browsers' downloads
+std::string user_folder(const char *name) {
+    const char *user = std::getenv("USER");
+    return std::string(C_DRIVE) + "/users/" + (user ? user : "ps4") + "/" + name;
+}
+
+// The places: "This PS4" (path "") lists them; the user's folders first, as Windows' Quick access
 std::vector<Entry> find_places() {
     std::vector<Entry> list;
+    const std::pair<const char *, Icon> mine[] = {{"Desktop", Icon::Desktop}, {"Downloads", Icon::Download},
+                                                  {"Documents", Icon::Document}, {"Pictures", Icon::Picture},
+                                                  {"Music", Icon::Music}, {"Videos", Icon::Video}};
+    for (const auto &[name, icon] : mine)
+        if (is_dir(user_folder(name)))
+            list.push_back({name, user_folder(name), true, -1, icon});
     list.push_back({"Wine C: drive", C_DRIVE, true, -1, Icon::Drive});
     for (int i = 0; i < 8; i++) {
         const std::string usb = "/mnt/usb" + std::to_string(i);
@@ -796,7 +878,7 @@ std::vector<std::string> recent_programs() {
 
 // --- windows ---------------------------------------------------------------------------------
 
-enum class Kind { Files, Terminal, Settings };
+enum class Kind { Files, Terminal, Settings, TaskManager };
 
 struct Window {
     int id = 0;
@@ -812,12 +894,18 @@ struct Window {
     std::vector<Entry> entries;
     int selected = -1;
     // Settings
-    int page = 0;      // Personalization, Diagnostics, About
+    int page = 0;      // SETTINGS_PAGES
     int bg_tab = 0;    // pictures, colours
+    // Task Manager
+    int tab = 0;       // Processes, Performance
+    int chosen_pid = 0;
 };
 
 std::vector<Window> windows;  // back to front
 int next_id = 1;
+// the desktop's own windows over Windows programs' (one clicked or opened last), or under them
+bool desktop_on_top = false;
+std::vector<WinTask> program_tasks;  // Windows programs' windows with a taskbar button (this frame's)
 
 enum class Popup { None, Start, Power };
 Popup popup = Popup::None;
@@ -909,6 +997,7 @@ void bring_to_front(int id) {
     w.minimized = false;
     windows.erase(it);
     windows.push_back(w);
+    desktop_on_top = true;
 }
 
 void navigate(Window &w, const std::string &path) {
@@ -945,8 +1034,13 @@ Window *open_window(Kind kind, const std::string &path = std::string()) {
         w.bg_tab = background.kind == BgKind::Color;
         w.title = "Settings";
         break;
+    case Kind::TaskManager:
+        w.w = 1000, w.h = 680, w.x = 460, w.y = 140;
+        w.title = "Task Manager";
+        break;
     }
     windows.push_back(w);
+    desktop_on_top = true;
     return &windows.back();
 }
 
@@ -970,8 +1064,184 @@ Icon window_icon(const Window &w) {
     case Kind::Files: return Icon::Folder;
     case Kind::Terminal: return Icon::Terminal;
     case Kind::Settings: return Icon::Settings;
+    case Kind::TaskManager: return Icon::Gauge;
     }
     return Icon::File;
+}
+
+// --- Windows programs: their processes, names and icons -----------------------------------------
+
+// A Windows path (C:\..., Z:\...) as the console's (a Unix one stays as it is)
+std::string console_path(const std::string &path) {
+    if (path.size() < 3 || path[1] != ':' || (path[2] != '\\' && path[2] != '/'))
+        return path;
+    std::string rest = path.substr(2);
+    std::replace(rest.begin(), rest.end(), '\\', '/');
+    const char drive = static_cast<char>(std::tolower(static_cast<unsigned char>(path[0])));
+    if (drive == 'c')
+        return std::string(C_DRIVE) + rest;
+    if (drive == 'z')
+        return rest;
+    return std::string(DATA_DIR) + "/prefix/dosdevices/" + drive + ":" + rest;
+}
+
+// The file at path, or the one whose names match it but for case (Windows' paths ignore case, the
+// console's files don't: "Steam.exe" is steam.exe)
+std::string existing_path(const std::string &path) {
+    struct stat st{};
+    if (path.empty() || path[0] != '/' || stat(path.c_str(), &st) == 0)
+        return path;
+    std::string found;
+    size_t at = 1;
+    while (at <= path.size()) {
+        const size_t end = std::min(path.find('/', at), path.size());
+        const std::string name = path.substr(at, end - at), dir = found.empty() ? "/" : found;
+        std::string match;
+        if (DIR *d = opendir(dir.c_str())) {
+            while (dirent *e = readdir(d))
+                if (lower(e->d_name) == lower(name)) {
+                    match = e->d_name;
+                    break;
+                }
+            closedir(d);
+        }
+        if (match.empty())
+            return path;
+        found += "/" + match;
+        at = end + 1;
+    }
+    return found;
+}
+
+// An .exe's (or .dll's, .ico's) icon, size x size, premultiplied: read on a thread of its own (an exe
+// on the console's disk takes a moment, a folder of them longer); nullptr until it's there, or when
+// the file has none
+std::mutex icons_lock;
+std::condition_variable icons_wake;
+std::map<std::string, Image> icons_done;       // "size:path"
+std::set<std::string> icons_asked;
+std::deque<std::pair<std::string, int>> icons_wanted;
+std::atomic<bool> icons_changed{false};
+
+void *icon_thread(void *) {
+    set_serial(true);  // (the canvas's threads are the desktop's)
+    for (;;) {
+        std::pair<std::string, int> want;
+        {
+            std::unique_lock lock(icons_lock);
+            icons_wake.wait(lock, [] { return !icons_wanted.empty(); });
+            want = icons_wanted.front();
+            icons_wanted.pop_front();
+        }
+        Image icon = file_icon(existing_path(want.first), want.second);
+        if (!icon.empty())
+            premultiply(icon);
+        std::lock_guard lock(icons_lock);
+        icons_done[std::to_string(want.second) + ":" + want.first] = std::move(icon);
+        icons_changed = true;
+    }
+    return nullptr;
+}
+
+const Image *program_icon(const std::string &path, int size) {
+    static bool started = false;
+    if (!started) {
+        pthread_t thread;
+        if (pthread_create(&thread, nullptr, icon_thread, nullptr) == 0)
+            pthread_detach(thread);
+        started = true;
+    }
+    const std::string key = std::to_string(size) + ":" + path;
+    std::lock_guard lock(icons_lock);
+    auto it = icons_done.find(key);
+    if (it != icons_done.end())
+        return it->second.empty() ? nullptr : &it->second;
+    if (icons_asked.insert(key).second) {
+        icons_wanted.emplace_back(path, size);
+        icons_wake.notify_one();
+    }
+    return nullptr;
+}
+
+bool has_program_icon(const std::string &name) {
+    return ends_with(name, ".exe") || ends_with(name, ".dll") || ends_with(name, ".ico") || ends_with(name, ".scr") ||
+           ends_with(name, ".cpl");
+}
+
+// The program processes, as Task Manager shows them (looked at again once a second)
+struct ProcessView {
+    int pid = 0;
+    std::string image;     // as the process was started: a Windows path or the console's
+    std::string name;      // the file's name
+    double cpu = 0;        // seconds of CPU so far
+    float cpu_percent = 0; // of the console's 7 cores, over the last second
+    unsigned long long memory = 0;
+    bool windows_own = false;  // C:\windows: Windows' own (services, explorer, ...)
+};
+std::vector<ProcessView> process_views;
+std::map<int, double> last_cpu;  // pid: CPU seconds at the last look
+double processes_when = -10, desktop_cpu = 0;
+float desktop_cpu_percent = 0, cpu_history[60] = {}, memory_history[60] = {};
+unsigned long long memory_total = 0, memory_free = 0;
+constexpr int APP_CORES = 7;
+
+double process_cpu_seconds() {
+    struct rusage usage{};
+    getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_utime.tv_sec + usage.ru_stime.tv_sec + (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1e6;
+}
+
+void refresh_processes(bool force = false) {
+    const double t = now_seconds();
+    if (!force && t - processes_when < 1)
+        return;
+    const double elapsed = std::max(0.2, t - processes_when);
+    processes_when = t;
+    ps4_process_info list[32];
+    const int n = ps4_process_list(list, 32);
+    std::vector<ProcessView> views;
+    std::map<int, double> cpu_now;
+    float total = 0;
+    for (int i = 0; i < n; i++) {
+        ProcessView v;
+        v.pid = list[i].pid;
+        v.image = list[i].image;
+        const size_t slash = v.image.find_last_of("\\/");
+        v.name = slash == std::string::npos ? v.image : v.image.substr(slash + 1);
+        v.cpu = list[i].cpu_seconds;
+        v.memory = list[i].memory;
+        auto it = last_cpu.find(v.pid);
+        if (it != last_cpu.end())
+            v.cpu_percent = std::clamp(static_cast<float>((v.cpu - it->second) / elapsed * 100.0 / APP_CORES), 0.f, 100.f);
+        v.windows_own = lower(v.image).rfind("c:\\windows\\", 0) == 0;
+        cpu_now[v.pid] = v.cpu;
+        total += v.cpu_percent;
+        views.push_back(v);
+    }
+    const double desktop_now = process_cpu_seconds();
+    if (desktop_cpu > 0)
+        desktop_cpu_percent = std::clamp(static_cast<float>((desktop_now - desktop_cpu) / elapsed * 100.0 / APP_CORES), 0.f, 100.f);
+    desktop_cpu = desktop_now;
+    total += desktop_cpu_percent;
+    last_cpu.swap(cpu_now);
+    process_views.swap(views);
+    memory_total = sceKernelGetDirectMemorySize();
+    off_t start = 0;
+    size_t free_size = 0;
+    if (sceKernelAvailableDirectMemorySize(0, static_cast<off_t>(memory_total), 0x4000, &start, &free_size) == 0)
+        memory_free = free_size;
+    std::memmove(cpu_history, cpu_history + 1, sizeof(cpu_history) - sizeof(cpu_history[0]));
+    std::memmove(memory_history, memory_history + 1, sizeof(memory_history) - sizeof(memory_history[0]));
+    cpu_history[59] = std::min(total, 100.f);
+    memory_history[59] = memory_total ? 100.f * (memory_total - std::min(memory_free, memory_total)) / memory_total : 0.f;
+}
+
+// A process's program icon (its .exe's), or nullptr
+const Image *process_icon(int pid, int size) {
+    for (const ProcessView &v : process_views)
+        if (v.pid == pid)
+            return program_icon(console_path(v.image), size);
+    return nullptr;
 }
 
 // --- running a program: launch.txt, then the app again ----------------------------------------
@@ -1188,6 +1458,65 @@ void paste_into(Window &w) {
         clipboard = Clipboard{};  // moved: nothing left to paste
 }
 
+// --- dragging files: onto a folder, another Files window or a place, as in Windows' Explorer -----
+
+struct DraggedFiles {
+    bool pending = false;  // pressed on an entry: a drag once the pointer has moved far enough
+    bool active = false;
+    float x0 = 0, y0 = 0;  // where it was pressed
+    std::vector<std::string> paths;
+    std::string label;
+    Icon icon = Icon::File;
+};
+DraggedFiles dragged;
+
+int number_after(const std::string &key, const char *prefix);  // (below, with the menus)
+
+// The folder a drop at key goes into ("" for none): a folder's row, a place, or a Files window's own
+std::string drop_folder(const std::string &key) {
+    if (key.rfind("win:", 0) != 0)
+        return {};
+    Window *w = find_window(number_after(key, "win:"));
+    if (!w || w->kind != Kind::Files)
+        return {};
+    const std::string part = key.substr(key.find(':', 4) + 1);
+    if (part.rfind("row", 0) == 0) {
+        const int row = number_after(part, "row");
+        if (row >= 0 && row < static_cast<int>(w->entries.size()) && w->entries[row].dir)
+            return w->entries[row].path;
+    }
+    if (part.rfind("nav", 0) == 0) {
+        const int i = number_after(part, "nav");
+        return i > 0 && i <= static_cast<int>(places().size()) ? places()[i - 1].path : std::string();
+    }
+    return w->path;
+}
+
+// Let go over key: moved there on the same drive, copied onto another (Windows' rule)
+void drop_dragged(const std::string &key) {
+    const std::string folder = drop_folder(key);
+    if (folder.empty() || dragged.paths.empty())
+        return;
+    for (const std::string &p : dragged.paths)
+        if (folder == p || folder.rfind(p + "/", 0) == 0 || folder_of(p) == folder)
+            return;  // (onto itself, into itself, or where it is already)
+    struct stat from{}, to{};
+    const bool same_drive = stat(dragged.paths[0].c_str(), &from) == 0 && stat(folder.c_str(), &to) == 0 && from.st_dev == to.st_dev;
+    if (!job_paste(dragged.paths, same_drive, folder))
+        show_message(same_drive ? "Move" : "Copy", "Wait for the copy that is running to finish.");
+}
+
+void draw_dragged(Canvas &c) {
+    const Input &in = last_input;
+    const std::string folder = drop_folder(hover);
+    const int x = static_cast<int>(in.x) + 18, y = static_cast<int>(in.y) + 14;
+    const std::string what = dragged.label + (folder.empty() ? "" : (folder == folder_of(dragged.paths[0]) ? "" : "  >  " + base_name(folder)));
+    const int w = std::min(520, c.text_width(what, 14) + 60);
+    panel(c, x, y, w, 40, 6, POPUP_BG, POPUP_BORDER);
+    draw_icon(c, dragged.icon, x + 22, y + 20, 22);
+    c.text(x + 42, y + 26, what, 14, TEXT, Weight::Regular, w - 50);
+}
+
 void show_properties(const Entry &e) {
     struct stat st{};
     const bool ok = stat(e.path.c_str(), &st) == 0;
@@ -1239,6 +1568,7 @@ void open_menu(const std::string &target, float px, float py) {
             items.push_back({"Files", "files"});
             items.push_back({"Terminal", "terminal"});
             items.push_back({"Settings", "settings"});
+            items.push_back({"Task Manager", "taskmgr"});
             sep();
             items.push_back({"Restart WinePS4", "restart"});
             items.push_back({"Exit to the PS4 menu", "exit"});
@@ -1249,6 +1579,14 @@ void open_menu(const std::string &target, float px, float py) {
             sep();
             items.push_back({"Close window", "close-kind"});
         }
+    } else if (target.rfind("wtask:", 0) == 0) {  // a Windows program's window
+        items.push_back({"Close window", "wtask-close"});
+        sep();
+        items.push_back({"End task", "wtask-end"});
+        items.push_back({"Task Manager", "taskmgr"});
+    } else if (target == "taskbar") {
+        items.push_back({"Task Manager", "taskmgr"});
+        items.push_back({"Settings", "settings"});
     } else if (target.rfind("win:", 0) == 0) {
         const int id = number_after(target, "win:");
         const std::string part = target.substr(target.find(':', 4) + 1);
@@ -1269,6 +1607,8 @@ void open_menu(const std::string &target, float px, float py) {
             const Entry &e = w->entries[row];
             const bool place = w->path.empty();
             items.push_back({is_program(e.name) ? "Run" : "Open", "open"});
+            if (e.dir)
+                items.push_back({"Open in new window", "open-new"});
             if (!e.dir && is_picture_name(e.name))
                 items.push_back({"Set as desktop background", "wallpaper"});
             if (!place) {
@@ -1336,13 +1676,28 @@ void menu_action(const std::string &action) {
     else if (action == "restart") { ps4_end_programs(); sceSystemServiceLoadExec("/app0/eboot.bin", nullptr); }
     else if (action == "exit") { ps4_boot_trace("shell: exit to the PS4 menu"); ps4_end_programs(); exit(0); }
     else if (action == "icon-open") open_desktop_icon(number_after(target, "icon:"));
+    else if (action == "taskmgr") open_window(Kind::TaskManager);
     else if (action == "close-kind") {
         const int i = number_after(target, "taskbar:");
         const Kind kind = i == 2 ? Kind::Files : i == 3 ? Kind::Terminal : Kind::Settings;
         windows.erase(std::remove_if(windows.begin(), windows.end(), [&](const Window &x) { return x.kind == kind; }), windows.end());
+    } else if (action == "wtask-close" || action == "wtask-end") {
+        const uint64_t hwnd = std::strtoull(target.c_str() + 6, nullptr, 10);
+        for (const WinTask &t : program_tasks)
+            if (t.hwnd == hwnd) {
+                if (action == "wtask-close")
+                    winwin_command(hwnd, 0xf060);  // SC_CLOSE
+                else
+                    ps4_local_kill(t.pid);
+            }
     }
     if (!w)
         return;
+    if (action == "open-new" && entry && entry->dir) {
+        const std::string path = entry->path;
+        open_window(Kind::Files, path);
+        return;
+    }
     if (action == "restore" && w->maximized) toggle_maximize(*w);
     else if (action == "maximize" && !w->maximized) toggle_maximize(*w);
     else if (action == "minimize") w->minimized = true;
@@ -1384,7 +1739,8 @@ struct Rect {
 // the taskbar's buttons, centred: Start, then the apps
 const Kind TASKBAR_APPS[] = {Kind::Files, Kind::Terminal, Kind::Settings};
 constexpr int TB_BUTTON = 52;
-int taskbar_count() { return 1 + 1 + 3; }  // Start, Search, the apps
+constexpr int TB_FIRST_PROGRAM = 1 + 1 + 3;  // Start, Search, the apps, then the programs' windows
+int taskbar_count() { return TB_FIRST_PROGRAM + static_cast<int>(program_tasks.size()); }
 Rect taskbar_button(int i) {
     const int total = taskbar_count() * TB_BUTTON;
     return Rect{W / 2 - total / 2 + i * TB_BUTTON, H - TASKBAR_H + 4, TB_BUTTON, TASKBAR_H - 8};
@@ -1400,18 +1756,19 @@ struct Pin {
 };
 const Pin PINS[] = {
     {"Files", Icon::Folder, 0}, {"Terminal", Icon::Terminal, 1}, {"Settings", Icon::Settings, 2},
-    {"C: drive", Icon::Drive, 3}, {"Wine test", Icon::Program, 4}, {"32-bit test", Icon::Program, 6},
-    {"Window test", Icon::Program, 7}, {"Steam", Icon::Package, 8},
+    {"Task Manager", Icon::Gauge, 9}, {"C: drive", Icon::Drive, 3}, {"Steam", Icon::Package, 8},
+    {"Wine test", Icon::Program, 4}, {"32-bit test", Icon::Program, 6}, {"Window test", Icon::Program, 7},
 };
-// the pins share one row (narrower as there are more), so "Recent programs" below stays clear
+// the pins in rows of 6 (as Windows 11's), "Recent programs" below them
+constexpr int PINS_PER_ROW = 6, RECENT_TOP = 370;
 Rect pin_rect(int i) {
     const Rect m = start_menu_rect();
-    const int n = static_cast<int>(std::size(PINS)), step = (m.w - 64) / std::max(6, n);
-    return Rect{m.x + 32 + i * step, m.y + 130, step - 3, 96};
+    const int step = (m.w - 64) / PINS_PER_ROW;
+    return Rect{m.x + 32 + (i % PINS_PER_ROW) * step, m.y + 130 + (i / PINS_PER_ROW) * 100, step - 3, 96};
 }
 Rect recent_rect(int i) {
     const Rect m = start_menu_rect();
-    return Rect{m.x + 32 + (i % 2) * 310, m.y + 330 + (i / 2) * 74, 300, 64};
+    return Rect{m.x + 32 + (i % 2) * 310, m.y + RECENT_TOP + (i / 2) * 74, 300, 64};
 }
 Rect power_button() {
     const Rect m = start_menu_rect();
@@ -1457,6 +1814,7 @@ void start_action(int action) {
     case 6: ask_run("/app0/wine/hello32.exe"); break;
     case 7: ask_run("/app0/wine/window.exe"); break;
     case 8: start_steam(); break;
+    case 9: open_window(Kind::TaskManager); break;
     }
 }
 
@@ -1483,7 +1841,8 @@ void clamp_scroll(Window &w, int count, int visible) {
 }
 
 // Settings: a page at a time, chosen on the left (as Windows 11's)
-const char *const SETTINGS_PAGES[] = {"Personalization", "Diagnostics", "About"};
+const char *const SETTINGS_PAGES[] = {"System", "Bluetooth & devices", "Personalization", "Apps", "Diagnostics"};
+enum SettingsPage { PAGE_SYSTEM, PAGE_DEVICES, PAGE_PERSONALIZE, PAGE_APPS, PAGE_DIAGNOSTICS };
 constexpr int SET_NAV_W = 260, TILE_W = 176, TILE_H = 99, TILE_GAP = 14, TILE_LABEL = 26, SWATCH = 58;
 
 Rect settings_area(const Window &w) { return Rect{w.x + SET_NAV_W + 16, w.y + TITLE_H + 20, w.w - SET_NAV_W - 44, w.h - TITLE_H - 40}; }
@@ -1504,6 +1863,137 @@ Rect swatch_rect(const Window &w, int i) {
 }
 Rect custom_color_rect(const Window &w) { const Rect a = settings_area(w); return Rect{a.x, a.y + 244 + 2 * (SWATCH + 16) + 10, 240, 40}; }
 Rect toggle_rect(const Window &w, int i) { const Rect a = settings_area(w); return Rect{a.x, a.y + 60 + i * 92, a.w, 80}; }
+// a page's cards, one under the other (System, Bluetooth & devices)
+Rect card_at(const Window &w, int top, int h) { const Rect a = settings_area(w); return Rect{a.x, a.y + top, a.w, h}; }
+Rect mouse_card(const Window &w) { return card_at(w, 56, 92); }
+Rect keyboard_card(const Window &w) { return card_at(w, 160, 120); }
+Rect controller_card(const Window &w) { return card_at(w, 292, 120); }
+Rect speed_button(const Window &w, int i) {  // 0 slower, 1 faster: the bar between them
+    const Rect c = mouse_card(w);
+    return Rect{i ? c.x + c.w - 60 : c.x + c.w - 380, c.y + 28, 40, 36};
+}
+// Apps: a row for each program installed, with its Uninstall button
+Rect app_row(const Window &w, int i) { return card_at(w, 100 + i * 70, 62); }
+Rect app_uninstall(const Window &w, int i) { const Rect r = app_row(w, i); return Rect{r.x + r.w - 140, r.y + 13, 120, 36}; }
+
+// --- installed programs: the uninstall entries in the registry's files ------------------------
+
+struct InstalledApp {
+    std::string name, publisher, version, uninstall, icon;
+};
+
+// a value on a registry file's line ("name"="text" or "name"=str(2):"text"), unescaped
+std::string reg_string(const std::string &line, const char *name) {
+    const std::string key = std::string("\"") + name + "\"=";
+    if (line.rfind(key, 0) != 0)
+        return {};
+    size_t at = key.size();
+    if (line.compare(at, 7, "str(2):") == 0)
+        at += 7;
+    if (at >= line.size() || line[at] != '"')
+        return {};
+    std::string out;
+    for (size_t i = at + 1; i < line.size() && line[i] != '"'; i++) {
+        if (line[i] == '\\' && i + 1 < line.size())
+            i++;
+        out += line[i];
+    }
+    return out;
+}
+
+// what the programs registered (HKLM, its 32-bit view and HKCU; wineserver writes the files out
+// every half minute, so a program just installed may come a moment later)
+std::vector<InstalledApp> read_installed_apps() {
+    std::vector<InstalledApp> apps;
+    for (const char *file : {"/prefix/system.reg", "/prefix/user.reg"}) {
+        FILE *f = std::fopen((std::string(DATA_DIR) + file).c_str(), "r");
+        if (!f)
+            continue;
+        char buf[4096];
+        bool entry = false, hidden = false;
+        InstalledApp app;
+        const auto finish = [&] {
+            if (entry && !hidden && !app.name.empty() && !app.uninstall.empty())
+                apps.push_back(app);
+            entry = hidden = false;
+            app = InstalledApp{};
+        };
+        while (std::fgets(buf, sizeof buf, f)) {
+            std::string l = buf;
+            while (!l.empty() && (l.back() == '\n' || l.back() == '\r'))
+                l.pop_back();
+            if (!l.empty() && l[0] == '[') {
+                finish();
+                entry = l.find("Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\") != std::string::npos;
+                continue;
+            }
+            if (!entry)
+                continue;
+            if (l.rfind("\"DisplayName\"=", 0) == 0) app.name = reg_string(l, "DisplayName");
+            else if (l.rfind("\"Publisher\"=", 0) == 0) app.publisher = reg_string(l, "Publisher");
+            else if (l.rfind("\"DisplayVersion\"=", 0) == 0) app.version = reg_string(l, "DisplayVersion");
+            else if (l.rfind("\"UninstallString\"=", 0) == 0) app.uninstall = reg_string(l, "UninstallString");
+            else if (l.rfind("\"DisplayIcon\"=", 0) == 0) app.icon = reg_string(l, "DisplayIcon");
+            else if (l == "\"SystemComponent\"=dword:00000001") hidden = true;
+        }
+        finish();
+        std::fclose(f);
+    }
+    std::sort(apps.begin(), apps.end(), [](const InstalledApp &a, const InstalledApp &b) { return lower(a.name) < lower(b.name); });
+    apps.erase(std::unique(apps.begin(), apps.end(), [](const InstalledApp &a, const InstalledApp &b) { return a.name == b.name; }), apps.end());
+    return apps;
+}
+
+const std::vector<InstalledApp> &installed_apps() {
+    static std::vector<InstalledApp> apps;
+    static double when = -10;
+    if (now_seconds() - when > 5) {
+        apps = read_installed_apps();
+        when = now_seconds();
+    }
+    return apps;
+}
+
+// A Windows command line's words (the quotes taken out): what an uninstall entry runs
+std::vector<std::string> split_command_line(const std::string &cmd) {
+    std::vector<std::string> words;
+    std::string word;
+    bool quoted = false, any = false;
+    for (char ch : cmd) {
+        if (ch == '"') {
+            quoted = !quoted;
+            any = true;
+        } else if ((ch == ' ' || ch == '\t') && !quoted) {
+            if (any || !word.empty())
+                words.push_back(word);
+            word.clear();
+            any = false;
+        } else {
+            word += ch;
+        }
+    }
+    if (any || !word.empty())
+        words.push_back(word);
+    return words;
+}
+
+// An app's icon file: its DisplayIcon ("path,index"), else the program its uninstaller is
+std::string app_icon_path(const InstalledApp &app) {
+    std::string path = app.icon;
+    if (!path.empty() && path.front() == '"') {
+        const auto words = split_command_line(path);
+        path = words.empty() ? std::string() : words.front();
+    }
+    const size_t comma = path.rfind(',');
+    if (comma != std::string::npos && path.find_first_not_of("-0123456789", comma + 1) == std::string::npos)
+        path.resize(comma);
+    if (path.empty()) {
+        const auto words = split_command_line(app.uninstall);
+        if (!words.empty())
+            path = words.front();
+    }
+    return console_path(path);
+}
 
 // The background tiles: the photos, the styles, the user's own photo (when it's one), Browse
 struct Tile {
@@ -1563,7 +2053,18 @@ std::string settings_hit(const Window &w, float px, float py) {
     for (int i = 0; i < static_cast<int>(std::size(SETTINGS_PAGES)); i++)
         if (settings_page_rect(w, i).contains(px, py))
             return "page" + std::to_string(i);
-    if (w.page == 0) {
+    if (w.page == PAGE_DEVICES) {
+        for (int i = 0; i < 2; i++) {
+            if (speed_button(w, i).contains(px, py))
+                return "speed" + std::to_string(i);
+            if (segment(keyboard_card(w), i, 2, 170).contains(px, py))
+                return "kbmode" + std::to_string(i);
+        }
+    } else if (w.page == PAGE_APPS) {
+        for (int i = 0; i < static_cast<int>(installed_apps().size()); i++)
+            if (app_uninstall(w, i).contains(px, py))
+                return "uninstall" + std::to_string(i);
+    } else if (w.page == PAGE_PERSONALIZE) {
         for (int i = 0; i < 2; i++) {
             if (segment(theme_card(w), i, 2, 116).contains(px, py))
                 return "theme" + std::to_string(i);
@@ -1582,7 +2083,7 @@ std::string settings_hit(const Window &w, float px, float py) {
             if (custom_color_rect(w).contains(px, py))
                 return "customcolor";
         }
-    } else if (w.page == 1) {
+    } else if (w.page == PAGE_DIAGNOSTICS) {
         for (int i = 0; i < static_cast<int>(std::size(TOGGLES)); i++)
             if (toggle_rect(w, i).contains(px, py))
                 return "toggle" + std::to_string(i);
@@ -1634,6 +2135,8 @@ int edge_at(const Window &w, float px, float py) {
 
 // --- hit testing and clicks -------------------------------------------------------------------
 
+std::string taskmgr_hit(const Window &w, float px, float py);  // (below, with Task Manager)
+
 std::string hit(float px, float py) {
     if (dialog.open) {
         for (int i = 0; i < (dialog.two() ? 2 : 1); i++)
@@ -1672,7 +2175,8 @@ std::string hit(float px, float py) {
     if (py >= H - TASKBAR_H) {
         for (int i = 0; i < taskbar_count(); i++)
             if (taskbar_button(i).contains(px, py))
-                return "taskbar:" + std::to_string(i);
+                return i < TB_FIRST_PROGRAM ? "taskbar:" + std::to_string(i)
+                                            : "wtask:" + std::to_string(program_tasks[i - TB_FIRST_PROGRAM].hwnd);
         return "taskbar";
     }
     for (auto it = windows.rbegin(); it != windows.rend(); ++it) {
@@ -1704,6 +2208,11 @@ std::string hit(float px, float py) {
         }
         if (w.kind == Kind::Settings) {
             const std::string part = settings_hit(w, px, py);
+            if (!part.empty())
+                return id + part;
+        }
+        if (w.kind == Kind::TaskManager) {
+            const std::string part = taskmgr_hit(w, px, py);
             if (!part.empty())
                 return id + part;
         }
@@ -1767,6 +2276,92 @@ void settings_click(Window &w, const std::string &part) {
     } else if (part.rfind("toggle", 0) == 0) {
         toggle_flip(TOGGLES[number_after(part, "toggle")]);
         toast = Toast{"Applies the next time a program starts", now_seconds() + 3};
+    } else if (part.rfind("speed", 0) == 0) {
+        pointer_speed = std::clamp(pointer_speed + (number_after(part, "speed") ? 1 : -1), 1, 20);
+        input_set_pointer_speed(pointer_speed);
+        save_desktop();
+    } else if (part.rfind("kbmode", 0) == 0) {
+        direct_keyboard = number_after(part, "kbmode") == 1;
+        if (direct_keyboard)
+            hwkeyboard_open();
+        save_desktop();
+    } else if (part.rfind("uninstall", 0) == 0) {
+        const auto &apps = installed_apps();
+        const int i = number_after(part, "uninstall");
+        if (i < 0 || i >= static_cast<int>(apps.size()))
+            return;
+        std::vector<std::string> args = split_command_line(apps[i].uninstall);
+        const std::string error = args.empty() ? "It has no uninstaller." : launch(args);
+        if (!error.empty())
+            show_message("Uninstall " + apps[i].name, error);
+        else
+            toast = Toast{"Starting " + apps[i].name + "'s uninstaller", now_seconds() + 4};
+    }
+}
+
+// --- Task Manager: the processes (Windows programs as the PS4 runs them), and how busy it is ----
+
+constexpr int TM_NAV_W = 210, TM_ROW_H = 38;
+const char *const TM_TABS[] = {"Processes", "Performance"};
+double desktop_started = 0;  // (Performance's up time)
+
+Rect tm_tab_rect(const Window &w, int i) { return Rect{w.x + 10, w.y + TITLE_H + 20 + i * 46, TM_NAV_W - 20, 42}; }
+Rect tm_end_button(const Window &w) { return Rect{w.x + w.w - 24 - 130, w.y + TITLE_H + 18, 130, 38}; }
+int tm_rows_top(const Window &w) { return w.y + TITLE_H + 112; }
+
+// Processes' rows, top to bottom: section titles (pid 0) and processes; the desktop's own last
+struct TmRow {
+    std::string section;      // a section's title row ("" for a process)
+    const ProcessView *view = nullptr;
+    bool desktop = false;     // WinePS4's own process (the desktop and wineserver)
+};
+std::vector<TmRow> tm_rows() {
+    std::vector<TmRow> rows;
+    for (const bool own : {false, true}) {
+        int n = 0;
+        for (const ProcessView &v : process_views)
+            n += v.windows_own == own;
+        if (!n)
+            continue;
+        rows.push_back({std::string(own ? "Windows processes" : "Apps") + " (" + std::to_string(n) + ")"});
+        for (const ProcessView &v : process_views)
+            if (v.windows_own == own)
+                rows.push_back({std::string(), &v});
+    }
+    rows.push_back({"WinePS4 (1)"});
+    rows.push_back({std::string(), nullptr, true});
+    return rows;
+}
+
+std::string taskmgr_hit(const Window &w, float px, float py) {
+    for (int i = 0; i < 2; i++)
+        if (tm_tab_rect(w, i).contains(px, py))
+            return "tmtab" + std::to_string(i);
+    if (w.tab != 0)
+        return {};
+    if (tm_end_button(w).contains(px, py))
+        return "tmend";
+    const auto rows = tm_rows();
+    const int row = static_cast<int>((py - tm_rows_top(w)) / TM_ROW_H);
+    if (px > w.x + TM_NAV_W && py >= tm_rows_top(w) && row >= 0 && row < static_cast<int>(rows.size()) && rows[row].view)
+        return "tmrow" + std::to_string(rows[row].view->pid);
+    return {};
+}
+
+void taskmgr_click(Window &w, const std::string &part) {
+    if (part.rfind("tmtab", 0) == 0) {
+        w.tab = number_after(part, "tmtab");
+    } else if (part.rfind("tmrow", 0) == 0) {
+        w.chosen_pid = number_after(part, "tmrow");
+    } else if (part == "tmend") {
+        for (const ProcessView &v : process_views)
+            if (v.pid == w.chosen_pid) {
+                ps4_local_kill(v.pid);
+                toast = Toast{"Ended " + v.name, now_seconds() + 3};
+                w.chosen_pid = 0;
+                refresh_processes(true);
+                break;
+            }
     }
 }
 
@@ -1867,6 +2462,16 @@ void click(const std::string &key, bool twice, float px, float py) {
             bring_to_front(mine->id);
         return;
     }
+    if (key.rfind("wtask:", 0) == 0) {  // a Windows program's window: to the front, or minimized
+        const uint64_t hwnd = std::strtoull(key.c_str() + 6, nullptr, 10);
+        for (const WinTask &t : program_tasks)
+            if (t.hwnd == hwnd) {
+                const bool minimize = t.active && !t.minimized && !desktop_on_top;
+                winwin_command(hwnd, minimize ? 0xf020 /* SC_MINIMIZE */ : PS4_SC_ACTIVATE);
+                desktop_on_top = false;
+            }
+        return;
+    }
     if (key.rfind("icon:", 0) == 0) {
         if (twice)
             start_action(DESKTOP_ICONS[number_after(key, "icon:")].action), selected_icon.clear();
@@ -1914,7 +2519,13 @@ void click(const std::string &key, bool twice, float px, float py) {
             open_entry(*w, e);
         } else {
             w->selected = row;
+            if (!w->path.empty() && row < static_cast<int>(w->entries.size())) {  // (a drag, if it moves)
+                const Entry &e = w->entries[row];
+                dragged = DraggedFiles{true, false, px, py, {e.path}, e.name, e.icon};
+            }
         }
+    } else if (w->kind == Kind::TaskManager) {
+        taskmgr_click(*w, part);
     } else if (w->kind == Kind::Settings) {
         settings_click(*w, part);
     }
@@ -1935,6 +2546,91 @@ void draw_desktop_icons(Canvas &c) {
         c.text_centered(r.x + r.w / 2 + 1, r.y + 95, DESKTOP_ICONS[i].label, 16, rgb(0x000000, 0x90));
         c.text_centered(r.x + r.w / 2, r.y + 94, DESKTOP_ICONS[i].label, 16, rgb(0xffffff));
     }
+}
+
+// --- Windows programs' windows: the desktop's title bar and border over Windows' own ----------
+// (Windows 11's look: one colour from the title bar down the edges, rounded corners, its buttons)
+
+int hovered_wbutton = -1, pressed_wbutton = -1;  // a title bar button under the pointer, pressed
+uint64_t hovered_wbutton_hwnd = 0, pressed_wbutton_hwnd = 0;
+
+void outline_square(Canvas &c, float x, float y, float s, Color col) {
+    c.line(x, y, x + s, y, 1.2f, col);
+    c.line(x + s, y, x + s, y + s, 1.2f, col);
+    c.line(x + s, y + s, x, y + s, 1.2f, col);
+    c.line(x, y + s, x, y, 1.2f, col);
+}
+
+void draw_program_under(Canvas &c, const WinFrame &f) {
+    if (!f.caption_bottom || f.maximized)
+        return;
+    c.blit(shadow_for(f.w, f.h, f.active), f.x - SHADOW, f.y - SHADOW);
+    c.fill_round_rect(f.x - 1, f.y - 1, f.w + 2, f.h + 2, RADIUS + 1, f.active ? BORDER_ACTIVE : BORDER);
+}
+
+void draw_program_over(Canvas &c, const WinFrame &f) {
+    const int top = std::max(f.y, 0), cap_h = f.caption_bottom - top;
+    if (!f.caption_bottom || cap_h <= 0)
+        return;
+    // the title bar, then Windows' frame around the client area in its colour
+    if (f.maximized || cap_h <= RADIUS) {
+        c.fill_rect(f.x, top, f.w, cap_h, WINDOW_BG);
+    } else {
+        c.fill_round_rect(f.x, top, f.w, cap_h, RADIUS, WINDOW_BG);
+        c.fill_rect(f.x, top + RADIUS, f.w, cap_h - RADIUS, WINDOW_BG);
+    }
+    if (f.border > 0) {
+        const int bottom = f.y + f.h, cut = f.maximized ? 0 : RADIUS;
+        c.fill_rect(f.x, f.caption_bottom, f.border, bottom - f.caption_bottom - cut, WINDOW_BG);
+        c.fill_rect(f.x + f.w - f.border, f.caption_bottom, f.border, bottom - f.caption_bottom - cut, WINDOW_BG);
+        c.fill_rect(f.x + cut, bottom - f.border, f.w - 2 * cut, f.border, WINDOW_BG);
+    }
+    // its icon and title
+    const float cy = top + cap_h / 2.f;
+    const int buttons = (f.can_minimize || f.can_maximize) ? 3 : 1;
+    if (const Image *icon = process_icon(f.pid, 16))
+        c.blit(*icon, f.x + 14, static_cast<int>(cy) - 8);
+    else
+        draw_icon(c, Icon::Program, f.x + 22, cy, 16);
+    c.text(f.x + 40, static_cast<int>(cy) + 5, f.title, 13, f.active ? TEXT : TEXT3, Weight::Regular,
+           std::max(1, f.w - 48 - buttons * WIN_BUTTON_W));
+    // minimize, maximize or restore, close
+    for (int i = 0; i < buttons; i++) {
+        const WinRect b = winwin_button_rect(f, i);
+        const bool enabled = i == 0 || (i == 1 ? f.can_maximize : f.can_minimize);
+        const bool hot = enabled && hovered_wbutton == i && hovered_wbutton_hwnd == f.hwnd;
+        const bool down = hot && pressed_wbutton == i && pressed_wbutton_hwnd == f.hwnd;
+        if (hot) {
+            const Color bg = i == 0 ? (down ? rgb(0x94261b) : CLOSE_RED) : (down ? PRESSED : HOVER);
+            if (i == 0 && !f.maximized && b.h > RADIUS) {  // (in the window's rounded corner)
+                c.fill_round_rect(b.x, b.y, b.w, b.h, RADIUS, bg);
+                c.fill_rect(b.x, b.y, b.w - RADIUS, b.h, bg);
+                c.fill_rect(b.x, b.y + RADIUS, b.w, b.h - RADIUS, bg);
+            } else {
+                c.fill_rect(b.x, b.y, b.w, b.h, bg);
+            }
+        }
+        const float bx = b.x + b.w / 2.f, by = b.y + b.h / 2.f;
+        const Color col = !enabled ? DISABLED : (hot && i == 0) ? rgb(0xffffff) : f.active ? TEXT : TEXT3;
+        if (i == 0) {
+            c.line(bx - 5, by - 5, bx + 5, by + 5, 1.3f, col);
+            c.line(bx - 5, by + 5, bx + 5, by - 5, 1.3f, col);
+        } else if (i == 1 && f.maximized) {  // restore: a square with another behind it
+            outline_square(c, bx - 5, by - 3, 8, col);
+            c.line(bx - 3, by - 5, bx + 5, by - 5, 1.2f, col);
+            c.line(bx + 5, by - 5, bx + 5, by + 3, 1.2f, col);
+        } else if (i == 1) {
+            outline_square(c, bx - 5, by - 5, 10, col);
+        } else {
+            c.line(bx - 5, by, bx + 5, by, 1.3f, col);
+        }
+    }
+}
+
+// a title bar button let go over: what Windows' own would do (the program may say no to Close)
+void program_button(uint64_t hwnd, int button, bool maximized) {
+    constexpr uint32_t SC_MINIMIZE = 0xf020, SC_MAXIMIZE = 0xf030, SC_CLOSE = 0xf060, SC_RESTORE = 0xf120;
+    winwin_command(hwnd, button == 0 ? SC_CLOSE : button == 2 ? SC_MINIMIZE : maximized ? SC_RESTORE : SC_MAXIMIZE);
 }
 
 void draw_caption(Canvas &c, const Window &w, bool active) {
@@ -2019,7 +2715,11 @@ void draw_files(Canvas &c, Window &w) {
             c.fill_round_rect(list.x + 8, ry + 1, list.w - 16, ROW_H - 2, 5, SELECTED);
         else if (hover == id + "row" + std::to_string(i))
             c.fill_round_rect(list.x + 8, ry + 1, list.w - 16, ROW_H - 2, 5, HOVER);
-        draw_icon(c, e.icon, list.x + 32, ry + ROW_H / 2.f, 22);
+        const Image *icon = !e.dir && has_program_icon(lower(e.name)) ? program_icon(e.path, 24) : nullptr;
+        if (icon)
+            c.blit(*icon, list.x + 20, ry + ROW_H / 2 - 12);
+        else
+            draw_icon(c, e.icon, list.x + 32, ry + ROW_H / 2.f, 22);
         // (a cut entry is shown faded until it is pasted)
         const bool cut = clipboard.cut && std::find(clipboard.paths.begin(), clipboard.paths.end(), e.path) != clipboard.paths.end();
         if (cut)
@@ -2096,6 +2796,10 @@ void draw_switch(Canvas &c, const Rect &r, bool on) {
     c.text(sx - 40, r.y + r.h / 2 + 6, on ? "On" : "Off", 15, TEXT2);
 }
 
+void draw_system_page(Canvas &c, const Window &w);   // (below)
+void draw_devices_page(Canvas &c, const Window &w);
+void draw_apps_page(Canvas &c, const Window &w);
+
 void draw_settings(Canvas &c, Window &w) {
     const std::string id = "win:" + std::to_string(w.id) + ":";
     // the pages, on the left
@@ -2103,7 +2807,7 @@ void draw_settings(Canvas &c, Window &w) {
     draw_icon(c, Icon::User, w.x + 40, w.y + TITLE_H + 34, 36);
     c.text(w.x + 70, w.y + TITLE_H + 32, "PS4 user", 16, TEXT, Weight::Bold);
     c.text(w.x + 70, w.y + TITLE_H + 52, "WinePS4 " WINEPS4_VERSION, 13, TEXT3);
-    const Icon page_icons[] = {Icon::Brush, Icon::Settings, Icon::Info};
+    const Icon page_icons[] = {Icon::Computer, Icon::Keyboard, Icon::Brush, Icon::Apps, Icon::Settings};
     for (int i = 0; i < static_cast<int>(std::size(SETTINGS_PAGES)); i++) {
         const Rect r = settings_page_rect(w, i);
         if (w.page == i)
@@ -2117,7 +2821,13 @@ void draw_settings(Canvas &c, Window &w) {
     c.fill_rect(w.x + SET_NAV_W + 1, w.y + TITLE_H, w.w - SET_NAV_W - 2, w.h - TITLE_H - 1, CONTENT_BG);
     const Rect a = settings_area(w);
     c.text(a.x, a.y + 34, SETTINGS_PAGES[w.page], 26, TEXT, Weight::Bold);
-    if (w.page == 0) {
+    if (w.page == PAGE_SYSTEM) {
+        draw_system_page(c, w);
+    } else if (w.page == PAGE_DEVICES) {
+        draw_devices_page(c, w);
+    } else if (w.page == PAGE_APPS) {
+        draw_apps_page(c, w);
+    } else if (w.page == PAGE_PERSONALIZE) {
         const Rect tc = theme_card(w), bc = bg_card(w);
         panel(c, tc.x, tc.y, tc.w, tc.h, 6, CARD, CARD_BORDER);
         c.text(tc.x + 22, tc.y + 32, "Theme", 16, TEXT);
@@ -2163,7 +2873,7 @@ void draw_settings(Canvas &c, Window &w) {
                 c.text(cr.x + cr.w + 68, cr.y + 26, hex, 15, TEXT2);
             }
         }
-    } else if (w.page == 1) {
+    } else if (w.page == PAGE_DIAGNOSTICS) {
         for (int i = 0; i < static_cast<int>(std::size(TOGGLES)); i++) {
             const Rect r = toggle_rect(w, i);
             panel(c, r.x, r.y, r.w, r.h, 6, hover == id + "toggle" + std::to_string(i) ? CARD_HOT : CARD, CARD_BORDER);
@@ -2175,20 +2885,246 @@ void draw_settings(Canvas &c, Window &w) {
                        "The switches go to /data/WinePS4/env.txt and apply the next time a program starts. "
                        "Logs: /data/WinePS4/wine.log, crash.log, hang.log.",
                        14, TEXT3, a.w, 22);
+    }
+}
+
+// a bar of how full something is (memory, storage): used of total
+void usage_bar(Canvas &c, int x, int y, int w, double used, double total) {
+    c.fill_round_rect(x, y, w, 8, 4, TRACK);
+    if (total > 0)
+        c.fill_round_rect(x, y, std::max(8, static_cast<int>(w * std::clamp(used / total, 0.0, 1.0))), 8, 4, ACCENT);
+}
+
+std::string gib_text(double bytes) {
+    char text[32];
+    std::snprintf(text, sizeof text, "%.1f GB", bytes / (1024.0 * 1024 * 1024));
+    return text;
+}
+
+// System: this console as Windows sees it, its memory and storage, and WinePS4
+void draw_system_page(Canvas &c, const Window &w) {
+    const Rect a = settings_area(w);
+    const char *name = std::getenv("WINEPS4_HOSTNAME");
+    const bool pro = sceKernelIsNeoMode() == 1;
+    Rect r = card_at(w, 56, 96);
+    panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
+    draw_icon(c, Icon::Computer, r.x + 48, r.y + r.h / 2.f, 48);
+    c.text(r.x + 92, r.y + 38, name ? name : "PS4", 22, TEXT, Weight::Bold);
+    c.text(r.x + 92, r.y + 66, pro ? "PlayStation 4 Pro, in its own (NEO) mode: CPU at 2.1 GHz" : "PlayStation 4 (CPU at 1.6 GHz)", 14, TEXT3);
+    // memory (the direct memory programs get) and the PS4's storage (/data: the C: drive is in it)
+    struct statvfs fs{};
+    const double disk_total = statvfs("/data", &fs) == 0 ? static_cast<double>(fs.f_blocks) * fs.f_frsize : 0;
+    const double disk_free = disk_total > 0 ? static_cast<double>(fs.f_bavail) * fs.f_frsize : 0;
+    const double mem_total = static_cast<double>(memory_total), mem_used = mem_total - std::min<double>(memory_free, mem_total);
+    const struct {
+        const char *title;
+        double used, total;
+    } meters[] = {{"Memory for Windows programs", mem_used, mem_total}, {"Storage (/data)", disk_total - disk_free, disk_total}};
+    for (int i = 0; i < 2; i++) {
+        r = card_at(w, 166 + i * 100, 88);
+        panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
+        c.text(r.x + 22, r.y + 32, meters[i].title, 16, TEXT);
+        const std::string figures = gib_text(meters[i].used) + " used of " + gib_text(meters[i].total);
+        c.text(r.x + r.w - 22 - c.text_width(figures, 14), r.y + 32, figures, 14, TEXT2);
+        usage_bar(c, r.x + 22, r.y + 54, r.w - 44, meters[i].used, meters[i].total);
+    }
+    r = card_at(w, 376, 70);
+    panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
+    c.text(r.x + 22, r.y + 30, "Display", 16, TEXT);
+    c.text(r.x + 22, r.y + 52, "1920 x 1080, 60 Hz (programs' full screen is the same)", 14, TEXT3);
+    int y = a.y + 486;
+    const char *const lines[] = {
+        "WinePS4 " WINEPS4_VERSION ": Windows programs on the PS4. Wine 11.0 (64-bit and 32-bit), wineserver in the app,",
+        "each program a process of its own, Windows' memory in the PS4's direct memory.",
+        "Wine (LGPL 2.1), FFmpeg (LGPL 2.1), stb (public domain), Roboto (SIL OFL), Mozilla's root certificates (MPL 2.0).",
+        "Data: /data/WinePS4 (the Windows C: drive is /data/WinePS4/prefix/drive_c).",
+    };
+    for (const char *line : lines) {
+        c.text(a.x, y, line, 14, TEXT3, Weight::Regular, a.w);
+        y += 24;
+    }
+}
+
+// Bluetooth & devices: the mouse's speed, the keyboard's mode, the controller
+void draw_devices_page(Canvas &c, const Window &w) {
+    const std::string id = "win:" + std::to_string(w.id) + ":";
+    const Input &in = last_input;
+    Rect r = mouse_card(w);
+    panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
+    draw_icon(c, Icon::Mouse, r.x + 34, r.y + r.h / 2.f, 30);
+    c.text(r.x + 64, r.y + 38, "Mouse pointer speed", 16, TEXT);
+    c.text(r.x + 64, r.y + 62, in.mouse ? "A mouse is connected" : "No mouse connected (the touch pad and left stick move the pointer)", 14,
+           TEXT3, Weight::Regular, r.w - 470);
+    for (int i = 0; i < 2; i++) {
+        const Rect b = speed_button(w, i);
+        panel(c, b.x, b.y, b.w, b.h, 5, hover == id + "speed" + std::to_string(i) ? BUTTON_HOT : BUTTON, BUTTON_BORDER);
+        c.line(b.x + 13, b.y + b.h / 2.f, b.x + 27, b.y + b.h / 2.f, 2.f, TEXT);
+        if (i)
+            c.line(b.x + 20, b.y + 11, b.x + 20, b.y + 25, 2.f, TEXT);
+    }
+    const Rect lo = speed_button(w, 0), hi = speed_button(w, 1);
+    const int bx = lo.x + lo.w + 16, bw = hi.x - 16 - bx;
+    c.fill_round_rect(bx, lo.y + 15, bw, 6, 3, TRACK);
+    c.fill_round_rect(bx, lo.y + 15, bw * pointer_speed / 20, 6, 3, ACCENT);
+    c.fill_circle(bx + bw * pointer_speed / 20.f, lo.y + 18, 9, ACCENT);
+    c.text_centered(bx + bw / 2, lo.y - 6, std::to_string(pointer_speed), 13, TEXT2);
+
+    r = keyboard_card(w);
+    panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
+    draw_icon(c, Icon::Keyboard, r.x + 34, r.y + 40, 30);
+    c.text(r.x + 64, r.y + 38, "Keyboard", 16, TEXT);
+    const char *const modes[] = {"PS4 + Keyboard", "Keyboard"};
+    draw_segments(c, r, modes, 2, 170, direct_keyboard ? 1 : 0, id + "kbmode");
+    c.text_wrapped(r.x + 64, r.y + 70,
+                   direct_keyboard ? "A USB keyboard plugged into the PS4 types straight into programs; ENG shows on the taskbar while it does."
+                                   : "Triangle over a program opens the PS4's keyboard, which a USB keyboard plugged in types into too.",
+                   14, TEXT3, r.w - 88, 20);
+
+    r = controller_card(w);
+    panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
+    draw_icon(c, Icon::Pad, r.x + 34, r.y + 40, 32);
+    c.text(r.x + 64, r.y + 38, in.pad ? "Controller connected" : "No controller connected", 16, TEXT);
+    c.text_wrapped(r.x + 64, r.y + 64,
+                   "Left stick or touch pad: pointer. Cross: click, Square: right-click, Triangle: keyboard, "
+                   "OPTIONS: Start, L1/R1: windows, Circle: back, right stick: scroll.",
+                   14, TEXT3, r.w - 88, 20);
+}
+
+// Apps: the Windows programs installed, each with its Uninstall
+void draw_apps_page(Canvas &c, const Window &w) {
+    const std::string id = "win:" + std::to_string(w.id) + ":";
+    const Rect a = settings_area(w);
+    const auto &apps = installed_apps();
+    c.text(a.x, a.y + 76, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
+                                       : "Installed apps (" + std::to_string(apps.size()) + ")",
+           15, TEXT2);
+    for (int i = 0; i < static_cast<int>(apps.size()); i++) {
+        const Rect r = app_row(w, i);
+        if (r.y + r.h > w.y + w.h - 10)
+            break;
+        panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
+        if (const Image *icon = program_icon(app_icon_path(apps[i]), 32))
+            c.blit(*icon, r.x + 18, r.y + r.h / 2 - 16);
+        else
+            draw_icon(c, Icon::Program, r.x + 34, r.y + r.h / 2.f, 32);
+        c.text(r.x + 66, r.y + 27, apps[i].name, 16, TEXT, Weight::Regular, r.w - 230);
+        std::string detail = apps[i].publisher;
+        if (!apps[i].version.empty())
+            detail += (detail.empty() ? "" : "  |  ") + apps[i].version;
+        c.text(r.x + 66, r.y + 49, detail, 13, TEXT3, Weight::Regular, r.w - 230);
+        const Rect b = app_uninstall(w, i);
+        panel(c, b.x, b.y, b.w, b.h, 5, hover == id + "uninstall" + std::to_string(i) ? BUTTON_HOT : BUTTON, BUTTON_BORDER);
+        c.text_centered(b.x + b.w / 2, b.y + 24, "Uninstall", 14, TEXT);
+    }
+}
+
+std::string mib_text(unsigned long long bytes) {
+    char text[32];
+    std::snprintf(text, sizeof text, "%.1f MB", bytes / (1024.0 * 1024));
+    return text;
+}
+
+// a graph of the last minute (0-100 %), as Task Manager's Performance draws it
+void draw_graph(Canvas &c, const Rect &r, const float *values, int n, Color line) {
+    panel(c, r.x, r.y, r.w, r.h, 4, CONTROL, BORDER);
+    for (int g = 1; g < 4; g++)
+        c.fill_rect(r.x + 1, r.y + r.h * g / 4, r.w - 2, 1, LINE);
+    const Color fill = Color{line.r, line.g, line.b, 0x30};
+    for (int i = 0; i < n - 1; i++) {
+        const float x0 = r.x + 2 + (r.w - 4) * i / float(n - 1), x1 = r.x + 2 + (r.w - 4) * (i + 1) / float(n - 1);
+        const float y0 = r.y + r.h - 2 - (r.h - 4) * values[i] / 100.f, y1 = r.y + r.h - 2 - (r.h - 4) * values[i + 1] / 100.f;
+        const int fx = static_cast<int>(x0), fy = static_cast<int>(std::min(y0, y1));
+        c.fill_rect(fx, fy, std::max(1, static_cast<int>(x1) - fx), r.y + r.h - 2 - fy, fill);
+        c.line(x0, y0, x1, y1, 2.f, line);
+    }
+}
+
+void draw_taskmgr(Canvas &c, Window &w) {
+    const std::string id = "win:" + std::to_string(w.id) + ":";
+    // the tabs, on the left
+    c.fill_rect(w.x + 1, w.y + TITLE_H, TM_NAV_W, w.h - TITLE_H - 1, WINDOW_BG);
+    const Icon tab_icons[] = {Icon::Apps, Icon::Gauge};
+    for (int i = 0; i < 2; i++) {
+        const Rect r = tm_tab_rect(w, i);
+        if (w.tab == i)
+            c.fill_round_rect(r.x, r.y, r.w, r.h, 5, SELECTED), c.fill_round_rect(r.x, r.y + 11, 3, r.h - 22, 2, ACCENT);
+        else if (hover == id + "tmtab" + std::to_string(i))
+            c.fill_round_rect(r.x, r.y, r.w, r.h, 5, HOVER);
+        draw_icon(c, tab_icons[i], r.x + 24, r.y + r.h / 2.f, 22);
+        c.text(r.x + 46, r.y + 27, TM_TABS[i], 15, TEXT);
+    }
+    const int x0 = w.x + TM_NAV_W + 1, cw = w.w - TM_NAV_W - 2;
+    c.fill_rect(x0, w.y + TITLE_H, cw, w.h - TITLE_H - 1, CONTENT_BG);
+    c.text(x0 + 24, w.y + TITLE_H + 46, TM_TABS[w.tab], 22, TEXT, Weight::Bold);
+    if (w.tab == 0) {
+        // End task, for the process chosen
+        const bool can_end = std::any_of(process_views.begin(), process_views.end(), [&](const ProcessView &v) { return v.pid == w.chosen_pid; });
+        const Rect e = tm_end_button(w);
+        panel(c, e.x, e.y, e.w, e.h, 5, can_end && hover == id + "tmend" ? BUTTON_HOT : BUTTON, BUTTON_BORDER);
+        c.text_centered(e.x + e.w / 2, e.y + 25, "End task", 15, can_end ? TEXT : DISABLED);
+        const int name_x = x0 + 24, pid_x = x0 + cw - 330, cpu_x = x0 + cw - 220, mem_x = x0 + cw - 120;
+        const int hy = tm_rows_top(w) - 14;
+        c.text(name_x, hy, "Name", 14, TEXT2);
+        c.text(pid_x, hy, "PID", 14, TEXT2);
+        c.text(cpu_x, hy, "CPU", 14, TEXT2);
+        c.text(mem_x, hy, "Memory", 14, TEXT2);
+        c.fill_rect(x0 + 12, hy + 8, cw - 24, 1, BORDER);
+        const auto rows = tm_rows();
+        for (int i = 0; i < static_cast<int>(rows.size()); i++) {
+            const int ry = tm_rows_top(w) + i * TM_ROW_H;
+            if (ry + TM_ROW_H > w.y + w.h - 8)
+                break;
+            const TmRow &row = rows[i];
+            if (!row.section.empty()) {
+                c.text(name_x, ry + 26, row.section, 14, TEXT2, Weight::Bold);
+                continue;
+            }
+            const int pid = row.view ? row.view->pid : static_cast<int>(getpid());
+            if (row.view && w.chosen_pid == pid)
+                c.fill_round_rect(x0 + 8, ry + 1, cw - 16, TM_ROW_H - 2, 5, SELECTED);
+            else if (row.view && hover == id + "tmrow" + std::to_string(pid))
+                c.fill_round_rect(x0 + 8, ry + 1, cw - 16, TM_ROW_H - 2, 5, HOVER);
+            const Image *icon = row.view ? program_icon(console_path(row.view->image), 16) : nullptr;
+            if (icon)
+                c.blit(*icon, name_x + 4, ry + TM_ROW_H / 2 - 8);
+            else
+                draw_icon(c, row.desktop ? Icon::Logo : row.view->windows_own ? Icon::Settings : Icon::Program, name_x + 12, ry + TM_ROW_H / 2.f, 18);
+            const std::string name = row.desktop ? "Desktop and Windows server" : row.view->name;
+            const float cpu = row.desktop ? desktop_cpu_percent : row.view->cpu_percent;
+            const unsigned long long memory = row.desktop ? ps4_vm_backed_bytes() : row.view->memory;
+            char cpu_text[16];
+            std::snprintf(cpu_text, sizeof cpu_text, "%.1f %%", cpu);
+            c.text(name_x + 32, ry + 25, name, 15, TEXT, Weight::Regular, pid_x - name_x - 40);
+            c.text(pid_x, ry + 25, std::to_string(pid), 15, TEXT2);
+            c.text(cpu_x, ry + 25, cpu_text, 15, cpu >= 50 ? ACCENT : TEXT2);
+            c.text(mem_x, ry + 25, mib_text(memory), 15, TEXT2);
+        }
     } else {
-        int y = a.y + 80;
-        const char *const lines[] = {
-            "WinePS4 " WINEPS4_VERSION " runs Windows programs on the PS4: Wine 11.0 with its 64-bit and 32-bit",
-            "(WoW64) sides, wineserver as a thread of the app, Windows' memory in the PS4's direct memory.",
-            "",
-            "Wine (LGPL 2.1), FFmpeg (LGPL 2.1), stb_image and stb_truetype (public domain),",
-            "Roboto (SIL Open Font License). The default photos are WinePS4's own.",
-            "",
-            "Data: /data/WinePS4 (the Windows C: drive is /data/WinePS4/prefix/drive_c).",
+        // the CPU and memory over the last minute, then the figures
+        const int gw = (cw - 72) / 2, gy = w.y + TITLE_H + 110, gh = 220;
+        char now[64];
+        std::snprintf(now, sizeof now, "CPU  %.0f %%", cpu_history[59]);
+        c.text(x0 + 24, gy - 14, now, 16, TEXT, Weight::Bold);
+        draw_graph(c, Rect{x0 + 24, gy, gw, gh}, cpu_history, 60, ACCENT);
+        const double used = memory_total - std::min(memory_free, memory_total);
+        c.text(x0 + 48 + gw, gy - 14, "Memory  " + gib_text(used) + " of " + gib_text(memory_total), 16, TEXT, Weight::Bold);
+        draw_graph(c, Rect{x0 + 48 + gw, gy, gw, gh}, memory_history, 60, rgb(0xb36ae2));
+        c.text(x0 + 24, gy + gh + 22, "60 seconds", 13, TEXT3);
+        const long up = static_cast<long>(now_seconds() - desktop_started);
+        char up_text[32];
+        std::snprintf(up_text, sizeof up_text, "%ld:%02ld:%02ld", up / 3600, up / 60 % 60, up % 60);
+        const bool pro = sceKernelIsNeoMode() == 1;
+        const std::string lines[][2] = {
+            {"Windows processes", std::to_string(process_views.size()) + " of 7 (the most a PS4 app runs)"},
+            {"Cores", std::to_string(APP_CORES) + " for apps (AMD Jaguar)"},
+            {"CPU speed", pro ? "2.13 GHz (PS4 Pro, NEO mode)" : "1.6 GHz"},
+            {"Up time", up_text},
         };
-        for (const char *line : lines) {
-            c.text(a.x, y, line, 15, TEXT2, Weight::Regular, a.w);
-            y += 28;
+        int y = gy + gh + 64;
+        for (const auto &line : lines) {
+            c.text(x0 + 24, y, line[0], 14, TEXT3);
+            c.text(x0 + 220, y, line[1], 15, TEXT);
+            y += 32;
         }
     }
 }
@@ -2201,6 +3137,7 @@ void draw_window(Canvas &c, Window &w, bool active) {
     case Kind::Files: draw_files(c, w); break;
     case Kind::Terminal: draw_terminal(c, w); break;
     case Kind::Settings: draw_settings(c, w); break;
+    case Kind::TaskManager: draw_taskmgr(c, w); break;
     }
     draw_caption(c, w, active);
 }
@@ -2211,6 +3148,22 @@ void draw_taskbar(Canvas &c) {
     Window *top = focused();
     for (int i = 0; i < taskbar_count(); i++) {
         const Rect r = taskbar_button(i);
+        if (i >= TB_FIRST_PROGRAM) {  // a Windows program's window: its program's icon
+            const WinTask &t = program_tasks[i - TB_FIRST_PROGRAM];
+            const bool active = t.active && !t.minimized;
+            if (active)
+                c.fill_round_rect(r.x + 2, r.y, r.w - 4, r.h, 6, TASK_ACTIVE);
+            else if (hover == "wtask:" + std::to_string(t.hwnd))
+                c.fill_round_rect(r.x + 2, r.y, r.w - 4, r.h, 6, TASK_HOVER);
+            const float cx = r.x + r.w / 2.f, cy = r.y + r.h / 2.f;
+            if (const Image *icon = process_icon(t.pid, 24))
+                c.blit(*icon, static_cast<int>(cx) - 12, static_cast<int>(cy) - 12);
+            else
+                draw_icon(c, Icon::Program, cx, cy, 26);
+            const int lw = active ? 16 : 6;
+            c.fill_round_rect(static_cast<int>(cx) - lw / 2, r.y + r.h - 4, lw, 3, 2, active ? ACCENT : TEXT3);
+            continue;
+        }
         const std::string key = "taskbar:" + std::to_string(i);
         const bool active = (i == 0 && popup != Popup::None) ||
                             (i >= 2 && top && top->kind == TASKBAR_APPS[i - 2]);
@@ -2236,6 +3189,11 @@ void draw_taskbar(Canvas &c) {
     // the tray: what controls the desktop, then the time
     const Input &in = last_input;
     int tx = W - 170;
+    if (direct_keyboard && hwkeyboard_connected()) {  // a USB keyboard types straight into programs
+        draw_icon(c, Icon::Keyboard, tx, H - TASKBAR_H / 2.f, 24);
+        c.text(tx + 16, H - TASKBAR_H / 2 + 5, "ENG", 13, TEXT2, Weight::Bold);
+        tx -= 40;
+    }
     if (in.mouse) {
         draw_icon(c, Icon::Mouse, tx, H - TASKBAR_H / 2.f, 22);
         tx -= 34;
@@ -2270,15 +3228,18 @@ void draw_start_menu(Canvas &c) {
         draw_icon(c, PINS[i].icon, r.x + r.w / 2.f, r.y + 36, 40);
         c.text_centered(r.x + r.w / 2, r.y + 82, PINS[i].label, 14, TEXT);
     }
-    c.text(m.x + 52, m.y + 312, "Recent programs", 16, TEXT, Weight::Bold);
+    c.text(m.x + 52, m.y + RECENT_TOP - 18, "Recent programs", 16, TEXT, Weight::Bold);
     const auto recent = recent_programs();
     if (recent.empty())
-        c.text(m.x + 52, m.y + 350, "Programs you run show here.", 14, TEXT3);
+        c.text(m.x + 52, m.y + RECENT_TOP + 20, "Programs you run show here.", 14, TEXT3);
     for (int i = 0; i < static_cast<int>(recent.size()); i++) {
         const Rect r = recent_rect(i);
         if (hover == "recent:" + std::to_string(i))
             c.fill_round_rect(r.x, r.y, r.w, r.h, 6, HOVER);
-        draw_icon(c, Icon::Program, r.x + 32, r.y + r.h / 2.f, 32);
+        if (const Image *icon = program_icon(recent[i], 32))
+            c.blit(*icon, r.x + 16, r.y + r.h / 2 - 16);
+        else
+            draw_icon(c, Icon::Program, r.x + 32, r.y + r.h / 2.f, 32);
         c.text(r.x + 60, r.y + 28, base_name(recent[i]), 15, TEXT, Weight::Regular, r.w - 70);
         c.text(r.x + 60, r.y + 50, recent[i], 13, TEXT3, Weight::Regular, r.w - 70);
     }
@@ -2394,13 +3355,24 @@ void draw_scene(Canvas &c) {
     std::memcpy(c.data(), wallpaper.data(), wallpaper.size() * 4);
     draw_desktop_icons(c);
     Window *top = focused();
-    for (Window &w : windows)
-        if (!w.minimized)
-            draw_window(c, w, &w == top && popup == Popup::None);
-    winwin_draw(c);  // Windows programs' windows: over the desktop's own
+    const auto desktop_windows = [&] {
+        for (Window &w : windows)
+            if (!w.minimized)
+                draw_window(c, w, &w == top && popup == Popup::None);
+    };
+    // Windows programs' windows with the desktop's title bars: over the desktop's own, or under them
+    // when one of those was clicked last; a full-screen one (a game's) over the taskbar too
+    if (!desktop_on_top)
+        desktop_windows();
+    winwin_draw(c, WinLayer::Normal, draw_program_under, draw_program_over);
+    if (desktop_on_top)
+        desktop_windows();
     draw_taskbar(c);
+    winwin_draw(c, WinLayer::FullScreen, [](Canvas &, const WinFrame &) {}, [](Canvas &, const WinFrame &) {});
     if (popup != Popup::None)
         draw_start_menu(c);
+    if (dragged.active)
+        draw_dragged(c);
     draw_job(c);
     if (!job_status().running)
         draw_toast(c);
@@ -2561,6 +3533,9 @@ extern "C" void ps4_shell_run(const char *) {
     input_open();
     winwin_start();
     load_desktop();
+    desktop_started = now_seconds();
+    if (direct_keyboard)
+        hwkeyboard_open();
     const Image pointer = make_pointer();
     const Image resize_ew = make_resize_pointer(1, 0), resize_ns = make_resize_pointer(0, 1);
     const Image resize_nwse = make_resize_pointer(1, 1), resize_nesw = make_resize_pointer(1, -1);
@@ -2640,8 +3615,70 @@ extern "C" void ps4_shell_run(const char *) {
         // it's let go. Triangle opens the system keyboard for it.
         if (winwin_changed())
             dirty = true;
-        const bool desktop_busy = menu.open || dialog.open || popup != Popup::None || dragging || resizing;
-        const uint64_t over_wine = desktop_busy ? 0 : winwin_at(in.x, in.y);
+        program_tasks = winwin_tasks();
+        if (icons_changed.exchange(false))
+            dirty = true;
+        // the programs' figures once a second (their taskbar icons; Task Manager shows them changing)
+        const double figures_before = processes_when;
+        refresh_processes();
+        if (processes_when != figures_before &&
+            std::any_of(windows.begin(), windows.end(), [](const Window &w) { return w.kind == Kind::TaskManager && !w.minimized; }))
+            dirty = true;
+
+        // a USB keyboard (Settings > Bluetooth & devices): straight to the program with the focus; its
+        // Windows key opens Start, Ctrl+Shift+Esc Task Manager
+        if (direct_keyboard) {
+            static bool ctrl = false, shift = false;
+            for (const KeyEvent &k : hwkeyboard_poll(dt)) {
+                if (k.vkey == 0xa2 || k.vkey == 0xa3 || k.vkey == 0x11) ctrl = k.down;
+                if (k.vkey == 0xa0 || k.vkey == 0xa1 || k.vkey == 0x10) shift = k.down;
+                if (k.vkey == 0x5b || k.vkey == 0x5c) {  // VK_LWIN, VK_RWIN
+                    if (k.down && live)
+                        popup = popup == Popup::None ? Popup::Start : Popup::None, dirty = true;
+                    continue;
+                }
+                if (k.vkey == 0x1b && ctrl && shift) {  // VK_ESCAPE
+                    if (k.down && live)
+                        open_window(Kind::TaskManager), dirty = true;
+                    continue;
+                }
+                winwin_key(k.vkey, k.down, k.scan, k.extended);
+            }
+        }
+
+        // a program window's title bar buttons (the desktop's, over Windows' own): pressed here, done
+        // when let go over the same one
+        // (a desktop window over the programs' takes the pointer where it is)
+        const bool over_desktop_window = desktop_on_top && hit(in.x, in.y).rfind("win:", 0) == 0;
+        const bool desktop_busy = menu.open || dialog.open || popup != Popup::None || dragging || resizing || dragged.active ||
+                                  over_desktop_window;
+        uint64_t button_hwnd = 0;
+        bool button_maximized = false;
+        const int button = desktop_busy || wine_buttons ? -1 : winwin_button_at(in.x, in.y, &button_hwnd, &button_maximized);
+        if (button != hovered_wbutton || button_hwnd != hovered_wbutton_hwnd) {
+            hovered_wbutton = button, hovered_wbutton_hwnd = button_hwnd;
+            dirty = true;
+        }
+        if (live && button >= 0 && (in.pressed & BTN_CLICK)) {
+            pressed_wbutton = button, pressed_wbutton_hwnd = button_hwnd;
+            in.pressed &= ~BTN_CLICK;
+            dirty = true;
+        }
+        if (pressed_wbutton >= 0 && (in.released & BTN_CLICK)) {
+            if (button == pressed_wbutton && button_hwnd == pressed_wbutton_hwnd)
+                program_button(button_hwnd, button, button_maximized);
+            pressed_wbutton = -1;
+            in.released &= ~BTN_CLICK;
+            dirty = true;
+        }
+        bool full_screen = false;
+        uint64_t over_wine = desktop_busy ? 0 : winwin_at(in.x, in.y, &full_screen);
+        if (over_wine && !full_screen && in.y >= H - TASKBAR_H)
+            over_wine = 0;  // (the taskbar is over it)
+        if (button >= 0 || pressed_wbutton >= 0)
+            over_wine = 0;
+        if (live && (over_wine || button >= 0) && (in.pressed & (BTN_CLICK | BTN_MENU)))
+            desktop_on_top = false;  // (a program's window clicked: its windows over the desktop's again)
         if (live && (over_wine || wine_buttons)) {
             constexpr uint32_t MOVE = 0x0001, LEFTDOWN = 0x0002, LEFTUP = 0x0004, RIGHTDOWN = 0x0008,
                                RIGHTUP = 0x0010, WHEEL = 0x0800;
@@ -2668,7 +3705,7 @@ extern "C" void ps4_shell_run(const char *) {
             in.released &= ~(BTN_CLICK | BTN_MENU);
             in.scroll = 0;
         }
-        const std::string now_hover = over_wine ? std::string() : hit(in.x, in.y);
+        const std::string now_hover = over_wine || button >= 0 || pressed_wbutton >= 0 ? std::string() : hit(in.x, in.y);
         if (now_hover != hover) {
             hover = now_hover;
             dirty = true;
@@ -2693,6 +3730,21 @@ extern "C" void ps4_shell_run(const char *) {
                 open_menu(target, in.x, in.y);
             }
             dirty = true;
+        }
+        // files dragged in Files: once the pointer has gone far enough, then dropped where it's let go
+        if (dragged.pending && (in.held & BTN_CLICK) && !dragged.active &&
+            std::hypot(in.x - dragged.x0, in.y - dragged.y0) > 14) {
+            dragged.active = true;
+            dirty = true;
+        }
+        if (dragged.active && in.moved)
+            dirty = true;
+        if (in.released & BTN_CLICK) {
+            if (dragged.active && live)
+                drop_dragged(hit(in.x, in.y));
+            if (dragged.pending || dragged.active)
+                dirty = true;
+            dragged = DraggedFiles{};
         }
         if (in.released & BTN_CLICK)
             dragging = 0, resizing = 0;
