@@ -189,3 +189,22 @@ v00.53:
   servers from sceNetCtl, A queries through getaddrinfo as DNS messages), so GetAdaptersAddresses
   succeeds. NetCtl is loaded first (ps4-kit: a call into an unloaded module ends the app); not in
   processes outside the 7.
+
+## Steam's login: ECDSA certificates (v00.54, 2026-11-05)
+
+v00.53 ran without a crash and Steam showed its login page (logs/v00.53): the UI's websocket to
+steam.exe opened (nsiproxy's TCP table), GetAdaptersAddresses no longer failed (routes, DNS servers
+192.168.0.1 from sceNetCtl), the outside pool started at 656 MiB with the desktop's heap in direct
+memory. The login failed: Steam's connectivity test and its server list (HTTPS) worked, but every
+connection to its login servers (WebSocket CMs, cmp*.steamserver.net) failed within a second, and
+the console log said why: "Crypto API failed certificate check, error flags 0x00000008"
+(CERT_TRUST_IS_NOT_SIGNATURE_VALID). Their chain is Let's Encrypt's ECDSA one (leaf P-256, YE1 and
+Root YE P-384, ecdsa-with-SHA384, up to ISRG Root X2 and X1, both in the package's roots). Wine's
+crypt32 checks RSA signatures itself (rsaenh) but ECDSA ones through bcrypt's Unix half, which is
+GnuTLS's and not built: "key_asymmetric_create no encryption support".
+
+v00.54: bcrypt's Unix half for the PS4 on the sysroot's OpenSSL 3.5 libcrypto (dlls/bcrypt/ps4.c,
+Wine patch): RSA and ECC public keys imported, ECDSA and RSA (PKCS #1, PSS) signatures verified, keys
+duplicated and destroyed, AES CBC/ECB/CFB8/GCM (GCM's tag on decryption from the plaintext encrypted
+again). Key generation, private keys, signing, RSA encryption, export and key agreement return
+STATUS_NOT_IMPLEMENTED. The eboot grows from 13 to 18.7 MB.

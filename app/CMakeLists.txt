@@ -136,6 +136,9 @@ wine_module_unixlib(nsiproxy nsiproxy.sys SOURCES icmp_echo.c ip.c ndis.c nsi.c 
 # (dnsapi: the PS4's own Unix half, dlls/dnsapi/ps4.c (no libresolv): the DNS servers from the
 # PS4's network settings, addresses through its resolver; GetAdaptersAddresses fails without them)
 wine_module_unixlib(dnsapi dnsapi SOURCES ps4.c)
+# (bcrypt: the PS4's own Unix half, dlls/bcrypt/ps4.c, on the sysroot's OpenSSL in place of GnuTLS:
+# crypt32 checks ECDSA signatures through it; Steam's servers' certificates failed without it)
+wine_module_unixlib(bcrypt bcrypt SOURCES ps4.c INCLUDES ${PS4_SYSROOT}/include)
 wine_module_unixlib(mountmgr mountmgr.sys SOURCES cred.c dbus.c diskarb.c unixlib.c)
 # (crypt32: the root certificates, from the package's list (Wine patch); no GnuTLS: no PFX import)
 wine_module_unixlib(crypt32 crypt32 SOURCES unixlib.c DEFS _CRYPT32_)
@@ -145,7 +148,7 @@ wine_module_unixlib(opengl32 opengl32 SOURCES unix_thunks.c unix_wgl.c DEFS _OPE
 # (dwrite: DirectWrite's fonts through FreeType; Chromium (Steam's web view, Chrome) draws every
 # letter with it)
 wine_module_unixlib(dwrite dwrite SOURCES freetype.c INCLUDES ${WINEPS4_FREETYPE}/include)
-set(MODULE_UNIXLIBS ws2_32 nsiproxy dnsapi mountmgr crypt32 opengl32 dwrite)
+set(MODULE_UNIXLIBS ws2_32 nsiproxy dnsapi bcrypt mountmgr crypt32 opengl32 dwrite)
 set(MODULE_UNIXLIB_OBJECTS)
 set(MODULE_UNIXLIB_TARGETS)
 foreach(m ${MODULE_UNIXLIBS})
@@ -171,7 +174,7 @@ add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wi
     $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} ${MODULE_UNIXLIB_OBJECTS} $<TARGET_OBJECTS:wine_shell>)
 add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one ${MODULE_UNIXLIB_TARGETS})
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include ${WINEPS4_FREETYPE}/include)
-target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a)
+target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a ${PS4_SYSROOT}/lib/libcrypto.a)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
 target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceImeDialog SceCommonDialog SceNetCtl)
