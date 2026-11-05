@@ -148,7 +148,10 @@ wine_module_unixlib(opengl32 opengl32 SOURCES unix_thunks.c unix_wgl.c DEFS _OPE
 # (dwrite: DirectWrite's fonts through FreeType; Chromium (Steam's web view, Chrome) draws every
 # letter with it)
 wine_module_unixlib(dwrite dwrite SOURCES freetype.c INCLUDES ${WINEPS4_FREETYPE}/include)
-set(MODULE_UNIXLIBS ws2_32 nsiproxy dnsapi bcrypt mountmgr crypt32 opengl32 dwrite)
+# (winevulkan: programs' Vulkan, and DXVK's Direct3D, on the PS4's GPU: win32u's vulkan.c loads
+# libvulkan.so.1 from the built-in table, RADV and ps4-kit's window system, linked in below)
+wine_module_unixlib(winevulkan winevulkan SOURCES vulkan.c vulkan_thunks.c)
+set(MODULE_UNIXLIBS ws2_32 nsiproxy dnsapi bcrypt mountmgr crypt32 opengl32 dwrite winevulkan)
 set(MODULE_UNIXLIB_OBJECTS)
 set(MODULE_UNIXLIB_TARGETS)
 foreach(m ${MODULE_UNIXLIBS})
@@ -181,3 +184,6 @@ target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FFMPEG}/lib/libavformat.a ${WINEPS4_FFMPEG}/lib/libavcodec.a
     ${WINEPS4_FFMPEG}/lib/libswscale.a ${WINEPS4_FFMPEG}/lib/libavutil.a)
 ps4_kit_app(wineps4)
+# RADV (Mesa's Vulkan driver on GNM) and ps4-kit's window system, in its window mode for programs'
+# windows (wineps4.drv's vulkan.c)
+ps4_kit_link_mesa(wineps4)

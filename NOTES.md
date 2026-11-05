@@ -313,3 +313,34 @@ v00.57:
   IPV6_TCLASS, IP_TTL as IPV6_UNICAST_HOPS, the rest taken as done; options the kernel still
   refuses are logged, each once (Settings > Diagnostics > Socket option log, WINEPS4_SOCKET_LOG).
 - GlobalMemoryStatusEx's available memory leaves out the 256 MiB kept for the app.
+
+## 3D games: Vulkan on the PS4's GPU, Direct3D through DXVK (v00.58, 2026-11-05)
+
+Wine had no Vulkan here ("Wine was built without Vulkan support") and wined3d's OpenGL no pixel
+format, so no Direct3D device could be made (Crash Bandicoot, Steam's own D3D check). ps4-kit has
+the pieces the TTT2 and SSBU ports drew with: RADV (Mesa's Vulkan driver on GNM, ps4_kit_link_mesa)
+and gpu/ps4_vk_wsi.cpp (a headless surface and swapchains flipped on VideoOut). A program's process
+has no VideoOut (the desktop's), so the WSI got a window mode (ps4-kit 195da48: set_window_present):
+swapchains of the size asked for, linear images in host-visible memory the CPU reads (cached where
+there is such a type), and each present waits for the GPU and hands the frame to a hook.
+
+v00.58:
+- RADV and the kit's WSI linked into the app; port/include/config.h has SONAME_LIBVULKAN, and
+  port/ps4_unixlibs.c gives win32u's vulkan.c a built-in libvulkan.so.1 (vkGetInstanceProcAddr and
+  vkGetDeviceProcAddr through the kit's, which keeps its swapchain and drops binary semaphores from
+  submits); winevulkan's Unix half is a module of the app (app/CMakeLists.txt).
+- wineps4.drv's vulkan.c (Wine 11's driver interface: pVulkanInit): a window's surface is the kit's
+  headless one (VK_KHR_win32_surface mapped to VK_EXT_headless_surface), and the hook sends each
+  frame to the desktop as PIXELS of the top-level window at the client area's place (one write when
+  the rows are packed; PS4_PIXELS_RGBA when the swapchain is R8G8B8A8). Vulkan log (Settings >
+  Diagnostics, WINEPS4_VULKAN_LOG): the WSI's lines, frames a second among them, in wine.log.
+- win32u's D3DKMT makes no Vulkan instance (Wine patch): its adapters' and display devices' GPU
+  lookup would open the GPU in every process that asks (explorer, Steam).
+- DXVK 3.1.1 (the official release, the version TTT2 ran on this RADV) in the package (/app0/wine/
+  dxvk), copied into the prefix's system32 and syswow64 at start (install_dxvk); user.reg defaults
+  (add_user_defaults, the font names' code made general): d3d8, d3d9, d3d10core, d3d11, dxgi native
+  first; steam.exe and steamwebhelper.exe keep Wine's. Settings > Apps > 3D games on the PS4's GPU
+  (WINEPS4_DXVK=0: WINEDLLOVERRIDES gives programs Wine's own again). RADV's shader cache in
+  /data/WinePS4/shadercache (MESA_SHADER_CACHE_DIR).
+- A frame costs a GPU wait and a copy through the desktop's socket (8 MB at 1080p): a first path,
+  to see games at all; sharing the frames' memory with the desktop is the next one.

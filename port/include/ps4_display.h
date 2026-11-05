@@ -42,6 +42,9 @@ enum ps4_display_msg
 #define PS4_WINDOW_CAN_MINIMIZE 0x080
 #define PS4_WINDOW_CAN_MAXIMIZE 0x100
 
+/* PIXELS: the pixels are R8G8B8A8 (a Vulkan frame), not Windows' B8G8R8X8 */
+#define PS4_PIXELS_RGBA         0x001
+
 /* TEXT: a caret shown or moved in the window (Windows' edit boxes: left..bottom is it on the screen), or
  * the field Chromium's text services focus (msctf: none, a text field or a password field) */
 #define PS4_TEXT_NONE     0x0

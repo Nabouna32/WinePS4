@@ -55,6 +55,8 @@
 /* FreeType is linked into the app; win32u "dlopens" it from the built-in table (ps4_unixlibs.c) */
 #define HAVE_FT2BUILD_H 1
 #define SONAME_LIBFREETYPE "libfreetype.so.6"
+/* Vulkan too: RADV and ps4-kit's window system, linked into the app (ps4_unixlibs.c's libvulkan.so.1) */
+#define SONAME_LIBVULKAN "libvulkan.so.1"
 
 #define PACKAGE_BUGREPORT "wine-devel@winehq.org"
 #define PACKAGE_NAME "Wine"

@@ -7,4 +7,5 @@ SOURCES = \
 	dllmain.c \
 	display.c \
 	ps4drv_main.c \
+	vulkan.c \
 	window.c

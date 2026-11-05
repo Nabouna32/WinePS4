@@ -39,8 +39,13 @@ extern LRESULT PS4DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const
 extern BOOL PS4DRV_SetIMECompositionRect( HWND hwnd, RECT rect );
 extern void PS4DRV_NotifyIMEStatus( HWND hwnd, UINT status );
 
+/* vulkan.c */
+struct vulkan_driver_funcs;
+extern UINT PS4DRV_VulkanInit( UINT version, void *vulkan_handle, const struct vulkan_driver_funcs **driver_funcs );
+
 /* ps4drv_main.c: the desktop's socket */
 extern BOOL ps4drv_send( const struct ps4_display_header *header, const void *data, UINT data_size );
 extern BOOL ps4drv_send_rows( const struct ps4_display_header *header, const void *bits, UINT stride );
+extern BOOL ps4drv_send_frame( const struct ps4_display_header *header, const void *bits, UINT row_bytes );
 
 #endif /* __WINE_PS4DRV_H */

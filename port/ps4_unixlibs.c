@@ -62,6 +62,36 @@ MODULE(mountmgr)
 MODULE_WOW64(crypt32)
 MODULE_WOW64(opengl32)
 MODULE_WOW64(dwrite)
+MODULE_WOW64(winevulkan)
+
+/* libvulkan.so.1, what win32u's vulkan.c loads Vulkan from: the PS4's GPU (RADV, linked into the app)
+ * with ps4-kit's window system (gpu/ps4_vk_wsi.cpp: a headless surface, and swapchains whose frames
+ * go to the display driver, wineps4.drv's vulkan.c) */
+typedef void (*ps4_vk_function)(void);
+extern void *ps4kit_vk_get_instance_proc_addr( void );
+
+static ps4_vk_function ps4_vkGetInstanceProcAddr( void *instance, const char *name )
+{
+    ps4_vk_function (*get_instance_proc_addr)( void *, const char * ) = ps4kit_vk_get_instance_proc_addr();
+    return get_instance_proc_addr( instance, name );
+}
+
+static ps4_vk_function ps4_vkGetDeviceProcAddr( void *device, const char *name )
+{
+    static ps4_vk_function (*get_device_proc_addr)( void *, const char * );
+
+    /* (the kit's own, which keeps its swapchain and submits: given for any instance) */
+    if (!get_device_proc_addr)
+        get_device_proc_addr = (ps4_vk_function (*)( void *, const char * ))ps4_vkGetInstanceProcAddr( NULL, "vkGetDeviceProcAddr" );
+    return get_device_proc_addr( device, name );
+}
+
+static const struct ps4_symbol vulkan_symbols[] =
+{
+    { "vkGetInstanceProcAddr", (void *)ps4_vkGetInstanceProcAddr },
+    { "vkGetDeviceProcAddr", (void *)ps4_vkGetDeviceProcAddr },
+    { NULL, NULL }
+};
 
 #define FT(f) { #f, (void *)f }
 static const struct ps4_symbol freetype_symbols[] =
@@ -95,6 +125,8 @@ const struct ps4_unixlib ps4_unixlibs[] =
     { "crypt32.so", crypt32_symbols },
     { "opengl32.so", opengl32_symbols },
     { "dwrite.so", dwrite_symbols },
+    { "winevulkan.so", winevulkan_symbols },
     { "libfreetype.so.6", freetype_symbols },
+    { "libvulkan.so.1", vulkan_symbols },
     { NULL, NULL }
 };

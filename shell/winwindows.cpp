@@ -101,8 +101,14 @@ void handle(const ps4_display_header &m, std::vector<uint8_t> &data) {
         if (m.left < 0 || m.top < 0 || m.right > w.bw || m.bottom > w.bh || cols <= 0)
             break;
         const uint32_t *src = reinterpret_cast<const uint32_t *>(data.data());
+        const bool rgba = m.flags & PS4_PIXELS_RGBA;  // (a Vulkan frame: the canvas's order already)
         for (int y = m.top; y < m.bottom; y++, src += cols) {
             uint32_t *dst = &w.pixels[static_cast<size_t>(y) * w.bw + m.left];
+            if (rgba) {
+                for (int x = 0; x < cols; x++)
+                    dst[x] = 0xff000000 | src[x];
+                continue;
+            }
             for (int x = 0; x < cols; x++) {
                 const uint32_t p = src[x];  // Windows' BGRX
                 dst[x] = 0xff000000 | (p & 0x0000ff00) | ((p >> 16) & 0xff) | ((p & 0xff) << 16);

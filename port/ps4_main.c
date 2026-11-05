@@ -808,32 +808,96 @@ static void trim_windows_startup( void )
     free( text );
 }
 
-/* Font names Windows programs ask for, given the package's Liberation 2 fonts (metric-compatible with
- * Arial, Times New Roman and Courier New; app/package.sh puts them beside Wine's own). DirectWrite and
- * win32u both read HKCU\Software\Wine\Fonts\Replacements, and leave a name alone when a font has it.
- * Before, Chromium (Steam's web helper) found none of its last resorts (Arial, Segoe UI, Microsoft Sans
- * Serif, Times New Roman, Courier New...: Wine's Tahoma is not one of them) and drew no text at all
- * (v00.55). Added to user.reg before wineserver loads it: only the names the key lacks (the user may
- * have changed one). */
-static const char *const font_names[][2] =
+/* user.reg's defaults, added before wineserver loads it: only the values a key lacks (the user may have
+ * changed one).
+ * - Font names Windows programs ask for, given the package's Liberation 2 fonts (metric-compatible with
+ *   Arial, Times New Roman and Courier New; app/package.sh puts them beside Wine's own). DirectWrite and
+ *   win32u both read HKCU\Software\Wine\Fonts\Replacements, and leave a name alone when a font has it.
+ *   Before, Chromium (Steam's web helper) found none of its last resorts (Arial, Segoe UI, Microsoft Sans
+ *   Serif, Times New Roman, Courier New...: Wine's Tahoma is not one of them) and drew no text (v00.55).
+ * - Direct3D 8 to 11 from DXVK, on the PS4's GPU through Vulkan (install_dxvk puts its DLLs in the
+ *   prefix; Settings > Diagnostics can give programs Wine's own again). Steam's processes keep Wine's:
+ *   they only ask what the GPU is, and RADV would open it in each of them. */
+struct reg_default
 {
-    { "Arial", "Liberation Sans" },
-    { "Helvetica", "Liberation Sans" },
-    { "Segoe UI", "Liberation Sans" },
-    { "Microsoft Sans Serif", "Liberation Sans" },
-    { "Verdana", "Liberation Sans" },
-    { "Calibri", "Liberation Sans" },
-    { "Times New Roman", "Liberation Serif" },
-    { "Georgia", "Liberation Serif" },
-    { "Courier New", "Liberation Mono" },
-    { "Consolas", "Liberation Mono" },
-    { "Lucida Console", "Liberation Mono" },
+    const char *key;    /* as in the file: backslashes doubled */
+    const char *name;
+    const char *value;
 };
 
-static void map_font_names( void )
+#define DLL_OVERRIDES "Software\\Wine\\DllOverrides"
+#define STEAM_DLLS    "Software\\Wine\\AppDefaults\\steam.exe\\DllOverrides"
+#define WEB_DLLS      "Software\\Wine\\AppDefaults\\steamwebhelper.exe\\DllOverrides"
+#define FONT_NAMES    "Software\\Wine\\Fonts\\Replacements"
+
+static const struct reg_default user_defaults[] =
 {
-    static const char header[] = "\n[Software\\\\Wine\\\\Fonts\\\\Replacements]";
-    char *text, *key = NULL, *end = NULL, *body = NULL, *at, lines[1024] = "", name[96], added[256] = "";
+    { FONT_NAMES, "Arial", "Liberation Sans" },
+    { FONT_NAMES, "Helvetica", "Liberation Sans" },
+    { FONT_NAMES, "Segoe UI", "Liberation Sans" },
+    { FONT_NAMES, "Microsoft Sans Serif", "Liberation Sans" },
+    { FONT_NAMES, "Verdana", "Liberation Sans" },
+    { FONT_NAMES, "Calibri", "Liberation Sans" },
+    { FONT_NAMES, "Times New Roman", "Liberation Serif" },
+    { FONT_NAMES, "Georgia", "Liberation Serif" },
+    { FONT_NAMES, "Courier New", "Liberation Mono" },
+    { FONT_NAMES, "Consolas", "Liberation Mono" },
+    { FONT_NAMES, "Lucida Console", "Liberation Mono" },
+    { DLL_OVERRIDES, "d3d8", "native,builtin" },
+    { DLL_OVERRIDES, "d3d9", "native,builtin" },
+    { DLL_OVERRIDES, "d3d10core", "native,builtin" },
+    { DLL_OVERRIDES, "d3d11", "native,builtin" },
+    { DLL_OVERRIDES, "dxgi", "native,builtin" },
+    { STEAM_DLLS, "d3d9", "builtin" },
+    { STEAM_DLLS, "d3d11", "builtin" },
+    { STEAM_DLLS, "dxgi", "builtin" },
+    { WEB_DLLS, "d3d9", "builtin" },
+    { WEB_DLLS, "d3d11", "builtin" },
+    { WEB_DLLS, "dxgi", "builtin" },
+};
+
+/* the registry file's text with one value added to a key (made if missing), or the same text when the key
+ * has the value already; *size follows */
+static char *reg_add_value( char *text, size_t *size, const struct reg_default *def )
+{
+    char header[160], quoted[96], line[160], *key, *end, *body, *found, *out;
+    size_t at, len;
+
+    snprintf( header, sizeof(header), "\n[%s]", def->key );
+    snprintf( quoted, sizeof(quoted), "\n\"%s\"=", def->name );
+    snprintf( line, sizeof(line), "\"%s\"=\"%s\"\n", def->name, def->value );
+    if ((key = strstr( text, header )))
+    {
+        if (!(end = strstr( key + 1, "\n[" ))) end = text + *size;  /* (the key's lines end at the next key) */
+        if ((found = strstr( key, quoted )) && found < end) return text;
+        body = strchr( key + 1, '\n' );  /* after its line, and its #time= line */
+        while (body && body < end && body[1] == '#') body = strchr( body + 1, '\n' );
+        at = body && body < end ? (size_t)(body + 1 - text) : (size_t)(end - text);
+        len = strlen( line );
+        if (!(out = malloc( *size + len + 1 ))) return text;
+        memcpy( out, text, at );
+        memcpy( out + at, line, len );
+        memcpy( out + at + len, text + at, *size - at + 1 );
+    }
+    else
+    {
+        char block[400];
+
+        len = snprintf( block, sizeof(block), "%s[%s] %lu\n%s", *size && text[*size - 1] == '\n' ? "\n" : "\n\n",
+                        def->key, (unsigned long)time( NULL ), line );
+        if (!(out = malloc( *size + len + 1 ))) return text;
+        memcpy( out, text, *size );
+        memcpy( out + *size, block, len + 1 );
+    }
+    free( text );
+    *size += len;
+    return out;
+}
+
+static void add_user_defaults( void )
+{
+    char *text, added[512] = "";
+    size_t len, before;
     unsigned int i;
     long size;
     FILE *f = fopen( PREFIX_DIR "/user.reg", "rb" );
@@ -849,37 +913,48 @@ static void map_font_names( void )
     }
     if (fread( text, 1, size, f ) != (size_t)size) size = 0;
     fclose( f );
-    text[size > 0 ? size : 0] = 0;
-    if (size > 0 && (key = strstr( text, header )))
+    len = size > 0 ? size : 0;
+    text[len] = 0;
+    for (i = 0; len && i < sizeof(user_defaults) / sizeof(user_defaults[0]); i++)
     {
-        if (!(end = strstr( key + 1, "\n[" ))) end = text + size;  /* (the key's lines end at the next key) */
-        body = strchr( key + 1, '\n' );  /* after its line, and its #time= line */
-        while (body && body < end && body[1] == '#') body = strchr( body + 1, '\n' );
+        before = len;
+        text = reg_add_value( text, &len, &user_defaults[i] );
+        if (len != before)
+            snprintf( added + strlen( added ), sizeof(added) - strlen( added ), "%s%s", added[0] ? ", " : " ",
+                      user_defaults[i].name );
     }
-    for (i = 0; size > 0 && i < sizeof(font_names) / sizeof(font_names[0]); i++)
+    if (added[0] && (f = fopen( PREFIX_DIR "/user.reg.new", "wb" )))
     {
-        snprintf( name, sizeof(name), "\n\"%s\"=", font_names[i][0] );
-        if (key && (at = strstr( key, name )) && at < end) continue;
-        snprintf( lines + strlen( lines ), sizeof(lines) - strlen( lines ), "\"%s\"=\"%s\"\n", font_names[i][0],
-                  font_names[i][1] );
-        snprintf( added + strlen( added ), sizeof(added) - strlen( added ), "%s%s", added[0] ? ", " : " ",
-                  font_names[i][0] );
-    }
-    if (lines[0] && (f = fopen( PREFIX_DIR "/user.reg.new", "wb" )))
-    {
-        int ok;
-
-        if (body && body < end)
-            ok = fwrite( text, 1, body + 1 - text, f ) == (size_t)(body + 1 - text) && fputs( lines, f ) >= 0 &&
-                 fwrite( body + 1, 1, text + size - (body + 1), f ) == (size_t)(text + size - (body + 1));
-        else
-            ok = fwrite( text, 1, size, f ) == (size_t)size &&
-                 fprintf( f, "%s[Software\\\\Wine\\\\Fonts\\\\Replacements] %lu\n%s", text[size - 1] == '\n' ? "\n" : "\n\n",
-                          (unsigned long)time( NULL ), lines ) > 0;
+        const int ok = fwrite( text, 1, len, f ) == len;
         if (!fclose( f ) && ok && !rename( PREFIX_DIR "/user.reg.new", PREFIX_DIR "/user.reg" ))
-            logf_( "wineps4: font names now Liberation's:%s\n", added );
+            logf_( "wineps4: user.reg defaults added:%s\n", added );
     }
     free( text );
+}
+
+/* DXVK (Direct3D 8 to 11 on Vulkan), from the package (app/package.sh) into the prefix: its 64-bit DLLs
+ * in system32, its 32-bit ones in syswow64, where Wine's own were; each when it isn't the same file
+ * already (a new package's DXVK, or Wine's DLL a prefix copy put back). user.reg's DLL overrides make
+ * Wine take them (add_user_defaults). */
+static void install_dxvk( void )
+{
+    static const char *const dlls[] = { "d3d8.dll", "d3d9.dll", "d3d10core.dll", "d3d11.dll", "dxgi.dll" };
+    static const char *const sides[][2] = { { "x64", "system32" }, { "x32", "syswow64" } };
+    unsigned int i, j, copied = 0, failed = 0;
+    char from[256], to[256];
+    struct stat a, b;
+
+    for (i = 0; i < 2; i++)
+        for (j = 0; j < sizeof(dlls) / sizeof(dlls[0]); j++)
+        {
+            snprintf( from, sizeof(from), WINE_APP_DIR "/dxvk/%s/%s", sides[i][0], dlls[j] );
+            snprintf( to, sizeof(to), PREFIX_DIR "/drive_c/windows/%s/%s", sides[i][1], dlls[j] );
+            if (stat( from, &a )) continue;
+            if (!stat( to, &b ) && b.st_size == a.st_size) continue;
+            if (copy_file( from, to, 0644 )) copied++;
+            else failed++;
+        }
+    if (copied || failed) logf_( "wineps4: DXVK's DLLs into the prefix: %u copied, %u failed\n", copied, failed );
 }
 
 /* Wine's startup, once per app start: wineboot --init (this machine's registry keys, then
@@ -1016,7 +1091,8 @@ static void *setup_thread( void *arg )
     setup_prefix();
     make_user_folders();
     trim_windows_startup();
-    map_font_names();
+    add_user_defaults();
+    install_dxvk();
     ps4_start_wineserver_listening();
     /* (its socket is there once the thread has opened it, before the registry loads: the first
      * program queues; a server that can't start ends at once) */
@@ -1057,6 +1133,19 @@ static void *setup_thread( void *arg )
 }
 
 /* A program process: Wine, on the main thread, for the program in argv[1] */
+/* A program's GPU (Vulkan on RADV, Direct3D on DXVK): RADV keeps the shaders it compiles in the data
+ * folder (DXVK's games compile thousands; a cache makes the next start quick), and Settings > Apps can
+ * give programs Wine's own Direct3D again (WINEPS4_DXVK=0; the registry's overrides are DXVK's,
+ * add_user_defaults) */
+static void gpu_environment( void )
+{
+    const char *dxvk = getenv( "WINEPS4_DXVK" );
+
+    mkdir( DATA_DIR "/shadercache", 0777 );
+    setenv( "MESA_SHADER_CACHE_DIR", DATA_DIR "/shadercache", 0 );
+    if (dxvk && !strcmp( dxvk, "0" )) setenv( "WINEDLLOVERRIDES", "d3d8,d3d9,d3d10core,d3d11,dxgi=b", 0 );
+}
+
 static int program_main( int argc, char **argv )
 {
     ps4_program_process = 1;
@@ -1074,6 +1163,7 @@ static int program_main( int argc, char **argv )
     else logf_( "wineps4: process %d: %s\n", (int)getpid(), argv[1] );
     ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
     ps4_start_hang_watch();
+    gpu_environment();
     __wine_main( argc, argv );
     ps4_process_exit_now( 0 );  /* (returning from main would be ps4-kit's exit: the whole app) */
 }

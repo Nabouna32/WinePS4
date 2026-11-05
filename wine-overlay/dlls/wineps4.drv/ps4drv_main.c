@@ -127,6 +127,29 @@ BOOL ps4drv_send_rows( const struct ps4_display_header *header, const void *bits
     return ret;
 }
 
+/* PIXELS of a Vulkan frame (vulkan.c): rows of (right - left) * 4 bytes from bits, row_bytes apart, the frame's
+ * top-left at left, top; one write when its rows are packed */
+BOOL ps4drv_send_frame( const struct ps4_display_header *header, const void *bits, UINT row_bytes )
+{
+    struct ps4_display_header msg = *header;
+    UINT row_size = (header->right - header->left) * 4, rows = header->bottom - header->top, y;
+    const char *row = bits;
+    BOOL ret = FALSE;
+
+    msg.size = sizeof(msg) + row_size * rows;
+    msg.pid = getpid();
+    pthread_mutex_lock( &socket_mutex );
+    if (connect_display())
+    {
+        ret = write_all( &msg, sizeof(msg) );
+        if (ret && row_bytes == row_size) ret = write_all( row, (size_t)row_size * rows );
+        else for (y = 0; ret && y < rows; y++, row += row_bytes) ret = write_all( row, row_size );
+        if (!ret) lost_display();
+    }
+    pthread_mutex_unlock( &socket_mutex );
+    return ret;
+}
+
 static const struct user_driver_funcs ps4drv_funcs =
 {
     .pActivateWindow = PS4DRV_ActivateWindow,
@@ -137,6 +160,7 @@ static const struct user_driver_funcs ps4drv_funcs =
     .pSetWindowText = PS4DRV_SetWindowText,
     .pSysCommand = PS4DRV_SysCommand,
     .pUpdateDisplayDevices = PS4DRV_UpdateDisplayDevices,
+    .pVulkanInit = PS4DRV_VulkanInit,
     .pWindowPosChanged = PS4DRV_WindowPosChanged,
 };
 

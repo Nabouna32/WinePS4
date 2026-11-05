@@ -1095,6 +1095,7 @@ const Toggle TOGGLES[] = {
     {"Budget log", "The PS4's budget for the app (open files, threads, memory) in wine.log, what holds files when they run out", "WINEPS4_FILES_LOG", "", "0"},
     {"Keyboard log", "How the USB keyboard's presses arrive and where they go, in wine.log (never which keys)", "WINEPS4_KEY_LOG", "", "0"},
     {"Socket option log", "The socket options the PS4's kernel refuses a program, each once, in wine.log", "WINEPS4_SOCKET_LOG", "", "0"},
+    {"Vulkan log", "Programs' swapchains and frames a second (Vulkan, Direct3D through DXVK) in wine.log", "WINEPS4_VULKAN_LOG", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
@@ -3010,7 +3011,7 @@ Rect swatch_rect(const Window &w, int i) {
     return Rect{a.x + (i % 8) * (SWATCH + 16), a.y + 244 + (i / 8) * (SWATCH + 16), SWATCH, SWATCH};
 }
 Rect custom_color_rect(const Window &w) { const Rect a = settings_area(w); return Rect{a.x, a.y + 244 + 2 * (SWATCH + 16) + 10, 240, 40}; }
-Rect toggle_rect(const Window &w, int i) { const Rect a = settings_area(w); return Rect{a.x, a.y + 60 + i * 92, a.w, 80}; }
+Rect toggle_rect(const Window &w, int i) { const Rect a = settings_area(w); return Rect{a.x, a.y + 60 + i * 80, a.w, 72}; }
 // a page's cards, one under the other (System, Bluetooth & devices)
 Rect card_at(const Window &w, int top, int h) { const Rect a = settings_area(w); return Rect{a.x, a.y + top, a.w, h}; }
 Rect mouse_card(const Window &w) { return card_at(w, 56, 92); }
@@ -3027,7 +3028,8 @@ Rect speed_button(const Window &w, int i) {  // 0 slower, 1 faster: the bar betw
 Rect chromium_card(const Window &w) { return card_at(w, 56, 84); }
 Rect rules_card(const Window &w) { return card_at(w, 150, 84); }
 Rect outside_card(const Window &w) { return card_at(w, 244, 84); }
-Rect app_row(const Window &w, int i) { return card_at(w, 384 + i * 70, 62); }
+Rect dxvk_card(const Window &w) { return card_at(w, 338, 84); }
+Rect app_row(const Window &w, int i) { return card_at(w, 478 + i * 70, 62); }
 Rect app_uninstall(const Window &w, int i) { const Rect r = app_row(w, i); return Rect{r.x + r.w - 140, r.y + 13, 120, 36}; }
 
 // --- typing on a USB keyboard: characters, edit boxes ---------------------------------------------
@@ -4631,6 +4633,8 @@ std::string settings_hit(const Window &w, float px, float py) {
             return "rules";
         if (outside_card(w).contains(px, py))
             return "outside";
+        if (dxvk_card(w).contains(px, py))
+            return "dxvk";
         for (int i = 0; i < static_cast<int>(installed_apps().size()); i++)
             if (app_uninstall(w, i).contains(px, py))
                 return "uninstall" + std::to_string(i);
@@ -4864,6 +4868,9 @@ void settings_click(Window &w, const std::string &part) {
                                              : "WINEPS4_OUTSIDE";
         env_set(key, env_get(key) != "0" ? "0" : "");
         toast = Toast{"Applies the next time WinePS4 starts", now_seconds() + 3};
+    } else if (part == "dxvk") {
+        env_set("WINEPS4_DXVK", env_get("WINEPS4_DXVK") != "0" ? "0" : "");
+        toast = Toast{"Applies the next time a program starts", now_seconds() + 3};
     } else if (part.rfind("uninstall", 0) == 0) {
         const auto &apps = installed_apps();
         const int i = number_after(part, "uninstall");
@@ -5719,7 +5726,7 @@ void draw_settings(Canvas &c, Window &w) {
             c.text(r.x + 22, r.y + 58, TOGGLES[i].detail, 14, TEXT3, Weight::Regular, r.w - 140);
             draw_switch(c, r, toggle_on(TOGGLES[i]));
         }
-        c.text_wrapped(a.x, a.y + 60 + static_cast<int>(std::size(TOGGLES)) * 92 + 10,
+        c.text_wrapped(a.x, a.y + 60 + static_cast<int>(std::size(TOGGLES)) * 80 + 10,
                        "The switches go to /data/WinePS4/env.txt and apply the next time a program starts. "
                        "Logs: /data/WinePS4/wine.log, crash.log, hang.log.",
                        14, TEXT3, a.w, 22);
@@ -5865,7 +5872,15 @@ void draw_apps_page(Canvas &c, const Window &w) {
     c.text(orr.x + 66, orr.y + 58, "Windows' services and helpers run outside the PS4's 7, which stay for programs and games. "
                                    "Close WinePS4 with Power > Exit", 13, TEXT3, Weight::Regular, orr.w - 180);
     draw_switch(c, orr, env_get("WINEPS4_OUTSIDE") != "0");
-    c.text(a.x, a.y + 360, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
+    // Direct3D 8-11 through DXVK on the PS4's GPU (Vulkan, RADV), else Wine's own (which has no GPU here)
+    const Rect dr = dxvk_card(w);
+    panel(c, dr.x, dr.y, dr.w, dr.h, 6, hover == id + "dxvk" ? CARD_HOT : CARD, CARD_BORDER);
+    draw_icon(c, Icon::Gauge, dr.x + 34, dr.y + dr.h / 2.f, 26);
+    c.text(dr.x + 66, dr.y + 34, "3D games on the PS4's GPU (DXVK)", 16, TEXT);
+    c.text(dr.x + 66, dr.y + 58, "Direct3D 8 to 11 through DXVK and Vulkan; off: Wine's own Direct3D, which has no GPU here", 13,
+           TEXT3, Weight::Regular, dr.w - 180);
+    draw_switch(c, dr, env_get("WINEPS4_DXVK") != "0");
+    c.text(a.x, a.y + 454, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
                                         : "Installed apps (" + std::to_string(apps.size()) + ")",
            15, TEXT2);
     for (int i = 0; i < static_cast<int>(apps.size()); i++) {

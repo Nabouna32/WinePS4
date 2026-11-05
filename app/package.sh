@@ -42,6 +42,13 @@ rsync -a "$HOSTWINE/share/wine" "$STAGE/wine/share/"
 # where DirectWrite looks; the names map to them in user.reg (port/ps4_main.c)
 cp "$ROOT"/app/windows-fonts/*.ttf "$STAGE/wine/share/wine/fonts/"
 cp "$ROOT/app/windows-fonts/LICENSE-Liberation.txt" "$STAGE/wine/share/"
+# DXVK (Direct3D 8-11 on Vulkan, zlib licence): the official 3.1.1 release's DLLs, put in the prefix's
+# system32 (x64) and syswow64 (x32) at the app's start (port/ps4_main.c install_dxvk)
+DXVK="$HOME/wineps4-build/dxvk-3.1.1"
+[ -f "$DXVK/x64/d3d11.dll" ] || { echo "no DXVK at $DXVK (github.com/doitsujin/dxvk releases, v3.1.1)" >&2; exit 1; }
+mkdir -p "$STAGE/wine/dxvk"
+cp -r "$DXVK/x64" "$DXVK/x32" "$STAGE/wine/dxvk/"
+printf 'DXVK 3.1.1, https://github.com/doitsujin/dxvk (zlib/libpng licence), its release build unchanged.\n' > "$STAGE/wine/dxvk/README.txt"
 # the root certificates Windows programs trust (crypt32, Wine patch): Mozilla's list (Ubuntu's
 # ca-certificates, MPL 2.0); the console has none of its own
 cp "$ROOT/app/certs/ca-certificates.crt" "$STAGE/wine/share/ca-certificates.crt"
