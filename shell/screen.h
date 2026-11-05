@@ -14,6 +14,8 @@ constexpr int SCREEN_H = 1080;
 bool screen_open();
 // The buffer to draw the next frame into (RGBA, SCREEN_W per row): wait until it isn't shown
 uint32_t *screen_back_buffer();
+// Which of the two that is (0 or 1), for what the caller keeps of each
+int screen_back_index();
 // Shows it at the next vsync
 void screen_flip();
 

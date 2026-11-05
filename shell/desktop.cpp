@@ -1693,11 +1693,12 @@ void refresh_processes(bool force = false) {
 // (WINEPS4_PERF_LOG=0: off). v00.60 was "heavy and slow" with nothing in wine.log to say why.
 struct PerfLog {
     double when = 0, drawing = 0, longest = 0;
-    int frames = 0;
+    int frames = 0, quick = 0;  // (quick: only programs' changed pixels copied in, winwin_patch)
 } perf;
 
-void perf_frame(double seconds) {
+void perf_frame(double seconds, bool quick) {
     perf.frames++;
+    perf.quick += quick;
     perf.drawing += seconds;
     perf.longest = std::max(perf.longest, seconds);
 }
@@ -1725,8 +1726,8 @@ void perf_tick(double t) {
             std::snprintf(text, sizeof text, ", %s %.0f%%", busy[i]->name.c_str(), busy[i]->cpu_percent);
             line += text;
         }
-        std::snprintf(text, sizeof text, " of the app's 7 cores; the desktop drew %d frames, %.1f ms each, the longest %.0f ms; "
-                      "direct memory %llu MiB free", perf.frames, perf.frames ? perf.drawing * 1000 / perf.frames : 0.0,
+        std::snprintf(text, sizeof text, " of the app's 7 cores; the desktop drew %d frames (%d quick), %.1f ms each, the longest "
+                      "%.0f ms; direct memory %llu MiB free", perf.frames, perf.quick, perf.frames ? perf.drawing * 1000 / perf.frames : 0.0,
                       perf.longest * 1000, memory_free >> 20);
         line += text;
         const unsigned long long pool = ps4_outside_pool();
@@ -1734,9 +1735,12 @@ void perf_tick(double t) {
             std::snprintf(text, sizeof text, ", the pool outside the 7 %llu MiB", pool >> 20);
             line += text;
         }
+        char heap[120];
+        ps4rt_heap_report(heap, sizeof heap);  // (the desktop process's own: wineserver's and the desktop's)
+        line += std::string("; the desktop's ") + heap;
         ps4_log_line((line + "\n").c_str());  // (straight into wine.log: never waiting for the programs' pipe)
     }
-    perf.frames = 0;
+    perf.frames = perf.quick = 0;
     perf.drawing = perf.longest = 0;
 }
 
@@ -1768,9 +1772,10 @@ bool is_program(const std::string &name) {
            ends_with(l, ".com");
 }
 
-// A Windows shortcut's (.lnk) program, as the console's path, and its arguments ("" when it names none
-// on a drive): its LinkInfo's local path and its StringData, as Windows' Shell Link format has them
-std::string lnk_target(const std::string &path, std::string *args = nullptr) {
+// A Windows shortcut's (.lnk) program, as the console's path, its arguments and the icon it names ("" when
+// it names none on a drive): its LinkInfo's local path and its StringData, as Windows' Shell Link format
+// has them
+std::string lnk_target(const std::string &path, std::string *args = nullptr, std::string *icon = nullptr) {
     std::vector<uint8_t> d(65536);
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f)
@@ -1793,9 +1798,9 @@ std::string lnk_target(const std::string &path, std::string *args = nullptr) {
                 target += static_cast<char>(d[i]);
         at += size;
     }
-    // StringData: name, relative path, working folder, arguments (UTF-16 when IsUnicode), ...
+    // StringData: name, relative path, working folder, arguments, icon (UTF-16 when IsUnicode)
     const bool unicode = flags & 0x80;
-    for (const uint32_t bit : {0x4u, 0x8u, 0x10u, 0x20u}) {
+    for (const uint32_t bit : {0x4u, 0x8u, 0x10u, 0x20u, 0x40u}) {
         if (!(flags & bit))
             continue;
         const uint32_t count = u16(at);
@@ -1814,8 +1819,187 @@ std::string lnk_target(const std::string &path, std::string *args = nullptr) {
         at += count * (unicode ? 2 : 1);
         if (bit == 0x20 && args)
             *args = text;
+        if (bit == 0x40 && icon && !text.empty() && text[0] != '%')  // (not "%SystemRoot%\...")
+            *icon = existing_path(console_path(text));
     }
     return target.empty() ? std::string() : existing_path(console_path(target));
+}
+
+// A console path as Windows' (console_path's other way): the prefix's drive C:, the rest Z:
+std::string windows_path(const std::string &path) {
+    const std::string c = C_DRIVE;
+    std::string w = path.rfind(c, 0) == 0 && (path.size() == c.size() || path[c.size()] == '/') ? "C:" + path.substr(c.size()) : "Z:" + path;
+    std::replace(w.begin(), w.end(), '/', '\\');
+    if (w.size() == 2)
+        w += '\\';
+    return w;
+}
+
+// Windows' Shell Link file (.lnk) for target (a Windows path), as Windows writes one for a local file:
+// the path in LinkInfo (bytes as they are: lnk_target reads them back), the working folder in StringData
+bool write_lnk(const std::string &file, const std::string &target, const std::string &folder) {
+    std::vector<uint8_t> d;
+    const auto put16 = [&](uint32_t v) { d.push_back(v & 0xff), d.push_back(v >> 8 & 0xff); };
+    const auto put32 = [&](uint32_t v) { put16(v & 0xffff), put16(v >> 16); };
+    // the header: its size, the Shell Link CLSID, HasLinkInfo | HasWorkingDir | IsUnicode, the archive
+    // attribute, no times, size or icon index, shown normally, no hot key
+    put32(0x4c);
+    for (const uint8_t b : {0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46})
+        d.push_back(b);
+    put32(0x02 | 0x10 | 0x80);
+    put32(0x20);
+    d.insert(d.end(), 28, 0);  // creation, access and write times, the file's size
+    put32(0);                  // icon index
+    put32(1);                  // SW_SHOWNORMAL
+    d.insert(d.end(), 12, 0);  // hot key and reserved
+    // LinkInfo: VolumeIDAndLocalBasePath; a fixed drive without a label; the path; no suffix
+    const uint32_t volume = 0x11, base_at = 0x1c + volume, suffix_at = base_at + static_cast<uint32_t>(target.size()) + 1;
+    put32(suffix_at + 1);
+    put32(0x1c);
+    put32(1);
+    put32(0x1c);
+    put32(base_at);
+    put32(0);
+    put32(suffix_at);
+    put32(volume);
+    put32(3);  // DRIVE_FIXED
+    put32(0);
+    put32(0x10);
+    d.push_back(0);
+    d.insert(d.end(), target.begin(), target.end());
+    d.push_back(0);
+    d.push_back(0);
+    // StringData: the working folder, UTF-16
+    std::vector<uint16_t> wide;
+    for (size_t i = 0; i < folder.size();) {
+        const unsigned char b = static_cast<unsigned char>(folder[i]);
+        uint32_t ch = b;
+        int more = b >= 0xf0 ? 3 : b >= 0xe0 ? 2 : b >= 0xc0 ? 1 : 0;
+        if (more)
+            ch &= 0x3f >> more;
+        for (i++; more-- > 0 && i < folder.size(); i++)
+            ch = ch << 6 | (static_cast<unsigned char>(folder[i]) & 0x3f);
+        if (ch >= 0x10000)
+            wide.push_back(static_cast<uint16_t>(0xd800 + ((ch - 0x10000) >> 10))), ch = 0xdc00 + ((ch - 0x10000) & 0x3ff);
+        wide.push_back(static_cast<uint16_t>(ch));
+    }
+    put16(static_cast<uint32_t>(wide.size()));
+    for (const uint16_t ch : wide)
+        put16(ch);
+    put32(0);  // the extra data's end
+    FILE *f = std::fopen(file.c_str(), "wb");
+    if (!f)
+        return false;
+    const bool ok = std::fwrite(d.data(), 1, d.size(), f) == d.size();
+    return std::fclose(f) == 0 && ok;
+}
+
+// An Internet shortcut (.url: Steam's games on the desktop, web pages): its address, and the icon it
+// names (IconFile) as the console's path
+struct UrlShortcut {
+    std::string url, icon;
+};
+
+UrlShortcut read_url_shortcut(const std::string &path) {
+    UrlShortcut u;
+    bool section = false;
+    for (const std::string &raw : read_lines(path.c_str())) {
+        const size_t first = raw.find_first_not_of(" \t\xef\xbb\xbf");
+        if (first == std::string::npos)
+            continue;
+        const std::string line = raw.substr(first);
+        if (line[0] == '[') {
+            section = lower(line).rfind("[internetshortcut]", 0) == 0;
+            continue;
+        }
+        const size_t eq = line.find('=');
+        if (!section || eq == std::string::npos)
+            continue;
+        std::string key = lower(line.substr(0, eq)), value = line.substr(eq + 1);
+        while (!key.empty() && (key.back() == ' ' || key.back() == '\t'))
+            key.pop_back();
+        while (!value.empty() && (value.back() == ' ' || value.back() == '\t'))
+            value.pop_back();
+        if (key == "url")
+            u.url = value;
+        else if (key == "iconfile" && !value.empty())
+            u.icon = existing_path(console_path(value));
+    }
+    return u;
+}
+
+// The file a desktop or Files icon is taken from: a program's own, a shortcut's (the icon it names, else
+// its program's), an Internet shortcut's (the icon it names); "" for none. A shortcut is read once (and
+// again when it changes): the desktop draws its icons every frame.
+std::string icon_source(const std::string &path, const std::string &name, bool dir) {
+    const std::string l = lower(name);
+    if (dir)
+        return {};
+    if (!ends_with(l, ".lnk") && !ends_with(l, ".url"))
+        return has_program_icon(l) ? path : std::string();
+    static std::map<std::string, std::pair<time_t, std::string>> known;
+    struct stat st{};
+    const time_t changed = stat(path.c_str(), &st) == 0 ? st.st_mtime : 0;
+    auto it = known.find(path);
+    if (it != known.end() && it->second.first == changed)
+        return it->second.second;
+    std::string icon, source;
+    if (ends_with(l, ".lnk")) {
+        const std::string target = lnk_target(path, nullptr, &icon);
+        source = !icon.empty() && is_file(icon) ? icon : target;
+    } else {
+        source = read_url_shortcut(path).icon;
+    }
+    if (!source.empty() && (!is_file(source) || !has_program_icon(lower(base_name(source)))))
+        source.clear();
+    if (known.size() > 512)
+        known.clear();
+    known[path] = {changed, source};
+    return source;
+}
+
+void refresh_all(const std::vector<std::string> &folders);  // (below, with Files)
+
+// "Create shortcut on the desktop": a Shell Link to path in the Desktop folder, named as it is (a
+// program without its .exe), "(2)" and on when the name is taken; a shortcut or an Internet shortcut is
+// copied instead
+void create_desktop_shortcut(const std::string &path) {
+    const std::string desktop = user_folder("Desktop");
+    std::string name = base_name(path), ext = ".lnk";
+    const std::string l = lower(name);
+    const bool copy = ends_with(l, ".lnk") || ends_with(l, ".url");
+    if (copy) {
+        ext = name.substr(name.size() - 4);
+        name = name.substr(0, name.size() - 4);
+    } else if (!is_dir(path) && (ends_with(l, ".exe") || ends_with(l, ".msi") || ends_with(l, ".bat") || ends_with(l, ".cmd") ||
+                                 ends_with(l, ".com"))) {
+        name = name.substr(0, name.size() - 4);
+    }
+    std::string file = desktop + "/" + name + ext;
+    for (int n = 2; access(file.c_str(), F_OK) == 0 && n < 100; n++)
+        file = desktop + "/" + name + " (" + std::to_string(n) + ")" + ext;
+    bool ok;
+    if (copy) {
+        std::vector<char> bytes;
+        if (FILE *in = std::fopen(path.c_str(), "rb")) {
+            char buf[4096];
+            for (size_t n; (n = std::fread(buf, 1, sizeof buf, in)) > 0;)
+                bytes.insert(bytes.end(), buf, buf + n);
+            std::fclose(in);
+        }
+        FILE *out = bytes.empty() ? nullptr : std::fopen(file.c_str(), "wb");
+        ok = out && std::fwrite(bytes.data(), 1, bytes.size(), out) == bytes.size();
+        if (out)
+            ok = std::fclose(out) == 0 && ok;
+    } else {
+        ok = write_lnk(file, windows_path(path), windows_path(is_dir(path) ? path : folder_of(path)));
+    }
+    if (!ok) {
+        show_message("Create shortcut", "It could not be written to the desktop: " + std::string(std::strerror(errno)));
+        return;
+    }
+    refresh_all({desktop});
+    toast = Toast{"A shortcut to " + base_name(path) + " is on the desktop", now_seconds() + 3};
 }
 
 // A Chromium browser (Chrome, Edge, Steam's web view, CEF and Electron programs) started from the
@@ -1886,6 +2070,10 @@ void run_program(const std::string &path) {
             run_program(target);
             return;
         }
+        if (!target.empty() && is_dir(target)) {  // (a folder's: Files, as Windows' Explorer)
+            open_window(Kind::Files, target);
+            return;
+        }
         args = {"C:\\windows\\system32\\start.exe", "/unix"};
     } else {
         console = exe_is_console(existing_path(console_path(path)));
@@ -1911,6 +2099,42 @@ void run_program(const std::string &path) {
     toast = Toast{"Starting " + base_name(path), now_seconds() + 3};
     if (console)
         open_terminal();
+}
+
+// An Internet shortcut opened. A steam: address goes to Steam's own program, which hands it to the
+// Steam that runs (or starts Steam and then the game), as Windows' handler for steam: does
+// (HKCR\steam\Shell\Open\Command); any other to start.exe, which asks Windows' handler for it.
+void open_url_shortcut(const std::string &path) {
+    const UrlShortcut u = read_url_shortcut(path);
+    std::string label = base_name(path);
+    label = label.substr(0, label.size() - 4);
+    if (u.url.empty()) {
+        show_message(label, "This shortcut names no address.");
+        return;
+    }
+    std::vector<std::string> args;
+    if (lower(u.url).rfind("steam:", 0) == 0) {
+        const std::string steam = existing_path(std::string(C_DRIVE) + "/Program Files (x86)/Steam/steam.exe");
+        if (!is_file(steam)) {
+            show_message(label, "Steam is not installed (C:\\Program Files (x86)\\Steam\\steam.exe).");
+            return;
+        }
+        args = {steam, u.url};
+    } else {
+        args = {"C:\\windows\\system32\\start.exe", u.url};
+    }
+    if (!ps4_wine_ready()) {
+        std::lock_guard lock(launch_lock);
+        launch_queue.push_back(args);
+        toast = Toast{label + " starts once Windows has started", now_seconds() + 6};
+        return;
+    }
+    const std::string error = launch(args);
+    if (!error.empty()) {
+        show_message(label, error);
+        return;
+    }
+    toast = Toast{"Starting " + label, now_seconds() + 3};
 }
 
 // --- Files: the selection --------------------------------------------------------------------------
@@ -2500,7 +2724,9 @@ void open_file(const Entry &e) {
         toast = Toast{"Restore it first (right-click it: Restore)", now_seconds() + 3};
         return;
     }
-    if (is_program(e.name)) {
+    if (ends_with(lower(e.name), ".url")) {
+        open_url_shortcut(e.path);
+    } else if (is_program(e.name)) {
         run_program(e.path);
     } else if (is_picture_name(e.name)) {
         show_message("Use " + e.name + " as the background?", "It fills the desktop. Settings > Personalization has the others.");
@@ -2518,7 +2744,7 @@ void open_file(const Entry &e) {
 void files_command(Window &w, const std::string &cmd, int row = -1) {
     const bool place = w.path.empty();
     const Entry *e = row >= 0 && row < static_cast<int>(w.entries.size()) ? &w.entries[row] : nullptr;
-    if (cmd == "open" || cmd == "open-new" || cmd == "notepad" || cmd == "hex" || cmd == "wallpaper") {
+    if (cmd == "open" || cmd == "open-new" || cmd == "notepad" || cmd == "hex" || cmd == "wallpaper" || cmd == "shortcut") {
         if (!e && w.cursor >= 0 && w.cursor < static_cast<int>(w.entries.size()))
             e = &w.entries[w.cursor];
         if (!e)
@@ -2526,6 +2752,8 @@ void files_command(Window &w, const std::string &cmd, int row = -1) {
         const Entry it = *e;
         if (cmd == "open")
             open_entry(w, it);
+        else if (cmd == "shortcut")
+            create_desktop_shortcut(it.path);
         else if (cmd == "open-new" && it.dir)
             open_window(Kind::Files, it.path);
         else if (cmd == "notepad" && !it.dir)
@@ -2660,6 +2888,7 @@ void open_menu(const std::string &target, float px, float py) {
     } else if (target.rfind("wtask:", 0) == 0) {  // a Windows program's window
         items.push_back({"Close window", "wtask-close"});
         items.push_back({"Paste text", "wtask-paste", !text_clipboard.empty()});
+        items.push_back({"Create shortcut on the desktop", "wtask-shortcut"});
         sep();
         items.push_back({"End task", "wtask-end"});
         items.push_back({"Task Manager", "taskmgr"});
@@ -2711,6 +2940,8 @@ void open_menu(const std::string &target, float px, float py) {
                     }
                     if (!e.dir && is_picture_name(e.name))
                         items.push_back({"Set as desktop background", "wallpaper"});
+                    if (folder_of(e.path) != user_folder("Desktop"))
+                        items.push_back({"Create shortcut on the desktop", "shortcut"});
                 }
                 if (!place) {
                     sep();
@@ -2839,11 +3070,21 @@ void menu_action(const std::string &action) {
         windows.erase(std::remove_if(windows.begin(), windows.end(), [&](const Window &x) { return x.kind == kind; }), windows.end());
     } else if (action == "edtask-close") {
         request_close(number_after(target, "edtask:"));
-    } else if (action == "wtask-close" || action == "wtask-end" || action == "wtask-paste") {
+    } else if (action == "wtask-close" || action == "wtask-end" || action == "wtask-paste" || action == "wtask-shortcut") {
         const uint64_t hwnd = std::strtoull(target.c_str() + 6, nullptr, 10);
         for (const WinTask &t : program_tasks)
             if (t.hwnd == hwnd) {
-                if (action == "wtask-close") {
+                if (action == "wtask-shortcut") {  // its program's, from the processes' list
+                    refresh_processes(true);
+                    std::string image;
+                    for (const ProcessView &v : process_views)
+                        if (v.pid == t.pid)
+                            image = existing_path(console_path(v.image));
+                    if (image.empty() || !is_file(image))
+                        show_message("Create shortcut", "Its program's file was not found.");
+                    else
+                        create_desktop_shortcut(image);
+                } else if (action == "wtask-close") {
                     winwin_command(hwnd, 0xf060);  // SC_CLOSE
                 } else if (action == "wtask-paste") {  // (typed into it, as the PS4's keyboard's text is)
                     winwin_command(hwnd, PS4_SC_ACTIVATE);
@@ -5256,8 +5497,8 @@ void draw_desktop_icons(Canvas &c) {
         else if (hover == key)
             c.fill_round_rect(r.x, r.y, r.w, r.h, 6, rgb(0xffffff, 0x20));
         // a shortcut: its program's icon, with Windows' little arrow
-        const bool shortcut = ends_with(lower(e.name), ".lnk");
-        const std::string program = shortcut ? lnk_target(e.path) : !e.dir && has_program_icon(lower(e.name)) ? e.path : std::string();
+        const bool shortcut = ends_with(lower(e.name), ".lnk") || ends_with(lower(e.name), ".url");
+        const std::string program = icon_source(e.path, e.name, e.dir);
         if (const Image *icon = program.empty() ? nullptr : program_icon(program, 48))
             c.blit(*icon, r.x + r.w / 2 - 24, r.y + 14);
         else
@@ -5580,7 +5821,8 @@ void draw_files(Canvas &c, Window &w) {
                 c.fill_round_rect(bx + 1, by + 1, 16, 16, 3, CONTENT_BG);
             }
         }
-        const Image *icon = !e.dir && has_program_icon(lower(e.name)) ? program_icon(e.path, 24) : nullptr;
+        const std::string source = icon_source(e.path, e.name, e.dir);
+        const Image *icon = source.empty() ? nullptr : program_icon(source, 24);
         if (icon)
             c.blit(*icon, list.x + 46, ry + ROW_H / 2 - 12);
         else
@@ -6345,6 +6587,19 @@ void draw_toast(Canvas &c) {
     c.text(x + 24, y + 34, toast.text, 15, TEXT);
 }
 
+// Whether nothing of the desktop's lies over the programs' windows this frame, so that their changed
+// pixels may go straight into the scene (winwin_patch): no menu, Start, dialog, toast, copy, dragged
+// files, or desktop window over them
+bool quick_frame_allowed() {
+    if (popup != Popup::None || dragged.active || menu.open || dialog.open || !toast.text.empty() || job_status().running)
+        return false;
+    if (desktop_on_top)
+        for (const Window &w : windows)
+            if (!w.minimized)
+                return false;
+    return true;
+}
+
 void draw_scene(Canvas &c) {
     std::memcpy(c.data(), wallpaper.data(), wallpaper.size() * 4);
     draw_desktop_icons(c);
@@ -6413,14 +6668,63 @@ Image make_resize_pointer(float dx, float dy) {
 
 // The frame on the screen: the scene, then the pointer on top (the pointer moves without the
 // scene being drawn again); (hx, hy) is the pointer picture's hot spot
+// What each of the screen's two buffers lacks of the scene since it was last shown (all of it, or
+// rects), and where the pointer was drawn in it: a frame copies only those, and a pointer that moved
+// over a scene that did not change, its two places (v00.62 copied all 8 MiB each time)
+struct BufferState {
+    bool all = true;
+    std::vector<WinRect> rects;
+    WinRect pointer{};
+};
+BufferState buffer_state[2];
+
+void scene_changed() {
+    for (BufferState &b : buffer_state)
+        b.all = true, b.rects.clear();
+}
+
+void scene_changed(const WinRect &r) {
+    for (BufferState &b : buffer_state)
+        if (!b.all) {
+            b.rects.push_back(r);
+            if (b.rects.size() > 48)
+                b.all = true, b.rects.clear();
+        }
+}
+
+void copy_rect(uint32_t *dst, const uint32_t *src, const WinRect &r) {
+    const int x0 = std::max(0, r.x), x1 = std::min(W, r.x + r.w), y0 = std::max(0, r.y), y1 = std::min(H, r.y + r.h);
+    if (x0 >= x1 || y0 >= y1)
+        return;
+    const auto rows = [&](int a, int b) {
+        for (int y = a; y < b; y++)
+            std::memcpy(dst + static_cast<size_t>(y) * W + x0, src + static_cast<size_t>(y) * W + x0, static_cast<size_t>(x1 - x0) * 4);
+    };
+    const size_t pixels = static_cast<size_t>(x1 - x0) * (y1 - y0);
+    if (pixels > 256 * 1024)
+        parallel_rows(y0, y1, pixels, rows);
+    else
+        rows(y0, y1);
+}
+
 void present(const Canvas &scene, const Image &pointer, float px, float py, int hx = 1, int hy = 1) {
+    BufferState &state = buffer_state[screen_back_index()];
     uint32_t *const dst = screen_back_buffer();
     const uint32_t *const src = scene.data();
-    parallel_rows(0, H, static_cast<size_t>(W) * H, [&](int a, int b) {
-        std::memcpy(dst + static_cast<size_t>(a) * W, src + static_cast<size_t>(a) * W, static_cast<size_t>(b - a) * W * 4);
-        __builtin_ia32_sfence();
-    });
+    if (state.all) {
+        parallel_rows(0, H, static_cast<size_t>(W) * H, [&](int a, int b) {
+            std::memcpy(dst + static_cast<size_t>(a) * W, src + static_cast<size_t>(a) * W, static_cast<size_t>(b - a) * W * 4);
+            __builtin_ia32_sfence();
+        });
+    } else {
+        for (const WinRect &r : state.rects)
+            copy_rect(dst, src, r);
+        copy_rect(dst, src, state.pointer);  // (the pointer drawn in it last time: gone)
+    }
+    state.all = false;
+    state.rects.clear();
     const int ox = static_cast<int>(px) - hx, oy = static_cast<int>(py) - hy;
+    state.pointer = WinRect{ox, oy, pointer.width, pointer.height};
     for (int y = 0; y < pointer.height; y++) {
         const int sy = oy + y;
         if (sy < 0 || sy >= H)
@@ -6527,7 +6831,7 @@ extern "C" void ps4_shell_run(const char *) {
     const Image resize_nwse = make_resize_pointer(1, 1), resize_nesw = make_resize_pointer(1, -1);
     Canvas scene(W, H);
     metrics = &scene;
-    bool dirty = true;
+    bool dirty = true, programs_dirty = false;
     int last_minute = -1;
     double last = now_seconds(), last_job_frame = 0;
     float last_px = -1, last_py = -1;
@@ -6604,7 +6908,7 @@ extern "C" void ps4_shell_run(const char *) {
         // its buttons and the wheel go to the program; a button pressed there goes on to it until
         // it's let go. Triangle opens the system keyboard for it.
         if (winwin_changed())
-            dirty = true;
+            programs_dirty = true;  // (their pixels alone: maybe a quick frame, below)
         program_text_events(t);
         program_tasks = winwin_tasks();
         if (icons_changed.exchange(false))
@@ -6990,12 +7294,22 @@ extern "C" void ps4_shell_run(const char *) {
         }
 
         perf_tick(t);
-        if (dirty) {
+        if (dirty || programs_dirty) {
             const double drawn_from = now_seconds();
-            draw_scene(scene);
-            dirty = false;
+            // only programs' pixels changed, where nothing of the desktop's is: those copied in as
+            // they are, the rest of the scene as it was (a full scene took 12-14 ms, v00.62)
+            std::vector<WinRect> patched;
+            const bool quick = !dirty && quick_frame_allowed() && winwin_patch(scene, H - TASKBAR_H, SHADOW, patched);
+            if (quick) {
+                for (const WinRect &r : patched)
+                    scene_changed(r);
+            } else {
+                draw_scene(scene);
+                scene_changed();
+            }
+            dirty = programs_dirty = false;
             present(scene, *cursor, in.x, in.y, hx, hy);
-            perf_frame(now_seconds() - drawn_from);
+            perf_frame(now_seconds() - drawn_from, quick);
             last_px = in.x, last_py = in.y, last_cursor = cursor;
         } else if (in.x != last_px || in.y != last_py || cursor != last_cursor) {
             present(scene, *cursor, in.x, in.y, hx, hy);

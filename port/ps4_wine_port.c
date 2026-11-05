@@ -383,11 +383,51 @@ static int install_dump_handler( void )
     return 1;
 }
 
-/* The desktop's freeze report (port/ps4_main.c): its threads into hang.log, nothing on stderr (the
- * programs' pipe may be what stands) */
+/* The desktop's freeze report (port/ps4_main.c): its threads into hang.log, with nothing that may wait
+ * for what a stuck thread holds. v00.62's report stopped at its first step, fopen (malloc: the heap's
+ * lock, held, it seems, by the desktop's loop, stuck as well): no stdio and no malloc here, the table
+ * read without its lock, the signal sent by the kernel's thr_kill, the file opened by a system call. */
 void ps4_dump_threads_quiet( const char *reason )
 {
-    if (install_dump_handler()) dump_threads( reason, 0 );
+    char line[1024];
+    int i, j, len, waited;
+    long fd;
+
+    if (!install_dump_handler()) return;
+    /* (FreeBSD's O_WRONLY | O_APPEND | O_CREAT: the C library's headers have Linux's numbers, its open
+     * converts them) */
+    if ((fd = raw_syscall3( 5 /* SYS_open */, (long)"/data/WinePS4/hang.log", 0x0001 | 0x0008 | 0x0200, 0666 )) == -1)
+        return;
+    len = snprintf( line, sizeof(line), "==== %s (eboot addresses as linked: llvm-symbolizer --obj=<elf>)\n", reason );
+    raw_syscall3( 4 /* SYS_write */, fd, (long)line, len );
+    for (i = 0; i < MAX_THREADS; i++)
+    {
+        const int tid = __atomic_load_n( &threads[i].tid, __ATOMIC_ACQUIRE );
+
+        if (!tid) continue;
+        __atomic_store_n( &dump_done, 0, __ATOMIC_RELEASE );
+        if (raw_syscall3( 433 /* SYS_thr_kill */, tid, SIGXCPU, 0 ) == -1)
+            len = snprintf( line, sizeof(line), "-- thread %d: gone\n", tid );
+        else
+        {
+            /* (a line a thread, written at once: the user may close the app before the last) */
+            for (waited = 0; waited < 200 && !__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ); waited++) usleep( 1000 );
+            if (!__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ))
+                len = snprintf( line, sizeof(line), "-- thread %d: no answer\n", tid );
+            else
+            {
+                len = in_eboot( dump_rip ) ? snprintf( line, sizeof(line), "-- thread %d: rip elf 0x%llx\n   stack:", tid,
+                                                       (unsigned long long)dump_rip )
+                                           : snprintf( line, sizeof(line), "-- thread %d: rip 0x%llx (outside the eboot)\n   stack:",
+                                                       tid, (unsigned long long)dump_rip );
+                for (j = 0; j < dump_count && len < (int)sizeof(line) - 24; j++)
+                    len += snprintf( line + len, sizeof(line) - len, " 0x%llx", (unsigned long long)dump_frames[j] );
+                line[len++] = '\n';
+            }
+        }
+        raw_syscall3( 4 /* SYS_write */, fd, (long)line, len );
+    }
+    raw_syscall3( 6 /* SYS_close */, fd, 0, 0 );
 }
 
 static void *hang_watch_thread( void *arg )

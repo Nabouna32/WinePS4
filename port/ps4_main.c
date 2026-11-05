@@ -1117,7 +1117,7 @@ static void *freeze_watch( void *arg )
 {
     unsigned int desktop = desktop_beats, output = output_beats, requests[FREEZE_SECONDS] = { 0 };
     int desktop_still = 0, output_still = 0, reports = 0, standing = 0, tick = 0;
-    char text[512];
+    char text[640], heap[120];
     sigset_t set;
 
     sigfillset( &set );
@@ -1142,11 +1142,12 @@ static void *freeze_watch( void *arg )
         if (standing || reports == 3) continue;
         standing = 1;
         reports++;
+        ps4rt_heap_report( heap, sizeof(heap) );  /* (lock-free) */
         snprintf( text, sizeof(text), "wineps4: a freeze: the desktop's loop still for %d s, the log thread for %d s "
-                  "(%s, %d bytes waiting for it), wineserver %u requests in the last %d s: the desktop's threads go "
-                  "into /data/WinePS4/hang.log\n", desktop_still, output_still,
+                  "(%s, %d bytes waiting for it), wineserver %u requests in the last %d s, the desktop's %s: its "
+                  "threads go into /data/WinePS4/hang.log\n", desktop_still, output_still,
                   output_state == 1 ? "writing wine.log" : output_state == 2 ? "giving the desktop its text" : "reading",
-                  pending, ps4_request_seq - requests[tick % FREEZE_SECONDS], FREEZE_SECONDS - 1 );
+                  pending, ps4_request_seq - requests[tick % FREEZE_SECONDS], FREEZE_SECONDS - 1, heap );
         ps4_log_line( text );
         ps4_dump_threads_quiet( text );
         ps4_log_line( "wineps4: the freeze's thread stacks are in hang.log\n" );

@@ -35,6 +35,7 @@ struct WinWindow {
     uint64_t order = 0;                   // higher: nearer the top
     int client_left = 0, client_top = 0;  // the client area's corner, on the screen
     int caption_bottom = 0;               // where Windows' title bar ends (PS4_WINDOW_CAPTION)
+    int dx0 = 0, dy0 = 0, dx1 = 0, dy1 = 0;  // the pixels changed since the scene had them (none: dx1 <= dx0)
 };
 
 std::mutex lock;
@@ -42,6 +43,7 @@ std::map<uint64_t, WinWindow> windows;
 std::set<int> connected;  // the processes whose display driver is connected
 uint64_t next_order = 1;
 std::atomic<bool> changed{false};
+bool layout_changed = true;  // (lock) a window came, went, moved, changed, was raised: winwin_patch can't
 std::vector<WinTextEvent> text_events;  // (PS4_DISPLAY_TEXT) until the desktop takes them
 
 // OpenOrbis' sockaddr_un is a Linux one: the PS4 (FreeBSD) has a length byte first
@@ -68,6 +70,7 @@ bool read_all(int fd, void *data, size_t size) {
 void resize_pixels(WinWindow &w, int bw, int bh) {
     if (bw == w.bw && bh == w.bh)
         return;
+    layout_changed = true;  // (what is drawn of it may change size)
     std::vector<uint32_t> pixels(static_cast<size_t>(bw) * bh, 0xff000000);
     for (int y = 0; y < std::min(bh, w.bh); y++)
         std::memcpy(&pixels[static_cast<size_t>(y) * bw], &w.pixels[static_cast<size_t>(y) * w.bw],
@@ -78,6 +81,8 @@ void resize_pixels(WinWindow &w, int bw, int bh) {
 
 void handle(const ps4_display_header &m, std::vector<uint8_t> &data) {
     std::lock_guard guard(lock);
+    if (m.type != PS4_DISPLAY_PIXELS && m.type != PS4_DISPLAY_TEXT)
+        layout_changed = true;
     switch (m.type) {
     case PS4_DISPLAY_WINDOW: {
         WinWindow &w = windows[m.hwnd];
@@ -100,6 +105,11 @@ void handle(const ps4_display_header &m, std::vector<uint8_t> &data) {
         const int cols = m.right - m.left;
         if (m.left < 0 || m.top < 0 || m.right > w.bw || m.bottom > w.bh || cols <= 0)
             break;
+        if (w.dx1 <= w.dx0)
+            w.dx0 = m.left, w.dy0 = m.top, w.dx1 = m.right, w.dy1 = m.bottom;
+        else
+            w.dx0 = std::min(w.dx0, m.left), w.dy0 = std::min(w.dy0, m.top), w.dx1 = std::max(w.dx1, m.right),
+            w.dy1 = std::max(w.dy1, m.bottom);
         const uint32_t *src = reinterpret_cast<const uint32_t *>(data.data());
         const bool rgba = m.flags & PS4_PIXELS_RGBA;  // (a Vulkan frame: the canvas's order already)
         for (int y = m.top; y < m.bottom; y++, src += cols) {
@@ -163,6 +173,7 @@ void *client_thread(void *arg) {
     close(fd);
     // the program ended: its windows go
     std::lock_guard guard(lock);
+    layout_changed = true;
     connected.erase(pid);
     for (auto it = windows.begin(); it != windows.end();)
         it = it->second.pid == pid ? windows.erase(it) : std::next(it);
@@ -272,6 +283,60 @@ void winwin_start() {
 
 bool winwin_changed() { return changed.exchange(false); }
 
+bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<WinRect> &out) {
+    std::lock_guard guard(lock);
+    out.clear();
+    if (layout_changed)
+        return false;
+    const int cw = c.width(), ch = c.height();
+    const auto list = stacked();
+    const uint64_t active = active_window(list);
+    struct Patch {
+        const WinWindow *w;
+        int x0, y0, x1, y1;  // on the screen
+    };
+    std::vector<Patch> patches;
+    for (size_t i = 0; i < list.size(); i++) {
+        const WinWindow *w = list[i].second;
+        if (w->dx1 <= w->dx0)
+            continue;
+        const WinFrame f = frame_of(list[i].first, *w, active);
+        const bool full = is_full_screen(*w), rounded = w->caption_bottom && !f.maximized;
+        // its own part: what winwin_draw copies and draw_program_over leaves as it is
+        const int left = std::max(0, w->x + f.border), right = std::min(cw, w->x + std::min(w->w, w->bw) - f.border);
+        const int top = std::max({0, w->y, w->caption_bottom});
+        const int bottom = std::min({ch, full ? ch : taskbar_top,
+                                     w->y + std::min(w->h, w->bh) - std::max(f.border, rounded ? CORNER : 0)});
+        Patch p{w, w->x + w->dx0, w->y + w->dy0, w->x + w->dx1, w->y + w->dy1};
+        p.x0 = std::max(p.x0, std::max(0, w->x)), p.y0 = std::max(p.y0, std::max(0, w->y));
+        p.x1 = std::min(p.x1, std::min(cw, w->x + w->w)), p.y1 = std::min(p.y1, std::min(ch, w->y + w->h));
+        if (p.x1 <= p.x0 || p.y1 <= p.y0)
+            continue;  // (all of it off the screen or past what is shown)
+        if (p.x0 < left || p.x1 > right || p.y0 < top || p.y1 > bottom)
+            return false;  // (in its title bar, frame or corners, or under the taskbar)
+        // nothing above it there: the windows after it, with the shadows of those with a title bar
+        for (size_t j = i + 1; j < list.size(); j++) {
+            const WinWindow *o = list[j].second;
+            const int m = o->caption_bottom && !(o->flags & PS4_WINDOW_MAXIMIZED) ? shadow : 0;
+            if (p.x0 < o->x + o->w + m && o->x - m < p.x1 && p.y0 < o->y + o->h + m && o->y - m < p.y1)
+                return false;
+        }
+        patches.push_back(p);
+    }
+    uint32_t *const dst = c.data();
+    for (const Patch &p : patches) {
+        for (int y = p.y0; y < p.y1; y++)
+            std::memcpy(dst + static_cast<size_t>(y) * cw + p.x0,
+                        &p.w->pixels[static_cast<size_t>(y - p.w->y) * p.w->bw + (p.x0 - p.w->x)], (p.x1 - p.x0) * 4);
+        out.push_back(WinRect{p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0});
+    }
+    for (const auto &[hwnd, w] : list) {
+        auto own = windows.find(hwnd);
+        own->second.dx0 = own->second.dx1 = 0;
+    }
+    return true;
+}
+
 void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4ui::Canvas &, const WinFrame &)> &under,
                  const std::function<void(ps4ui::Canvas &, const WinFrame &)> &over) {
     std::lock_guard guard(lock);
@@ -279,10 +344,14 @@ void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4u
     const int cw = c.width(), ch = c.height();
     const auto list = stacked();
     const uint64_t active = active_window(list);
+    if (layer == WinLayer::Normal)
+        layout_changed = false;  // (the scene has it all now: what changes from here on, winwin_patch may copy)
     for (const auto &[hwnd, w] : list) {
         if (is_full_screen(*w) != (layer == WinLayer::FullScreen))
             continue;
         const WinFrame f = frame_of(hwnd, *w, active);
+        auto own = windows.find(hwnd);
+        own->second.dx0 = own->second.dx1 = 0;
         under(c, f);
         // Windows' pixels, but for its title bar (ours goes there) and outside rounded corners
         const bool rounded = w->caption_bottom && !f.maximized;

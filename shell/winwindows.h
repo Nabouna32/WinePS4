@@ -44,6 +44,13 @@ struct WinRect {
     bool contains(float px, float py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 WinRect winwin_button_rect(const WinFrame &f, int button);
+// The desktop's quick frame, when since the last winwin_draw nothing but programs' pixels changed (no
+// window came, went, moved or was raised): their changed pixels copied into the scene as they are, when
+// each change lies in its window's own part (below the title bar, inside the frame and the bottom
+// corners, above taskbar_top unless the window is full-screen) and no other window, or the shadow
+// shadow px around one, is over it; out gets the screen rects copied. false: nothing copied, the
+// whole scene must be drawn (winwin_draw).
+bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<WinRect> &out);
 // The button of a title bar of ours at (x, y) (with its window, and whether that is maximized), or -1
 int winwin_button_at(float x, float y, uint64_t *hwnd, bool *maximized = nullptr);
 // A command for a window, as its title bar's buttons send it: SC_* or PS4_SC_ACTIVATE

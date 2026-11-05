@@ -466,3 +466,45 @@ v00.62:
   Performance log writes straight to wine.log and adds the pool outside the 7; the spawner writes its
   lines after letting its lock go.
 - Settings window 1000 high (10 switches).
+
+## Iron Snout's Direct3D 11, the second freeze, quick frames, shortcuts (v00.63, 2026-11-06)
+
+v00.62 (logs/v00.62, Steam's logs in steam/): Iron Snout started from Steam at last (v00.61's shared
+section fix: "AppID 424280 adding PID 772 as a tracked process", the section's private copy in
+wine.log), DXVK found the GPU, then "vkMapMemory2EXT failed: -5" and "Failed to create D3D11 device:
+Failed to map Vulkan memory": a 32-bit process maps every Vulkan memory below 4 GiB with
+VK_EXT_map_memory_placed (win32u), and ps4-kit's RADV refused every placed map (its PS4 path returned
+NULL for a fixed address). Every 32-bit game on DXVK. 100 s later the desktop froze: the freeze report
+fired ("the desktop's loop still for 10 s, the log thread for 0 s (reading, 0 bytes waiting)", so not
+the log pipe), and its dump wrote nothing: it began with fopen (malloc), and stdio kept the rest until
+fclose (a user closing the app by then loses it all). Performance log: the desktop's frame 12-14 ms
+whenever anything of the screen changed, and every pointer move copied the whole 8 MiB scene to the
+screen; Steam's web helper 0.5-2.5 of the 7 cores.
+
+v00.63:
+- ps4-kit gpu 941b771 (Mesa patch 0030): placed maps: the buffer's direct memory mapped once more at
+  the application's address (sceKernelMapDirectMemory, fixed), back to a reservation on unmap and on
+  destroy. win32u (Wine ef060f4) only reserves the placed range on the PS4: committed pages are backed
+  with direct memory (and zeroed) at once, which the driver's mapping then covers: a whole DXVK chunk
+  (up to 256 MiB) wasted for each.
+- The freeze report's dump: no stdio, no malloc, the thread table without its lock, SIGXCPU by the
+  kernel's thr_kill, hang.log opened by a system call (FreeBSD's flags: the C library's headers have
+  Linux's) and written a line a thread, 200 ms for each; the report says the desktop's heap use. The
+  Performance log too ("the desktop's heap N of M MiB filled").
+- Quick frames: when only programs' pixels changed (winwindows tracks each window's changed rect, and
+  whether any window came, went, moved or was raised), and they lie in a window's own part (below its
+  title bar, inside its frame and bottom corners, above the taskbar unless full-screen) with no other
+  window or its shadow over them, and nothing of the desktop's is open over the programs (menu, Start,
+  dialog, toast, copy, dragged files, a desktop window on top), they are copied into the scene as they
+  are (winwin_patch) instead of the scene being drawn again. The screen's two buffers each keep what
+  they lack of the scene (all, or rects) and where the pointer was drawn: a frame copies only those, a
+  pointer move over an unchanged scene two small rects. The Performance log counts the quick frames.
+- Shortcuts: "Create shortcut on the desktop" in Files' right-click menu (anything not already on the
+  desktop) and on a program's taskbar button (its process's program): a Shell Link (.lnk: LinkInfo's
+  local path, the working folder, as Windows writes one), named without .exe, "(2)" and on when taken;
+  a .lnk or .url is copied. A shortcut to a folder opens Files there.
+- Internet shortcuts (.url, Steam's games on the desktop): their IconFile's icon on the desktop and in
+  Files (with the shortcut arrow), their name without .url; opened, a steam: address goes to Steam's
+  steam.exe (it hands it to the Steam that runs, or starts Steam and then the game), any other to
+  start.exe. A .lnk's icon location is used when it names one. Shortcuts are read once and again when
+  they change (the desktop read every .lnk from the disk on every frame it drew).

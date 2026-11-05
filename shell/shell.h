@@ -41,6 +41,8 @@ void ps4_thread_register( void );
 void ps4_log_line( const char *text );
 /* the memory the processes outside the PS4's 7 share, free, as one of them last said (~0: none said) */
 unsigned long long ps4_outside_pool( void );
+/* ps4-kit's: "heap N of M MiB filled (+ overflow ...)" for this process, without taking a lock */
+void ps4rt_heap_report( char *out, size_t size );
 
 /* Task Manager: the program processes running (local processes: port/ps4_spawn_desk.c), with what
  * each last said of itself (every second), and ending one */

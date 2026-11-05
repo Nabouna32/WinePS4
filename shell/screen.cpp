@@ -91,6 +91,8 @@ uint32_t *screen_back_buffer() {
     return buffers[current];
 }
 
+int screen_back_index() { return current; }
+
 void screen_flip() {
     __builtin_ia32_sfence();  // the write-combined stores out before the flip
     const int flip = sceVideoOutSubmitFlip(video, FIRST_SLOT + current, ORBIS_VIDEO_OUT_FLIP_VSYNC, FLIP_ARG_BASE + ++flips);
