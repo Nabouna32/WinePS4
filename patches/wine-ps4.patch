@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/41] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/42] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/41] WinePS4: wineserver main fixes
+Subject: [PATCH 02/42] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/41] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/42] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/41] server: send the first thread its request pipe in the
+Subject: [PATCH 04/42] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/41] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/42] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/41] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/42] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/41] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/42] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/41] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/42] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/41] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/42] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/41] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/42] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -893,7 +893,7 @@ index a06aa83..81e8555 100644
 From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:21:33 +0300
-Subject: [PATCH 11/41] WinePS4: a process per program: wineserver listens
+Subject: [PATCH 11/42] WinePS4: a process per program: wineserver listens
  (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
  thr_kill2 across processes
 
@@ -1048,7 +1048,7 @@ index 122208b..44fcfa7 100644
 From cc36d27af8fac614b7694b55514cd924bbb9c85f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:51:49 +0300
-Subject: [PATCH 12/41] WinePS4: the app wineserver never closes its socket
+Subject: [PATCH 12/42] WinePS4: the app wineserver never closes its socket
  (callers logged); no wineboot at program start
 
 ---
@@ -1094,7 +1094,7 @@ index 44fcfa7..e66524f 100644
 From 2651912be3a1aad91a90a2833e1312a0ec3eb967 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 03:11:50 +0300
-Subject: [PATCH 13/41] programs fill the shared data page themselves (wineboot
+Subject: [PATCH 13/42] programs fill the shared data page themselves (wineboot
  is skipped)
 
 ---
@@ -1124,7 +1124,7 @@ index f40d41f..41f5884 100644
 From 90e29674410e9ad3ffc58dffb83a893ff33a1a5f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:24:13 +0300
-Subject: [PATCH 14/41] wineps4.drv display driver + the desktop input pipe in
+Subject: [PATCH 14/42] wineps4.drv display driver + the desktop input pipe in
  the server
 
 ---
@@ -2056,7 +2056,7 @@ index 3e8ab2e..3048ccf 100644
 From 6b5c634711a7fbcdc1e41eb6abd45444b9921f57 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:34:30 +0300
-Subject: [PATCH 15/41] wineps4.drv: work area above the 60 px taskbar
+Subject: [PATCH 15/42] wineps4.drv: work area above the 60 px taskbar
 
 ---
  dlls/wineps4.drv/display.c | 2 +-
@@ -2082,7 +2082,7 @@ index 93fdcfb..e947d31 100755
 From af0965aa6bc9f2a34ff5586844a0660da1f53b2a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:12:22 +0300
-Subject: [PATCH 16/41] programs start programs with one fork (an orphan cannot
+Subject: [PATCH 16/42] programs start programs with one fork (an orphan cannot
  exec on the PS4); exec failures logged
 
 ---
@@ -2152,7 +2152,7 @@ index 4c2e7eb..67836bb 100644
 From e522bb1370611936c26405c3b984e0e2e9009f29 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:37:29 +0300
-Subject: [PATCH 17/41] spawn steps and failed children logged
+Subject: [PATCH 17/42] spawn steps and failed children logged
 
 ---
  dlls/ntdll/unix/process.c | 26 ++++++++++++++++++++++++++
@@ -2230,7 +2230,7 @@ index 67836bb..3007370 100644
 From ea3cbbf972e23f2ee73cabc6cfe3f2795c620466 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:45:16 +0300
-Subject: [PATCH 18/41] programs start processes from an app thread with an
+Subject: [PATCH 18/42] programs start processes from an app thread with an
  ordinary stack (ps4_spawn)
 
 ---
@@ -2326,7 +2326,7 @@ index 3007370..1bd8aee 100644
 From 491ce5e30e62e7650c69a8ab3ee8d50cb070cc3a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 06:06:53 +0300
-Subject: [PATCH 19/41] the new process environment strings in malloc memory
+Subject: [PATCH 19/42] the new process environment strings in malloc memory
 
 ---
  dlls/ntdll/unix/process.c | 11 +++++++----
@@ -2368,7 +2368,7 @@ index 1bd8aee..88d28c6 100644
 From 892873489067b68defd34126bf97af98365560ab Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 09:28:47 +0300
-Subject: [PATCH 20/41] WinePS4: wineboot runs once per app start (the desktop
+Subject: [PATCH 20/42] WinePS4: wineboot runs once per app start (the desktop
  starts it with WINEPS4_BOOT); programs wait for its event
 
 ---
@@ -2415,7 +2415,7 @@ index 88d28c6..9b07ec0 100644
 From b13ad1ef3a4578b1ff346c0643100095216d0473 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:13:44 +0300
-Subject: [PATCH 21/41] PS4: programs never run wineboot (the desktop does,
+Subject: [PATCH 21/42] PS4: programs never run wineboot (the desktop does,
  once); spawned processes logged
 
 ---
@@ -2449,7 +2449,7 @@ index e0d4c6d..9a22128 100644
 From 947f88752bee92f5fc6d1713481c88db741cf0d8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:14:01 +0300
-Subject: [PATCH 22/41] PS4: processes started from programs are logged
+Subject: [PATCH 22/42] PS4: processes started from programs are logged
 
 ---
  dlls/ntdll/unix/process.c | 1 +
@@ -2474,7 +2474,7 @@ index 9b07ec0..8460cd3 100644
 From 8d9d4ac998d9294c83655eed440a04ae1893e3df Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:36:46 +0300
-Subject: [PATCH 23/41] PS4: the desktop can have the server kill every program
+Subject: [PATCH 23/42] PS4: the desktop can have the server kill every program
  process; unwinding skips addresses outside the app
 
 ---
@@ -2600,7 +2600,7 @@ index 9408763..ccca2bd 100755
 From 4fca7680a58381e89d92907a71ea7cdcc408d85d Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 19:45:19 +0300
-Subject: [PATCH 24/41] PS4: a new process keeps the shared syscall dispatcher
+Subject: [PATCH 24/42] PS4: a new process keeps the shared syscall dispatcher
  pointer instead of writing back its own 0
 
 ---
@@ -2655,7 +2655,7 @@ index 6d01de4..ccb9716 100644
 From b1111f49eb0fc917c258af3125209a48761e7cc8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 20:00:09 +0300
-Subject: [PATCH 25/41] PS4: CreateProcess has the desktop start the process
+Subject: [PATCH 25/42] PS4: CreateProcess has the desktop start the process
  (it collects every one)
 
 ---
@@ -2692,7 +2692,7 @@ index 8460cd3..84b5a3a 100644
 From fde1c22fc589c56b5b2ece770adb9a36904c353c Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 00:22:33 +0300
-Subject: [PATCH 26/41] PS4: the desktop stays when its last program ends
+Subject: [PATCH 26/42] PS4: the desktop stays when its last program ends
  (explorer.exe runs with the app)
 
 ---
@@ -2732,7 +2732,7 @@ index a36253e..6fb58db 100644
 From a078eaa8946d422fc5fc5238759cdcb6d527358b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 01:20:23 +0300
-Subject: [PATCH 27/41] PS4: crypt32 reads its root certificates from WinePS4
+Subject: [PATCH 27/42] PS4: crypt32 reads its root certificates from WinePS4
  (the package, or the data folder)
 
 ---
@@ -2763,7 +2763,7 @@ index 345051c..22113be 100644
 From a4ee9e980578a46ec12489bd0386904b790637db Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 02:29:46 +0300
-Subject: [PATCH 28/41] PS4: windows report their title bar, client area and
+Subject: [PATCH 28/42] PS4: windows report their title bar, client area and
  state; the desktop sends window commands (title bar buttons, taskbar)
 
 ---
@@ -2975,7 +2975,7 @@ index ccca2bd..cf8302b 100755
 From 76fa2947684d2ed3e8d51497e4f13173da3eae96 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 02:32:19 +0300
-Subject: [PATCH 29/41] PS4: a process the desktop starts is named by its image
+Subject: [PATCH 29/42] PS4: a process the desktop starts is named by its image
  path, not the command line's first word
 
 ---
@@ -3027,7 +3027,7 @@ index 84b5a3a..fa78872 100644
 From b22b25456d9d9d9c046f487ce3dff35f86248b7b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 03:15:35 +0300
-Subject: [PATCH 30/41] PS4: a window gets a taskbar button by Windows' rule
+Subject: [PATCH 30/42] PS4: a window gets a taskbar button by Windows' rule
  (not owned, not a tool window, or WS_EX_APPWINDOW)
 
 ---
@@ -3057,7 +3057,7 @@ index 5413f34..6da5fbe 100755
 From 5c3b61688fcf27b7b59bbc1fc07529fad2b4d4ec Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 04:45:01 +0300
-Subject: [PATCH 31/41] PS4: a Chromium browser's first process gets the
+Subject: [PATCH 31/42] PS4: a Chromium browser's first process gets the
  switches that keep it in one process (the PS4 runs 7 for the app)
 
 ---
@@ -3157,7 +3157,7 @@ index fa78872..6827f0e 100644
 From 97928f88d49902c3e15ff5a818ce77d1f423a329 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 05:46:17 +0300
-Subject: [PATCH 32/41] PS4: wineserver parks idle files for the app's budget
+Subject: [PATCH 32/42] PS4: wineserver parks idle files for the app's budget
  of open files (about 250 for all its processes): closed, opened again by name
  at the same file pointer when next used; files lent to programs are not kept
  in their fd cache
@@ -3665,7 +3665,7 @@ index 77ea355..87e214b 100644
 From 74314df563b182f74f63b1fe82406aaa58cd2b59 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 05:46:17 +0300
-Subject: [PATCH 33/41] PS4: helper programs that would only take one of the 7
+Subject: [PATCH 33/42] PS4: helper programs that would only take one of the 7
  processes are refused (Steam's start-up probes, install scripts and overlay)
 
 ---
@@ -3728,7 +3728,7 @@ index 6827f0e..ad54f06 100644
 From aa7b20b57a6d6b0a7fec11d53688eb88d58e9c46 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 22:24:50 +0300
-Subject: [PATCH 34/41] PS4: nsiproxy's interfaces from the PS4's kernel: the
+Subject: [PATCH 34/42] PS4: nsiproxy's interfaces from the PS4's kernel: the
  hardware address from SIOCGIFCONF's link level entries, FreeBSD's ioctl
  numbers for the flags and the MTU (port/ps4_ifaddrs.c)
 
@@ -3811,7 +3811,7 @@ index c7d1f73..4b8e608 100644
 From 0428e4678e314586f41027b377c0b331e57ce9fb Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 22:51:13 +0300
-Subject: [PATCH 35/41] PS4: dnsapi's Unix half (the DNS servers from the PS4's
+Subject: [PATCH 35/42] PS4: dnsapi's Unix half (the DNS servers from the PS4's
  network settings, addresses through its resolver) and nsiproxy's IPv4 route
  table (FreeBSD's routing sysctl, else the interfaces' networks), so
  GetAdaptersAddresses succeeds
@@ -4154,7 +4154,7 @@ index 002d2b4..8623de1 100644
 From e83d22beb82d7f74c3b2a9031d4fcc1cbd44653b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 00:02:53 +0300
-Subject: [PATCH 36/41] PS4: bcrypt's Unix half on OpenSSL's libcrypto (RSA and
+Subject: [PATCH 36/42] PS4: bcrypt's Unix half on OpenSSL's libcrypto (RSA and
  ECC public keys, signature checks, AES CBC/ECB/CFB8/GCM): crypt32 verifies
  ECDSA certificate chains through it
 
@@ -5097,7 +5097,7 @@ index 0000000..7792869
 From f4a85ec1d83c56b3295f0b8687f970cc289715e5 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 02:18:26 +0300
-Subject: [PATCH 37/41] PS4: the PS4's keyboard for a text field clicked: msctf
+Subject: [PATCH 37/42] PS4: the PS4's keyboard for a text field clicked: msctf
  tells the display driver which field Chromium's text services focus (a text
  store, a password context); the driver sends that and the carets win32u shows
  to the desktop
@@ -5330,7 +5330,7 @@ index 6da5fbe..43df3fd 100755
 From 97f01243e4f923fdbad56ae169fa4f957b84e7c3 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 02:25:56 +0300
-Subject: [PATCH 38/41] PS4: GlobalMemoryStatusEx's RAM and free memory from
+Subject: [PATCH 38/42] PS4: GlobalMemoryStatusEx's RAM and free memory from
  the app's direct and flexible memory (port/ps4_wine_vm.c): neither the Linux
  nor the BSD branch is built, so programs saw none free
 
@@ -5364,7 +5364,7 @@ index 350bcea..8c4300c 100644
 From deef81707f7cd9f45a5ca2e5cbe4091d2973afd3 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 03:17:55 +0300
-Subject: [PATCH 39/41] PS4: sections in anonymous shared memory (not files of
+Subject: [PATCH 39/42] PS4: sections in anonymous shared memory (not files of
  the app's budget), IPv4 options on IPv6 sockets as FreeBSD takes them (IP_TOS
  as IPV6_TCLASS), a log of refused socket options, Chromium's GPU shader
  caches off the disk
@@ -5496,7 +5496,7 @@ index 85ea73a..44a8965 100644
 From 7a1686bc4a9bca19787e7a38a81a3b9e12f85fe5 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 03:37:49 +0300
-Subject: [PATCH 40/41] PS4: Vulkan in wineps4.drv: headless surfaces from
+Subject: [PATCH 40/42] PS4: Vulkan in wineps4.drv: headless surfaces from
  ps4-kit's window system, each presented frame sent to the desktop as the
  window's pixels (R8G8B8A8 flagged); D3DKMT gets no Vulkan instance (it would
  open the GPU in every process that asks)
@@ -5823,7 +5823,7 @@ index 0000000..cb6ef6f
 From 8f81fe8f900ec5afd5ca0f5a7c4013318c353c29 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 23:20:58 +0300
-Subject: [PATCH 41/41] PS4: Steam's error reporter and hardware updater left
+Subject: [PATCH 41/42] PS4: Steam's error reporter and hardware updater left
  out, Chromium as on a low-end device; the desktop's input to the server never
  blocks (a server that stopped reading froze the whole app): dropped and
  reported
@@ -5933,6 +5933,2034 @@ index cf8302b..bb5b2aa 100755
 +    }
 +    return 0;
  }
+-- 
+2.53.0
+
+
+From 35e7b97d1bdf7568ae2094eb31a5ca587d60c696 Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Fri, 6 Nov 2026 00:24:23 +0300
+Subject: [PATCH 42/42] PS4: shared sections of an image copied into shared
+ memory through a mapping (the kernel takes no pwrite on it, Iron Snout failed
+ as for another platform), a private copy where one shares a 16 KiB page;
+ wineps4.drv is also the audio driver (mmdevapi streams to the desktop mixer);
+ keepalive stays on when the kernel refuses its timing; a program that does
+ not start is logged
+
+---
+ dlls/ntdll/unix/process.c      |    9 +
+ dlls/ntdll/unix/socket.c       |   23 +
+ dlls/ntdll/unix/virtual.c      |   23 +-
+ dlls/wineps4.drv/Makefile.in   |    1 +
+ dlls/wineps4.drv/audio.c       | 1677 ++++++++++++++++++++++++++++++++
+ dlls/wineps4.drv/ps4_audio.h   |   62 ++
+ dlls/wineps4.drv/ps4drv_main.c |   21 +-
+ dlls/wineps4.drv/unixlib.h     |    5 +-
+ server/mapping.c               |   24 +
+ 9 files changed, 1823 insertions(+), 22 deletions(-)
+ create mode 100755 dlls/wineps4.drv/audio.c
+ create mode 100755 dlls/wineps4.drv/ps4_audio.h
+
+diff --git a/dlls/ntdll/unix/process.c b/dlls/ntdll/unix/process.c
+index 00d080c..14448b9 100644
+--- a/dlls/ntdll/unix/process.c
++++ b/dlls/ntdll/unix/process.c
+@@ -888,6 +888,9 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
+     const PS_ATTRIBUTE *handles_attr = NULL, *jobs_attr = NULL;
+     data_size_t handles_size, jobs_size;
+     obj_handle_t *handles, *jobs;
++#ifdef __PS4_WINE__
++    BOOL refused = FALSE;
++#endif
+ 
+     if (thread_flags & THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER)
+     {
+@@ -956,6 +959,7 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
+     if (ps4_refused_program( unix_name, &params->CommandLine ))
+     {
+         status = STATUS_ACCESS_DENIED;
++        refused = TRUE;
+         goto done;
+     }
+ #endif
+@@ -1162,6 +1166,11 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
+     status = STATUS_SUCCESS;
+ 
+ done:
++#ifdef __PS4_WINE__
++    /* (a refused program was logged where it was refused) */
++    if (status && !refused)
++        ERR( "wineps4: starting %s failed: %#x\n", debugstr_us( &path ), status );
++#endif
+     if (file_handle) NtClose( file_handle );
+     if (process_info) NtClose( process_info );
+     if (process_handle) NtClose( process_handle );
+diff --git a/dlls/ntdll/unix/socket.c b/dlls/ntdll/unix/socket.c
+index a578b65..eaef041 100644
+--- a/dlls/ntdll/unix/socket.c
++++ b/dlls/ntdll/unix/socket.c
+@@ -2076,6 +2076,9 @@ NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc
+ 
+             if (setsockopt( fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(int) ) < 0)
+             {
++#ifdef __PS4__
++                ps4_log_refused_option( SOL_SOCKET, SO_KEEPALIVE, sizeof(int), errno );
++#endif
+                 status = STATUS_INVALID_PARAMETER;
+                 break;
+             }
+@@ -2087,8 +2090,15 @@ NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc
+ 
+                 if (setsockopt( fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(int) ) < 0)
+                 {
++#ifdef __PS4__
++                    /* WinePS4: keepalive stays on at the kernel's own timing. Steam asserted "Unable to set
++                     * default socket options, error 10022" for each socket through v00.60, and no option
++                     * do_setsockopt sets was refused: these go past it (logged once each) */
++                    ps4_log_refused_option( IPPROTO_TCP, TCP_KEEPIDLE, sizeof(int), errno );
++#else
+                     status = STATUS_INVALID_PARAMETER;
+                     break;
++#endif
+                 }
+ #else
+                 FIXME("ignoring keepalive timeout\n");
+@@ -2101,7 +2111,11 @@ NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc
+                 int interval = max( 1, (k->keepaliveinterval + 500) / 1000 );
+ 
+                 if (setsockopt( fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(int) ) < 0)
++#ifdef __PS4__
++                    ps4_log_refused_option( IPPROTO_TCP, TCP_KEEPINTVL, sizeof(int), errno );
++#else
+                     status = STATUS_INVALID_PARAMETER;
++#endif
+ #else
+                 FIXME("ignoring keepalive interval\n");
+ #endif
+@@ -2588,6 +2602,15 @@ NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc
+             }
+ 
+             ret = setsockopt( fd, IPPROTO_IPV6, IPV6_V6ONLY, in_buffer, in_size );
++#ifdef __PS4__
++            if (ret)
++            {
++                const int error = errno;
++
++                ps4_log_refused_option( IPPROTO_IPV6, IPV6_V6ONLY, in_size, error );
++                errno = error;
++            }
++#endif
+             status = ret ? sock_errno_to_status( errno ) : STATUS_SUCCESS;
+             break;
+         }
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index ccb9716..6ccf6a4 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -2410,6 +2410,23 @@ static NTSTATUS map_file_into_view( struct file_view *view, int fd, size_t start
+ }
+ 
+ 
++#ifdef __PS4_WINE__
++/* PS4: host pages are 16 KiB. A shared section that does not fill host pages of its own cannot be
++ * mapped shared, so it gets a private copy like .data: its data is not shared between processes
++ * (a 'one instance' counter in it reads 0 in every process). Skips its room in the shared file. */
++static BOOL ps4_private_shared_section( const IMAGE_SECTION_HEADER *sec, SIZE_T map_size, off_t *pos,
++                                        const UNICODE_STRING *nt_name )
++{
++    if (!(sec->VirtualAddress & host_page_mask) && !(map_size & host_page_mask) && !(*pos & host_page_mask))
++        return FALSE;
++    FIXME_(module)( "%s shared section %.8s at %x is not 16 KiB aligned: private copy\n",
++                    debugstr_us(nt_name), sec->Name, (int)sec->VirtualAddress );
++    *pos += map_size;
++    return TRUE;
++}
++#endif
++
++
+ /***********************************************************************
+  *           get_committed_size
+  *
+@@ -3121,7 +3138,11 @@ static NTSTATUS map_image_into_view( struct file_view *view, const UNICODE_STRIN
+         }
+ 
+         if ((sec[i].Characteristics & IMAGE_SCN_MEM_SHARED) &&
+-            (sec[i].Characteristics & IMAGE_SCN_MEM_WRITE))
++            (sec[i].Characteristics & IMAGE_SCN_MEM_WRITE)
++#ifdef __PS4_WINE__
++            && !ps4_private_shared_section( &sec[i], map_size, &pos, nt_name )
++#endif
++            )
+         {
+             TRACE_(module)( "%s mapping shared section %.8s at %p off %x (%x) size %lx (%lx) flags %x\n",
+                             debugstr_us(nt_name), sec[i].Name, ptr + sec[i].VirtualAddress,
+diff --git a/dlls/wineps4.drv/Makefile.in b/dlls/wineps4.drv/Makefile.in
+index 62001a4..163f9b4 100755
+--- a/dlls/wineps4.drv/Makefile.in
++++ b/dlls/wineps4.drv/Makefile.in
+@@ -4,6 +4,7 @@ UNIX_LIBS = -lwin32u $(PTHREAD_LIBS)
+ IMPORTS   = win32u
+ 
+ SOURCES = \
++	audio.c \
+ 	dllmain.c \
+ 	display.c \
+ 	ps4drv_main.c \
+diff --git a/dlls/wineps4.drv/audio.c b/dlls/wineps4.drv/audio.c
+new file mode 100755
+index 0000000..0fac7b6
+--- /dev/null
++++ b/dlls/wineps4.drv/audio.c
+@@ -0,0 +1,1677 @@
++/*
++ * wineps4.drv's audio driver: mmdevapi's streams to the desktop's mixer (WinePS4)
++ *
++ * mmdevapi loads it as "ps4" (HKCU\Software\Wine\Drivers, Audio). It follows wineoss.drv's oss.c:
++ * the WASAPI buffer is the stream's own (local_buffer, in the program's memory where a 32-bit
++ * program reaches it too), and the stream's timer thread copies what the program wrote into the
++ * ring the desktop plays from (port/include/ps4_audio.h, port/ps4_audio_desk.c) as the OSS driver
++ * writes to /dev/dsp, a few periods ahead of the desktop. Frames count as played once the desktop
++ * took them from the ring. Nothing to record from: no capture endpoints, and no MIDI devices.
++ *
++ * Copyright 2011 Andrew Eikum for CodeWeavers
++ *           2022 Huw Davies
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#if 0
++#pragma makedep unix
++#endif
++
++#include "config.h"
++
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <poll.h>
++#include <pthread.h>
++#include <unistd.h>
++#include <sys/mman.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++#include "winternl.h"
++#include "initguid.h"
++#include "audioclient.h"
++#include "mmddk.h"
++
++#include "wine/debug.h"
++#include "wine/unixlib.h"
++
++#include "../mmdevapi/unixlib.h"
++#include "unixlib.h"
++#include "ps4_audio.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(ps4audio);
++
++#ifdef __PS4_WINE__
++extern int ps4_anon_shm( unsigned long long size );  /* port/ps4_wine_port.c */
++#endif
++
++extern NTSTATUS ps4drv_unix_init( void *arg );  /* ps4drv_main.c: the display driver's */
++
++struct ps4_stream
++{
++    WAVEFORMATEX *fmt;
++    EDataFlow flow;
++    UINT flags;
++    AUDCLNT_SHAREMODE share;
++    HANDLE event;
++
++    int sock;                       /* to the desktop, held as long as the stream */
++    struct ps4_audio_ring *ring;    /* what the desktop plays; NULL: no desktop, frames played by the clock */
++    BYTE *ring_data;
++    size_t ring_size;
++    UINT32 ring_target;             /* frames kept in the ring ahead of the desktop */
++
++    BOOL playing, please_quit;
++    UINT64 written_frames, last_pos_frames;
++    UINT32 period_frames, bufsize_frames, held_frames, tmp_buffer_frames, in_ring_frames;
++    UINT32 lcl_offs_frames; /* offs into local_buffer where valid data starts */
++    REFERENCE_TIME period;
++
++    BYTE *local_buffer, *tmp_buffer;
++    INT32 getbuf_last; /* <0 when using tmp_buffer */
++
++    pthread_mutex_t lock;
++};
++
++static const REFERENCE_TIME def_period = 100000;
++static const REFERENCE_TIME min_period = 50000;
++/* the ring holds this much ahead of the desktop at least: a program's timer thread late by less
++ * than that is not heard */
++#define RING_AHEAD_MS 50
++
++static void ps4_write_data( struct ps4_stream *stream );
++
++static ULONG_PTR zero_bits = 0;
++static int audio_log = 1;  /* Settings > Diagnostics > Audio log: streams in wine.log (WINEPS4_AUDIO_LOG=0: off) */
++static unsigned int stream_count;
++
++static NTSTATUS ps4audio_not_implemented( void *args )
++{
++    return STATUS_SUCCESS;
++}
++
++/* copied from kernelbase */
++static int muldiv( int a, int b, int c )
++{
++    LONGLONG ret;
++
++    if (!c) return -1;
++
++    /* We want to deal with a positive divisor to simplify the logic. */
++    if (c < 0)
++    {
++        a = -a;
++        c = -c;
++    }
++
++    /* If the result is positive, we "add" to round. else, we subtract to round. */
++    if ((a < 0 && b < 0) || (a >= 0 && b >= 0))
++        ret = (((LONGLONG)a * b) + (c / 2)) / c;
++    else
++        ret = (((LONGLONG)a * b) - (c / 2)) / c;
++
++    if (ret > 2147483647 || ret < -2147483647) return -1;
++    return ret;
++}
++
++static void ps4_lock( struct ps4_stream *stream )
++{
++    pthread_mutex_lock( &stream->lock );
++}
++
++static void ps4_unlock( struct ps4_stream *stream )
++{
++    pthread_mutex_unlock( &stream->lock );
++}
++
++static NTSTATUS ps4_unlock_result( struct ps4_stream *stream, HRESULT *result, HRESULT value )
++{
++    *result = value;
++    ps4_unlock( stream );
++    return STATUS_SUCCESS;
++}
++
++static struct ps4_stream *handle_get_stream( stream_handle h )
++{
++    return (struct ps4_stream *)(UINT_PTR)h;
++}
++
++static NTSTATUS ps4audio_process_attach( void *args )
++{
++    const char *log = getenv( "WINEPS4_AUDIO_LOG" );
++
++    audio_log = !log || strcmp( log, "0" );
++#ifdef _WIN64
++    if (NtCurrentTeb()->WowTebOffset)
++    {
++        SYSTEM_BASIC_INFORMATION info;
++
++        NtQuerySystemInformation( SystemEmulationBasicInformation, &info, sizeof(info), NULL );
++        zero_bits = (ULONG_PTR)info.HighestUserAddress | 0x7fffffff;
++    }
++#endif
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_main_loop( void *args )
++{
++    struct main_loop_params *params = args;
++    NtSetEvent( params->event, NULL );
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_test_connect( void *args )
++{
++    struct test_connect_params *params = args;
++
++    /* (without the desktop's mixer a stream still runs, by the clock and unheard) */
++    params->priority = Priority_Preferred;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_get_endpoint_ids( void *args )
++{
++    static const WCHAR name[] = {'P','S','4',' ','a','u','d','i','o',0};
++    static const char device[] = "ps4";
++    struct get_endpoint_ids_params *params = args;
++    unsigned int offset = sizeof(*params->endpoints), needed;
++
++    params->num = 0;
++    params->default_idx = 0;
++    if (params->flow != eRender)  /* nothing to record from */
++    {
++        params->result = S_OK;
++        return STATUS_SUCCESS;
++    }
++
++    needed = offset + sizeof(name) + ((sizeof(device) + 1) & ~1);
++    params->num = 1;
++    if (needed > params->size)
++    {
++        params->size = needed;
++        params->result = HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
++        return STATUS_SUCCESS;
++    }
++    params->endpoints[0].name = offset;
++    memcpy( (char *)params->endpoints + offset, name, sizeof(name) );
++    offset += sizeof(name);
++    params->endpoints[0].device = offset;
++    memcpy( (char *)params->endpoints + offset, device, sizeof(device) );
++    params->result = S_OK;
++    return STATUS_SUCCESS;
++}
++
++static UINT get_channel_mask( unsigned int channels )
++{
++    switch (channels)
++    {
++    case 0:
++        return 0;
++    case 1:
++        return KSAUDIO_SPEAKER_MONO;
++    case 2:
++        return KSAUDIO_SPEAKER_STEREO;
++    case 3:
++        return KSAUDIO_SPEAKER_STEREO | SPEAKER_LOW_FREQUENCY;
++    case 4:
++        return KSAUDIO_SPEAKER_QUAD;    /* not _SURROUND */
++    case 5:
++        return KSAUDIO_SPEAKER_QUAD | SPEAKER_LOW_FREQUENCY;
++    case 6:
++        return KSAUDIO_SPEAKER_5POINT1; /* not 5POINT1_SURROUND */
++    case 7:
++        return KSAUDIO_SPEAKER_5POINT1 | SPEAKER_BACK_CENTER;
++    case 8:
++        return KSAUDIO_SPEAKER_7POINT1_SURROUND; /* Vista deprecates 7POINT1 */
++    }
++    FIXME( "Unknown speaker configuration: %u\n", channels );
++    return 0;
++}
++
++/* the ring's sample format for the program's, -1: none the desktop mixes */
++static int get_ps4_format( const WAVEFORMATEX *fmt )
++{
++    const WAVEFORMATEXTENSIBLE *fmtex = (const WAVEFORMATEXTENSIBLE *)fmt;
++
++    if (fmt->wFormatTag == WAVE_FORMAT_PCM ||
++        (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE && IsEqualGUID( &fmtex->SubFormat, &KSDATAFORMAT_SUBTYPE_PCM )))
++    {
++        switch (fmt->wBitsPerSample)
++        {
++        case 8: return PS4_AUDIO_U8;
++        case 16: return PS4_AUDIO_S16;
++        case 24: return PS4_AUDIO_S24;
++        case 32: return PS4_AUDIO_S32;
++        }
++        return -1;
++    }
++    if (fmt->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
++        (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE && IsEqualGUID( &fmtex->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT )))
++        return fmt->wBitsPerSample == 32 ? PS4_AUDIO_FLOAT : -1;
++    return -1;
++}
++
++static WAVEFORMATEXTENSIBLE *clone_format( const WAVEFORMATEX *fmt )
++{
++    WAVEFORMATEXTENSIBLE *ret;
++    size_t size;
++
++    if (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
++        size = sizeof(WAVEFORMATEXTENSIBLE);
++    else
++        size = sizeof(WAVEFORMATEX);
++
++    ret = malloc( size );
++    if (!ret)
++        return NULL;
++
++    memcpy( ret, fmt, size );
++
++    ret->Format.cbSize = size - sizeof(WAVEFORMATEX);
++
++    return ret;
++}
++
++/* what setup_oss_device checks of a format: the desktop mixes any rate, 1 to 8 channels and the
++ * PCM and float formats, so all are taken as they are (S_FALSE: not quite as Windows writes them) */
++static HRESULT check_format( AUDCLNT_SHAREMODE share, const WAVEFORMATEX *fmt )
++{
++    const WAVEFORMATEXTENSIBLE *fmtex = (const WAVEFORMATEXTENSIBLE *)fmt;
++    HRESULT ret = S_OK;
++
++    if (get_ps4_format( fmt ) < 0)
++        return AUDCLNT_E_UNSUPPORTED_FORMAT;
++
++    if (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
++        (fmtex->Format.nAvgBytesPerSec == 0 ||
++         fmtex->Format.nBlockAlign == 0 ||
++         fmtex->Samples.wValidBitsPerSample > fmtex->Format.wBitsPerSample))
++        return E_INVALIDARG;
++
++    if (fmt->nChannels == 0 || fmt->nChannels > PS4_AUDIO_CHANNELS ||
++        fmt->nSamplesPerSec < 1000 || fmt->nSamplesPerSec > 384000 ||
++        fmt->nBlockAlign < fmt->nChannels * fmt->wBitsPerSample / 8)
++        return AUDCLNT_E_UNSUPPORTED_FORMAT;
++
++    if (fmt->nBlockAlign != fmt->nChannels * fmt->wBitsPerSample / 8 ||
++        fmt->nAvgBytesPerSec != fmt->nBlockAlign * fmt->nSamplesPerSec ||
++        (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
++         fmtex->Samples.wValidBitsPerSample < fmtex->Format.wBitsPerSample))
++        ret = S_FALSE;
++
++    if (share == AUDCLNT_SHAREMODE_EXCLUSIVE && fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
++    {
++        if (fmtex->dwChannelMask == 0 || fmtex->dwChannelMask & SPEAKER_RESERVED)
++            ret = S_FALSE;
++    }
++
++    TRACE( "returning: %08x\n", (unsigned)ret );
++    return ret;
++}
++
++/* the desktop's ring for the stream: shared memory sent over its socket. FALSE: no desktop */
++static BOOL open_ring( struct ps4_stream *stream, int format, const WCHAR *name )
++{
++    const WAVEFORMATEXTENSIBLE *fmtex = (const WAVEFORMATEXTENSIBLE *)stream->fmt;
++    union { struct cmsghdr align; char buf[CMSG_SPACE( sizeof(int) )]; } control;
++    struct ps4_audio_hello hello = { PS4_AUDIO_MAGIC };
++    struct ps4_audio_ring *ring;
++    struct sockaddr_un addr;
++    struct msghdr msg;
++    struct cmsghdr *cmsg;
++    struct iovec iov;
++    struct pollfd pfd;
++    UINT32 ring_frames, reply = 1, i;
++    size_t size;
++    int fd = -1, sock = -1;
++
++    stream->ring_target = max( 4 * stream->period_frames, stream->fmt->nSamplesPerSec * RING_AHEAD_MS / 1000 );
++    ring_frames = 2 * stream->ring_target;
++    size = PS4_AUDIO_DATA_OFFSET + (size_t)ring_frames * stream->fmt->nBlockAlign;
++    size = (size + 0x3fff) & ~(size_t)0x3fff;  /* (the PS4's pages) */
++
++#ifdef __PS4_WINE__
++    fd = ps4_anon_shm( size );
++#endif
++    if (fd == -1) goto failed;
++    ring = mmap( NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0 );
++    if (ring == MAP_FAILED) goto failed;
++
++    memset( ring, 0, PS4_AUDIO_DATA_OFFSET );
++    ring->magic        = PS4_AUDIO_MAGIC;
++    ring->version      = PS4_AUDIO_VERSION;
++    ring->format       = format;
++    ring->rate         = stream->fmt->nSamplesPerSec;
++    ring->channels     = stream->fmt->nChannels;
++    ring->channel_mask = stream->fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE && fmtex->dwChannelMask ?
++                         fmtex->dwChannelMask : get_channel_mask( stream->fmt->nChannels );
++    ring->frame_bytes  = stream->fmt->nBlockAlign;
++    ring->ring_frames  = ring_frames;
++    for (i = 0; i < PS4_AUDIO_CHANNELS; i++) ring->volume[i] = 1.0f;
++    for (i = 0; name && name[i] && i < sizeof(ring->name) - 1; i++)
++        ring->name[i] = name[i] < 0x80 ? name[i] : '?';
++
++    if ((sock = socket( AF_UNIX, SOCK_STREAM, 0 )) == -1) goto unmap;
++    fcntl( sock, F_SETFD, FD_CLOEXEC );
++    memset( &addr, 0, sizeof(addr) );
++    addr.sun_len = sizeof(addr);
++    addr.sun_family = AF_UNIX;
++    strcpy( addr.sun_path, PS4_AUDIO_SOCKET );
++    if (connect( sock, (struct sockaddr *)&addr, sizeof(addr) ) == -1) goto unmap;
++
++    hello.size = size;
++    memset( &msg, 0, sizeof(msg) );
++    iov.iov_base = &hello;
++    iov.iov_len = sizeof(hello);
++    msg.msg_iov = &iov;
++    msg.msg_iovlen = 1;
++    memset( &control, 0, sizeof(control) );
++    msg.msg_control = control.buf;
++    msg.msg_controllen = CMSG_SPACE( sizeof(int) );
++    cmsg = CMSG_FIRSTHDR( &msg );
++    cmsg->cmsg_level = SOL_SOCKET;
++    cmsg->cmsg_type = SCM_RIGHTS;
++    cmsg->cmsg_len = CMSG_LEN( sizeof(int) );
++    memcpy( CMSG_DATA( cmsg ), &fd, sizeof(int) );
++    if (sendmsg( sock, &msg, 0 ) != sizeof(hello)) goto unmap;
++
++    pfd.fd = sock;
++    pfd.events = POLLIN;
++    if (poll( &pfd, 1, 2000 ) != 1 || read( sock, &reply, sizeof(reply) ) != sizeof(reply) || reply) goto unmap;
++
++    close( fd );
++    stream->sock = sock;
++    stream->ring = ring;
++    stream->ring_data = PS4_AUDIO_DATA( ring );
++    stream->ring_size = size;
++    return TRUE;
++
++unmap:
++    munmap( ring, size );
++failed:
++    if (audio_log)
++        fprintf( stderr, "wineps4: audio: no way to the desktop's mixer (%s): this stream plays unheard\n",
++                 fd == -1 ? "no shared memory" : reply == 1 ? strerror( errno ) : "it refused the stream" );
++    if (sock != -1) close( sock );
++    if (fd != -1) close( fd );
++    return FALSE;
++}
++
++static NTSTATUS ps4audio_create_stream( void *args )
++{
++    struct create_stream_params *params = args;
++    WAVEFORMATEXTENSIBLE *fmtex;
++    struct ps4_stream *stream;
++    SIZE_T size;
++    int format;
++
++    params->result = S_OK;
++
++    if (params->flow != eRender)
++    {
++        params->result = AUDCLNT_E_DEVICE_INVALIDATED;
++        return STATUS_SUCCESS;
++    }
++    if (FAILED(params->result = check_format( params->share, params->fmt )))
++        return STATUS_SUCCESS;
++    params->result = S_OK;
++    format = get_ps4_format( params->fmt );
++
++    stream = calloc( 1, sizeof(*stream) );
++    if (!stream)
++    {
++        params->result = E_OUTOFMEMORY;
++        return STATUS_SUCCESS;
++    }
++
++    stream->flow = params->flow;
++    stream->sock = -1;
++    pthread_mutex_init( &stream->lock, NULL );
++
++    fmtex = clone_format( params->fmt );
++    if (!fmtex)
++    {
++        params->result = E_OUTOFMEMORY;
++        goto exit;
++    }
++    stream->fmt = &fmtex->Format;
++
++    stream->period = params->period;
++    stream->period_frames = muldiv( params->fmt->nSamplesPerSec, params->period, 10000000 );
++
++    stream->bufsize_frames = muldiv( params->duration, params->fmt->nSamplesPerSec, 10000000 );
++    if (params->share == AUDCLNT_SHAREMODE_EXCLUSIVE)
++        stream->bufsize_frames -= stream->bufsize_frames % stream->period_frames;
++    size = stream->bufsize_frames * params->fmt->nBlockAlign;
++    if (NtAllocateVirtualMemory( GetCurrentProcess(), (void **)&stream->local_buffer, zero_bits,
++                                 &size, MEM_COMMIT, PAGE_READWRITE ))
++    {
++        params->result = E_OUTOFMEMORY;
++        goto exit;
++    }
++
++    stream->share = params->share;
++    stream->flags = params->flags;
++
++    open_ring( stream, format, params->name );
++    if (audio_log)
++        fprintf( stderr, "wineps4: audio: stream %u%s: %u Hz, %u channels, %u bits%s, a buffer of %u frames, %u ahead in the ring\n",
++                 ++stream_count, stream->ring ? "" : " (unheard)", params->fmt->nSamplesPerSec,
++                 params->fmt->nChannels, params->fmt->wBitsPerSample, format == PS4_AUDIO_FLOAT ? " float" : "",
++                 stream->bufsize_frames, stream->ring_target );
++
++exit:
++    if (FAILED(params->result))
++    {
++        if (stream->local_buffer)
++        {
++            size = 0;
++            NtFreeVirtualMemory( GetCurrentProcess(), (void **)&stream->local_buffer, &size, MEM_RELEASE );
++        }
++        pthread_mutex_destroy( &stream->lock );
++        free( stream->fmt );
++        free( stream );
++    }
++    else
++    {
++        *params->channel_count = params->fmt->nChannels;
++        *params->stream = (stream_handle)(UINT_PTR)stream;
++    }
++
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_release_stream( void *args )
++{
++    struct release_stream_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    SIZE_T size;
++
++    if (params->timer_thread)
++    {
++        stream->please_quit = TRUE;
++        NtWaitForSingleObject( params->timer_thread, FALSE, NULL );
++        NtClose( params->timer_thread );
++    }
++
++    if (stream->ring) munmap( stream->ring, stream->ring_size );
++    if (stream->sock != -1) close( stream->sock );  /* (the desktop drops the stream) */
++    if (stream->local_buffer)
++    {
++        size = 0;
++        NtFreeVirtualMemory( GetCurrentProcess(), (void **)&stream->local_buffer, &size, MEM_RELEASE );
++    }
++    if (stream->tmp_buffer)
++    {
++        size = 0;
++        NtFreeVirtualMemory( GetCurrentProcess(), (void **)&stream->tmp_buffer, &size, MEM_RELEASE );
++    }
++    free( stream->fmt );
++    pthread_mutex_destroy( &stream->lock );
++    free( stream );
++
++    params->result = S_OK;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_start( void *args )
++{
++    struct start_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    if ((stream->flags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK) && !stream->event)
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_EVENTHANDLE_NOT_SET );
++
++    if (stream->playing)
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_NOT_STOPPED );
++
++    stream->playing = TRUE;
++    if (stream->ring)
++    {
++        __atomic_store_n( &stream->ring->running, 1, __ATOMIC_RELEASE );
++        if (stream->held_frames) ps4_write_data( stream );  /* (heard now, not at the timer's next round) */
++    }
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_stop( void *args )
++{
++    struct stop_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    if (!stream->playing)
++        return ps4_unlock_result( stream, &params->result, S_FALSE );
++
++    /* (what is in the ring stays there, played when it starts again) */
++    stream->playing = FALSE;
++    if (stream->ring) __atomic_store_n( &stream->ring->running, 0, __ATOMIC_RELEASE );
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_reset( void *args )
++{
++    struct reset_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    if (stream->playing)
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_NOT_STOPPED );
++
++    if (stream->getbuf_last)
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_BUFFER_OPERATION_PENDING );
++
++    stream->written_frames = 0;
++    stream->last_pos_frames = 0;
++    stream->held_frames = 0;
++    stream->lcl_offs_frames = 0;
++    stream->in_ring_frames = 0;
++    if (stream->ring)  /* the desktop skips what is in the ring */
++        __atomic_store_n( &stream->ring->discard, stream->ring->written, __ATOMIC_RELEASE );
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static void silence_buffer( struct ps4_stream *stream, BYTE *buffer, UINT32 frames )
++{
++    WAVEFORMATEXTENSIBLE *fmtex = (WAVEFORMATEXTENSIBLE *)stream->fmt;
++    if ((stream->fmt->wFormatTag == WAVE_FORMAT_PCM ||
++         (stream->fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
++          IsEqualGUID( &fmtex->SubFormat, &KSDATAFORMAT_SUBTYPE_PCM ))) &&
++        stream->fmt->wBitsPerSample == 8)
++        memset( buffer, 128, frames * stream->fmt->nBlockAlign );
++    else
++        memset( buffer, 0, frames * stream->fmt->nBlockAlign );
++}
++
++/* frames of the local buffer into the ring, after what the program wrote before */
++static void ring_put( struct ps4_stream *stream, const BYTE *src, UINT32 frames )
++{
++    struct ps4_audio_ring *ring = stream->ring;
++    const UINT32 align = stream->fmt->nBlockAlign;
++    const UINT64 written = ring->written;  /* (only this side moves it) */
++    const UINT32 pos = written % ring->ring_frames, chunk = min( frames, ring->ring_frames - pos );
++
++    memcpy( stream->ring_data + (size_t)pos * align, src, (size_t)chunk * align );
++    memcpy( stream->ring_data, src + (size_t)chunk * align, (size_t)(frames - chunk) * align );
++    __atomic_store_n( &ring->written, written + frames, __ATOMIC_RELEASE );
++}
++
++/* oss_write_data with the ring for the OSS device: what the desktop took since the last time is
++ * played, and the ring gets the frames after what it has, up to ring_target */
++static void ps4_write_data( struct ps4_stream *stream )
++{
++    struct ps4_audio_ring *ring = stream->ring;
++    UINT32 in_ring_frames, write_limit, write_offs_frames, new_frames, to_write_frames;
++    UINT64 played, discard;
++    SIZE_T advanced;
++
++    if (!ring)  /* no desktop: a period's frames played a period */
++    {
++        advanced = min( stream->held_frames, stream->period_frames );
++        stream->lcl_offs_frames = (stream->lcl_offs_frames + advanced) % stream->bufsize_frames;
++        stream->held_frames -= advanced;
++        return;
++    }
++
++    played = __atomic_load_n( &ring->played, __ATOMIC_ACQUIRE );
++    discard = ring->discard;
++    if (played < discard) played = discard;
++    in_ring_frames = ring->written - played;
++    if (in_ring_frames > stream->in_ring_frames)
++        in_ring_frames = stream->in_ring_frames;
++
++    /*        vvvvvv - in_ring_frames
++     * [--xxxxxxxxxx]
++     *       [xxxxxxxxxx--]
++     *        ^^^^^^^^^^ - held_frames
++     *        ^ - lcl_offs_frames
++     */
++    advanced = stream->in_ring_frames - in_ring_frames;
++    if (advanced > stream->held_frames)
++        advanced = stream->held_frames;
++    stream->lcl_offs_frames += advanced;
++    stream->lcl_offs_frames %= stream->bufsize_frames;
++    stream->held_frames -= advanced;
++    stream->in_ring_frames = in_ring_frames;
++    TRACE( "advanced by %lu, lcl_offs: %u, held: %u, in_ring: %u\n",
++           advanced, stream->lcl_offs_frames, stream->held_frames, stream->in_ring_frames );
++
++    if (stream->held_frames == stream->in_ring_frames || stream->in_ring_frames >= stream->ring_target)
++        return;
++    write_limit = stream->ring_target - stream->in_ring_frames;
++
++    write_offs_frames = (stream->lcl_offs_frames + stream->in_ring_frames) % stream->bufsize_frames;
++    new_frames = min( stream->held_frames - stream->in_ring_frames, write_limit );
++
++    to_write_frames = min( new_frames, stream->bufsize_frames - write_offs_frames );
++    ring_put( stream, stream->local_buffer + (size_t)write_offs_frames * stream->fmt->nBlockAlign, to_write_frames );
++    if (new_frames > to_write_frames)  /* wrapped: the rest from the start */
++        ring_put( stream, stream->local_buffer, new_frames - to_write_frames );
++    stream->in_ring_frames += new_frames;
++}
++
++static NTSTATUS ps4audio_timer_loop( void *args )
++{
++    struct timer_loop_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    LARGE_INTEGER delay, now, next;
++    int adjust;
++
++    ps4_lock( stream );
++
++    delay.QuadPart = -stream->period;
++    NtQueryPerformanceCounter( &now, NULL );
++    next.QuadPart = now.QuadPart + stream->period;
++
++    while (!stream->please_quit)
++    {
++        if (stream->playing && stream->held_frames)
++            ps4_write_data( stream );
++        if (stream->event)
++            NtSetEvent( stream->event, NULL );
++        ps4_unlock( stream );
++
++        NtDelayExecution( FALSE, &delay );
++
++        ps4_lock( stream );
++        NtQueryPerformanceCounter( &now, NULL );
++        adjust = next.QuadPart - now.QuadPart;
++        if (adjust > stream->period / 2)
++            adjust = stream->period / 2;
++        else if (adjust < -stream->period / 2)
++            adjust = -stream->period / 2;
++        delay.QuadPart = -(stream->period + adjust);
++        next.QuadPart += stream->period;
++    }
++
++    ps4_unlock( stream );
++
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_get_render_buffer( void *args )
++{
++    struct get_render_buffer_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    UINT32 write_pos, frames = params->frames;
++    BYTE **data = params->data;
++    SIZE_T size;
++
++    ps4_lock( stream );
++
++    if (stream->getbuf_last)
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_OUT_OF_ORDER );
++
++    if (!frames)
++        return ps4_unlock_result( stream, &params->result, S_OK );
++
++    if (stream->held_frames + frames > stream->bufsize_frames)
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_BUFFER_TOO_LARGE );
++
++    write_pos = (stream->lcl_offs_frames + stream->held_frames) % stream->bufsize_frames;
++    if (write_pos + frames > stream->bufsize_frames)
++    {
++        if (stream->tmp_buffer_frames < frames)
++        {
++            if (stream->tmp_buffer)
++            {
++                size = 0;
++                NtFreeVirtualMemory( GetCurrentProcess(), (void **)&stream->tmp_buffer, &size, MEM_RELEASE );
++                stream->tmp_buffer = NULL;
++            }
++            size = frames * stream->fmt->nBlockAlign;
++            if (NtAllocateVirtualMemory( GetCurrentProcess(), (void **)&stream->tmp_buffer, zero_bits,
++                                         &size, MEM_COMMIT, PAGE_READWRITE ))
++            {
++                stream->tmp_buffer_frames = 0;
++                return ps4_unlock_result( stream, &params->result, E_OUTOFMEMORY );
++            }
++            stream->tmp_buffer_frames = frames;
++        }
++        *data = stream->tmp_buffer;
++        stream->getbuf_last = -frames;
++    }
++    else
++    {
++        *data = stream->local_buffer + write_pos * stream->fmt->nBlockAlign;
++        stream->getbuf_last = frames;
++    }
++
++    silence_buffer( stream, *data, frames );
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static void ps4_wrap_buffer( struct ps4_stream *stream, BYTE *buffer, UINT32 written_frames )
++{
++    UINT32 write_offs_frames = (stream->lcl_offs_frames + stream->held_frames) % stream->bufsize_frames;
++    UINT32 write_offs_bytes = write_offs_frames * stream->fmt->nBlockAlign;
++    UINT32 chunk_frames = stream->bufsize_frames - write_offs_frames;
++    UINT32 chunk_bytes = chunk_frames * stream->fmt->nBlockAlign;
++    UINT32 written_bytes = written_frames * stream->fmt->nBlockAlign;
++
++    if (written_bytes <= chunk_bytes)
++    {
++        memcpy( stream->local_buffer + write_offs_bytes, buffer, written_bytes );
++    }
++    else
++    {
++        memcpy( stream->local_buffer + write_offs_bytes, buffer, chunk_bytes );
++        memcpy( stream->local_buffer, buffer + chunk_bytes, written_bytes - chunk_bytes );
++    }
++}
++
++static NTSTATUS ps4audio_release_render_buffer( void *args )
++{
++    struct release_render_buffer_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    UINT32 written_frames = params->written_frames;
++    UINT flags = params->flags;
++    BYTE *buffer;
++
++    ps4_lock( stream );
++
++    if (!written_frames)
++    {
++        stream->getbuf_last = 0;
++        return ps4_unlock_result( stream, &params->result, S_OK );
++    }
++
++    if (!stream->getbuf_last)
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_OUT_OF_ORDER );
++
++    if (written_frames > (stream->getbuf_last >= 0 ? stream->getbuf_last : -stream->getbuf_last))
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_INVALID_SIZE );
++
++    if (stream->getbuf_last >= 0)
++        buffer = stream->local_buffer + stream->fmt->nBlockAlign *
++                 ((stream->lcl_offs_frames + stream->held_frames) % stream->bufsize_frames);
++    else
++        buffer = stream->tmp_buffer;
++
++    if (flags & AUDCLNT_BUFFERFLAGS_SILENT)
++        silence_buffer( stream, buffer, written_frames );
++
++    if (stream->getbuf_last < 0)
++        ps4_wrap_buffer( stream, buffer, written_frames );
++
++    stream->held_frames += written_frames;
++    stream->written_frames += written_frames;
++    stream->getbuf_last = 0;
++    /* into the ring at once: the desktop has them even when this stream's timer thread is late */
++    if (stream->playing && stream->ring) ps4_write_data( stream );
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++/* (no capture streams: never called) */
++static NTSTATUS ps4audio_get_capture_buffer( void *args )
++{
++    struct get_capture_buffer_params *params = args;  /* (result is where it is in the 32-bit one too) */
++
++    params->result = AUDCLNT_E_DEVICE_INVALIDATED;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_release_capture_buffer( void *args )
++{
++    struct release_capture_buffer_params *params = args;
++
++    params->result = AUDCLNT_E_DEVICE_INVALIDATED;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_is_format_supported( void *args )
++{
++    struct is_format_supported_params *params = args;
++
++    if (params->flow != eRender)
++        params->result = AUDCLNT_E_DEVICE_INVALIDATED;
++    else
++        params->result = check_format( params->share, params->fmt_in );
++    return STATUS_SUCCESS;
++}
++
++/* 48 kHz float stereo: the desktop's port, nothing to convert */
++static NTSTATUS ps4audio_get_mix_format( void *args )
++{
++    struct get_mix_format_params *params = args;
++    WAVEFORMATEXTENSIBLE *fmt = params->fmt;
++
++    if (params->flow != eRender)
++    {
++        params->result = params->flow == eCapture ? AUDCLNT_E_DEVICE_INVALIDATED : E_UNEXPECTED;
++        return STATUS_SUCCESS;
++    }
++
++    fmt->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
++    fmt->Format.wBitsPerSample = 32;
++    fmt->SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
++    fmt->Format.nChannels = 2;
++    fmt->Format.nSamplesPerSec = PS4_AUDIO_RATE;
++    fmt->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
++    fmt->Format.nBlockAlign = (fmt->Format.wBitsPerSample * fmt->Format.nChannels) / 8;
++    fmt->Format.nAvgBytesPerSec = fmt->Format.nSamplesPerSec * fmt->Format.nBlockAlign;
++    fmt->Samples.wValidBitsPerSample = fmt->Format.wBitsPerSample;
++    fmt->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
++
++    params->result = S_OK;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_get_device_period( void *args )
++{
++    struct get_device_period_params *params = args;
++
++    if (params->def_period)
++        *params->def_period = def_period;
++    if (params->min_period)
++        *params->min_period = min_period;
++
++    params->result = S_OK;
++
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_get_buffer_size( void *args )
++{
++    struct get_buffer_size_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    *params->frames = stream->bufsize_frames;
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_get_latency( void *args )
++{
++    struct get_latency_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    /* pretend we process audio in Period chunks, so max latency includes
++     * the period time.  Some native machines add .6666ms in shared mode. */
++    *params->latency = stream->period + 6666;
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_get_current_padding( void *args )
++{
++    struct get_current_padding_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    *params->padding = stream->held_frames;
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_get_next_packet_size( void *args )
++{
++    struct get_next_packet_size_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    UINT32 *frames = params->frames;
++
++    ps4_lock( stream );
++
++    *frames = stream->held_frames < stream->period_frames ? 0 : stream->period_frames;
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_get_frequency( void *args )
++{
++    struct get_frequency_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    UINT64 *freq = params->freq;
++
++    ps4_lock( stream );
++
++    if (stream->share == AUDCLNT_SHAREMODE_SHARED)
++        *freq = (UINT64)stream->fmt->nSamplesPerSec * stream->fmt->nBlockAlign;
++    else
++        *freq = stream->fmt->nSamplesPerSec;
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_get_position( void *args )
++{
++    struct get_position_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    UINT64 *pos = params->pos, *qpctime = params->qpctime;
++
++    if (params->device)
++    {
++        FIXME( "Device position reporting not implemented\n" );
++        params->result = E_NOTIMPL;
++        return STATUS_SUCCESS;
++    }
++
++    ps4_lock( stream );
++
++    *pos = stream->written_frames - stream->held_frames;
++    if (*pos < stream->last_pos_frames)
++        *pos = stream->last_pos_frames;
++
++    stream->last_pos_frames = *pos;
++
++    TRACE( "returning: %s\n", wine_dbgstr_longlong( *pos ) );
++    if (stream->share == AUDCLNT_SHAREMODE_SHARED)
++        *pos *= stream->fmt->nBlockAlign;
++
++    if (qpctime)
++    {
++        LARGE_INTEGER stamp, freq;
++        NtQueryPerformanceCounter( &stamp, &freq );
++        *qpctime = (stamp.QuadPart * (INT64)10000000) / freq.QuadPart;
++    }
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++/* the desktop applies each channel's volume as it mixes */
++static NTSTATUS ps4audio_set_volumes( void *args )
++{
++    struct set_volumes_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++    UINT16 i;
++
++    ps4_lock( stream );
++    if (stream->ring)
++        for (i = 0; i < stream->fmt->nChannels && i < PS4_AUDIO_CHANNELS; ++i)
++            stream->ring->volume[i] = params->master_volume * params->volumes[i] * params->session_volumes[i];
++    ps4_unlock( stream );
++
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_set_event_handle( void *args )
++{
++    struct set_event_handle_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    if (!(stream->flags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK))
++        return ps4_unlock_result( stream, &params->result, AUDCLNT_E_EVENTHANDLE_NOT_EXPECTED );
++
++    if (stream->event)
++    {
++        FIXME( "called twice\n" );
++        return ps4_unlock_result( stream, &params->result, HRESULT_FROM_WIN32(ERROR_INVALID_NAME) );
++    }
++
++    stream->event = params->event;
++
++    return ps4_unlock_result( stream, &params->result, S_OK );
++}
++
++static NTSTATUS ps4audio_set_sample_rate( void *args )
++{
++    struct set_sample_rate_params *params = args;
++
++    params->result = E_NOTIMPL;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_is_started( void *args )
++{
++    struct is_started_params *params = args;
++    struct ps4_stream *stream = handle_get_stream( params->stream );
++
++    ps4_lock( stream );
++
++    return ps4_unlock_result( stream, &params->result, stream->playing ? S_OK : S_FALSE );
++}
++
++static NTSTATUS ps4audio_get_prop_value( void *args )
++{
++    struct get_prop_value_params *params = args;
++
++    params->result = E_NOTIMPL;
++
++    return STATUS_SUCCESS;
++}
++
++/* MIDI and aux: no devices. mmdevapi's MIDI notify thread waits in midi_notify_wait until
++ * midi_release */
++
++static pthread_mutex_t midi_lock = PTHREAD_MUTEX_INITIALIZER;
++static pthread_cond_t midi_cond = PTHREAD_COND_INITIALIZER;
++static BOOL midi_quit;
++
++static NTSTATUS ps4audio_midi_init( void *args )
++{
++    struct midi_init_params *params = args;
++
++    pthread_mutex_lock( &midi_lock );
++    midi_quit = FALSE;
++    pthread_mutex_unlock( &midi_lock );
++    *params->err = DRV_SUCCESS;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_midi_release( void *args )
++{
++    pthread_mutex_lock( &midi_lock );
++    midi_quit = TRUE;
++    pthread_cond_broadcast( &midi_cond );
++    pthread_mutex_unlock( &midi_lock );
++    return STATUS_SUCCESS;
++}
++
++static UINT midi_message( UINT msg, UINT num_devs_msg )
++{
++    switch (msg)
++    {
++    case DRVM_INIT:
++    case DRVM_EXIT:
++    case DRVM_ENABLE:
++    case DRVM_DISABLE:
++        return MMSYSERR_NOERROR;
++    }
++    return msg == num_devs_msg ? 0 : MMSYSERR_BADDEVICEID;
++}
++
++static NTSTATUS ps4audio_midi_out_message( void *args )
++{
++    struct midi_out_message_params *params = args;
++
++    params->notify->send_notify = FALSE;
++    *params->err = midi_message( params->msg, MODM_GETNUMDEVS );
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_midi_in_message( void *args )
++{
++    struct midi_in_message_params *params = args;
++
++    params->notify->send_notify = FALSE;
++    *params->err = midi_message( params->msg, MIDM_GETNUMDEVS );
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_midi_notify_wait( void *args )
++{
++    struct midi_notify_wait_params *params = args;
++
++    pthread_mutex_lock( &midi_lock );
++    while (!midi_quit) pthread_cond_wait( &midi_cond, &midi_lock );
++    pthread_mutex_unlock( &midi_lock );
++    *params->quit = TRUE;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_aux_message( void *args )
++{
++    struct aux_message_params *params = args;
++
++    *params->err = midi_message( params->msg, AUXDM_GETNUMDEVS );
++    return STATUS_SUCCESS;
++}
++
++/* the unix calls: mmdevapi's, in its order (../mmdevapi/unixlib.h), then the display driver's */
++const unixlib_entry_t __wine_unix_call_funcs[] =
++{
++    ps4audio_process_attach,
++    ps4audio_not_implemented,
++    ps4audio_main_loop,
++    ps4audio_get_endpoint_ids,
++    ps4audio_create_stream,
++    ps4audio_release_stream,
++    ps4audio_start,
++    ps4audio_stop,
++    ps4audio_reset,
++    ps4audio_timer_loop,
++    ps4audio_get_render_buffer,
++    ps4audio_release_render_buffer,
++    ps4audio_get_capture_buffer,
++    ps4audio_release_capture_buffer,
++    ps4audio_is_format_supported,
++    ps4audio_not_implemented,
++    ps4audio_get_mix_format,
++    ps4audio_get_device_period,
++    ps4audio_get_buffer_size,
++    ps4audio_get_latency,
++    ps4audio_get_current_padding,
++    ps4audio_get_next_packet_size,
++    ps4audio_get_frequency,
++    ps4audio_get_position,
++    ps4audio_set_volumes,
++    ps4audio_set_event_handle,
++    ps4audio_set_sample_rate,
++    ps4audio_test_connect,
++    ps4audio_is_started,
++    ps4audio_get_prop_value,
++    ps4audio_not_implemented,
++    ps4audio_midi_init,
++    ps4audio_midi_release,
++    ps4audio_midi_out_message,
++    ps4audio_midi_in_message,
++    ps4audio_midi_notify_wait,
++    ps4audio_aux_message,
++    ps4drv_unix_init,
++};
++
++C_ASSERT( ps4drv_unix_func_init == funcs_count );
++C_ASSERT( ARRAYSIZE(__wine_unix_call_funcs) == ps4drv_unix_func_count );
++
++#ifdef _WIN64
++
++typedef UINT PTR32;
++
++static NTSTATUS ps4audio_wow64_test_connect( void *args )
++{
++    struct
++    {
++        PTR32 name;
++        enum driver_priority priority;
++    } *params32 = args;
++    struct test_connect_params params =
++    {
++        .name = ULongToPtr(params32->name),
++    };
++    ps4audio_test_connect( &params );
++    params32->priority = params.priority;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_main_loop( void *args )
++{
++    struct
++    {
++        PTR32 event;
++    } *params32 = args;
++    struct main_loop_params params =
++    {
++        .event = ULongToHandle(params32->event)
++    };
++    return ps4audio_main_loop( &params );
++}
++
++static NTSTATUS ps4audio_wow64_get_endpoint_ids( void *args )
++{
++    struct
++    {
++        EDataFlow flow;
++        PTR32 endpoints;
++        unsigned int size;
++        HRESULT result;
++        unsigned int num;
++        unsigned int default_idx;
++    } *params32 = args;
++    struct get_endpoint_ids_params params =
++    {
++        .flow = params32->flow,
++        .endpoints = ULongToPtr(params32->endpoints),
++        .size = params32->size
++    };
++    ps4audio_get_endpoint_ids( &params );
++    params32->size = params.size;
++    params32->result = params.result;
++    params32->num = params.num;
++    params32->default_idx = params.default_idx;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_create_stream( void *args )
++{
++    struct
++    {
++        PTR32 name;
++        PTR32 device;
++        EDataFlow flow;
++        AUDCLNT_SHAREMODE share;
++        UINT flags;
++        REFERENCE_TIME duration;
++        REFERENCE_TIME period;
++        PTR32 fmt;
++        HRESULT result;
++        PTR32 channel_count;
++        PTR32 stream;
++    } *params32 = args;
++    struct create_stream_params params =
++    {
++        .name = ULongToPtr(params32->name),
++        .device = ULongToPtr(params32->device),
++        .flow = params32->flow,
++        .share = params32->share,
++        .flags = params32->flags,
++        .duration = params32->duration,
++        .period = params32->period,
++        .fmt = ULongToPtr(params32->fmt),
++        .channel_count = ULongToPtr(params32->channel_count),
++        .stream = ULongToPtr(params32->stream)
++    };
++    ps4audio_create_stream( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_release_stream( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        PTR32 timer_thread;
++        HRESULT result;
++    } *params32 = args;
++    struct release_stream_params params =
++    {
++        .stream = params32->stream,
++        .timer_thread = ULongToHandle(params32->timer_thread)
++    };
++    ps4audio_release_stream( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_render_buffer( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        UINT32 frames;
++        HRESULT result;
++        PTR32 data;
++    } *params32 = args;
++    BYTE *data = NULL;
++    struct get_render_buffer_params params =
++    {
++        .stream = params32->stream,
++        .frames = params32->frames,
++        .data = &data
++    };
++    ps4audio_get_render_buffer( &params );
++    params32->result = params.result;
++    *(unsigned int *)ULongToPtr(params32->data) = PtrToUlong(data);
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_is_format_supported( void *args )
++{
++    struct
++    {
++        PTR32 device;
++        EDataFlow flow;
++        AUDCLNT_SHAREMODE share;
++        PTR32 fmt_in;
++        HRESULT result;
++    } *params32 = args;
++    struct is_format_supported_params params =
++    {
++        .device = ULongToPtr(params32->device),
++        .flow = params32->flow,
++        .share = params32->share,
++        .fmt_in = ULongToPtr(params32->fmt_in),
++    };
++    ps4audio_is_format_supported( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_mix_format( void *args )
++{
++    struct
++    {
++        PTR32 device;
++        EDataFlow flow;
++        PTR32 fmt;
++        HRESULT result;
++    } *params32 = args;
++    struct get_mix_format_params params =
++    {
++        .device = ULongToPtr(params32->device),
++        .flow = params32->flow,
++        .fmt = ULongToPtr(params32->fmt)
++    };
++    ps4audio_get_mix_format( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_device_period( void *args )
++{
++    struct
++    {
++        PTR32 device;
++        EDataFlow flow;
++        HRESULT result;
++        PTR32 def_period;
++        PTR32 min_period;
++    } *params32 = args;
++    struct get_device_period_params params =
++    {
++        .device = ULongToPtr(params32->device),
++        .flow = params32->flow,
++        .def_period = ULongToPtr(params32->def_period),
++        .min_period = ULongToPtr(params32->min_period),
++    };
++    ps4audio_get_device_period( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_buffer_size( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        HRESULT result;
++        PTR32 frames;
++    } *params32 = args;
++    struct get_buffer_size_params params =
++    {
++        .stream = params32->stream,
++        .frames = ULongToPtr(params32->frames)
++    };
++    ps4audio_get_buffer_size( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_latency( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        HRESULT result;
++        PTR32 latency;
++    } *params32 = args;
++    struct get_latency_params params =
++    {
++        .stream = params32->stream,
++        .latency = ULongToPtr(params32->latency)
++    };
++    ps4audio_get_latency( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_current_padding( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        HRESULT result;
++        PTR32 padding;
++    } *params32 = args;
++    struct get_current_padding_params params =
++    {
++        .stream = params32->stream,
++        .padding = ULongToPtr(params32->padding)
++    };
++    ps4audio_get_current_padding( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_next_packet_size( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        HRESULT result;
++        PTR32 frames;
++    } *params32 = args;
++    struct get_next_packet_size_params params =
++    {
++        .stream = params32->stream,
++        .frames = ULongToPtr(params32->frames)
++    };
++    ps4audio_get_next_packet_size( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_frequency( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        HRESULT result;
++        PTR32 freq;
++    } *params32 = args;
++    struct get_frequency_params params =
++    {
++        .stream = params32->stream,
++        .freq = ULongToPtr(params32->freq)
++    };
++    ps4audio_get_frequency( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_position( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        BOOL device;
++        HRESULT result;
++        PTR32 pos;
++        PTR32 qpctime;
++    } *params32 = args;
++    struct get_position_params params =
++    {
++        .stream = params32->stream,
++        .device = params32->device,
++        .pos = ULongToPtr(params32->pos),
++        .qpctime = ULongToPtr(params32->qpctime)
++    };
++    ps4audio_get_position( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_set_volumes( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        float master_volume;
++        PTR32 volumes;
++        PTR32 session_volumes;
++    } *params32 = args;
++    struct set_volumes_params params =
++    {
++        .stream = params32->stream,
++        .master_volume = params32->master_volume,
++        .volumes = ULongToPtr(params32->volumes),
++        .session_volumes = ULongToPtr(params32->session_volumes),
++    };
++    return ps4audio_set_volumes( &params );
++}
++
++static NTSTATUS ps4audio_wow64_set_event_handle( void *args )
++{
++    struct
++    {
++        stream_handle stream;
++        PTR32 event;
++        HRESULT result;
++    } *params32 = args;
++    struct set_event_handle_params params =
++    {
++        .stream = params32->stream,
++        .event = ULongToHandle(params32->event)
++    };
++
++    ps4audio_set_event_handle( &params );
++    params32->result = params.result;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_get_prop_value( void *args )
++{
++    struct
++    {
++        PTR32 device;
++        EDataFlow flow;
++        PTR32 guid;
++        PTR32 prop;
++        HRESULT result;
++        PTR32 value;
++        PTR32 buffer; /* caller allocated buffer to hold value's strings */
++        PTR32 buffer_size;
++    } *params32 = args;
++
++    params32->result = E_NOTIMPL;
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_midi_init( void *args )
++{
++    struct
++    {
++        PTR32 err;
++    } *params32 = args;
++    struct midi_init_params params =
++    {
++        .err = ULongToPtr(params32->err)
++    };
++    return ps4audio_midi_init( &params );
++}
++
++static NTSTATUS ps4audio_wow64_midi_out_message( void *args )
++{
++    struct
++    {
++        UINT dev_id;
++        UINT msg;
++        UINT user;
++        UINT param_1;
++        UINT param_2;
++        PTR32 err;
++        PTR32 notify;
++    } *params32 = args;
++
++    *(BOOL *)ULongToPtr(params32->notify) = FALSE;  /* (send_notify: the 32-bit context's first) */
++    *(UINT *)ULongToPtr(params32->err) = midi_message( params32->msg, MODM_GETNUMDEVS );
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_midi_in_message( void *args )
++{
++    struct
++    {
++        UINT dev_id;
++        UINT msg;
++        UINT user;
++        UINT param_1;
++        UINT param_2;
++        PTR32 err;
++        PTR32 notify;
++    } *params32 = args;
++
++    *(BOOL *)ULongToPtr(params32->notify) = FALSE;
++    *(UINT *)ULongToPtr(params32->err) = midi_message( params32->msg, MIDM_GETNUMDEVS );
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS ps4audio_wow64_midi_notify_wait( void *args )
++{
++    struct
++    {
++        PTR32 quit;
++        PTR32 notify;
++    } *params32 = args;
++    struct midi_notify_wait_params params =
++    {
++        .quit = ULongToPtr(params32->quit)
++    };
++    return ps4audio_midi_notify_wait( &params );
++}
++
++static NTSTATUS ps4audio_wow64_aux_message( void *args )
++{
++    struct
++    {
++        UINT dev_id;
++        UINT msg;
++        UINT user;
++        UINT param_1;
++        UINT param_2;
++        PTR32 err;
++    } *params32 = args;
++    struct aux_message_params params =
++    {
++        .dev_id = params32->dev_id,
++        .msg = params32->msg,
++        .user = params32->user,
++        .param_1 = params32->param_1,
++        .param_2 = params32->param_2,
++        .err = ULongToPtr(params32->err),
++    };
++    return ps4audio_aux_message( &params );
++}
++
++const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
++{
++    ps4audio_process_attach,
++    ps4audio_not_implemented,
++    ps4audio_wow64_main_loop,
++    ps4audio_wow64_get_endpoint_ids,
++    ps4audio_wow64_create_stream,
++    ps4audio_wow64_release_stream,
++    ps4audio_start,
++    ps4audio_stop,
++    ps4audio_reset,
++    ps4audio_timer_loop,
++    ps4audio_wow64_get_render_buffer,
++    ps4audio_release_render_buffer,
++    ps4audio_get_capture_buffer,
++    ps4audio_release_capture_buffer,
++    ps4audio_wow64_is_format_supported,
++    ps4audio_not_implemented,
++    ps4audio_wow64_get_mix_format,
++    ps4audio_wow64_get_device_period,
++    ps4audio_wow64_get_buffer_size,
++    ps4audio_wow64_get_latency,
++    ps4audio_wow64_get_current_padding,
++    ps4audio_wow64_get_next_packet_size,
++    ps4audio_wow64_get_frequency,
++    ps4audio_wow64_get_position,
++    ps4audio_wow64_set_volumes,
++    ps4audio_wow64_set_event_handle,
++    ps4audio_set_sample_rate,
++    ps4audio_wow64_test_connect,
++    ps4audio_is_started,
++    ps4audio_wow64_get_prop_value,
++    ps4audio_not_implemented,
++    ps4audio_wow64_midi_init,
++    ps4audio_midi_release,
++    ps4audio_wow64_midi_out_message,
++    ps4audio_wow64_midi_in_message,
++    ps4audio_wow64_midi_notify_wait,
++    ps4audio_wow64_aux_message,
++    ps4drv_unix_init,
++};
++
++C_ASSERT( ARRAYSIZE(__wine_unix_call_wow64_funcs) == ps4drv_unix_func_count );
++
++#endif /* _WIN64 */
+diff --git a/dlls/wineps4.drv/ps4_audio.h b/dlls/wineps4.drv/ps4_audio.h
+new file mode 100755
+index 0000000..825b53c
+--- /dev/null
++++ b/dlls/wineps4.drv/ps4_audio.h
+@@ -0,0 +1,62 @@
++/* WinePS4: programs' sound, mixed by the desktop into the PS4's audio port.
++ *
++ * wineps4.drv is also Wine's audio driver ("ps4": HKCU\Software\Wine\Drivers, Audio). mmdevapi's
++ * streams (WASAPI, and through it DirectSound, winmm's wave out, XAudio2, Media Foundation) each give
++ * the desktop a ring of frames in shared memory: the program's audio.c writes frames into it from its
++ * WASAPI buffer, the desktop's mixer (port/ps4_audio_desk.c) takes them, converts them to 48 kHz
++ * stereo and plays the sum through one sceAudioOut port. Each side moves only its own count. The
++ * stream's socket to the desktop carries the memory once and stays open as long as the stream: the
++ * desktop drops the stream when it closes (the program ended). */
++#ifndef PS4_AUDIO_H
++#define PS4_AUDIO_H
++
++#include <stdint.h>
++
++#define PS4_AUDIO_SOCKET   "/data/WinePS4/.audio"
++#define PS4_AUDIO_MAGIC    0x55413457  /* "W4AU" */
++#define PS4_AUDIO_VERSION  1
++#define PS4_AUDIO_RATE     48000       /* the port's */
++#define PS4_AUDIO_CHANNELS 8           /* a stream's, at most */
++
++enum ps4_audio_format
++{
++    PS4_AUDIO_U8 = 1,
++    PS4_AUDIO_S16,
++    PS4_AUDIO_S24,  /* 3 bytes */
++    PS4_AUDIO_S32,  /* also 24 bits in 4 bytes */
++    PS4_AUDIO_FLOAT,
++};
++
++/* at the start of the shared memory; the frames follow at PS4_AUDIO_DATA */
++struct ps4_audio_ring
++{
++    uint32_t magic;
++    uint32_t version;
++    uint32_t format;        /* enum ps4_audio_format */
++    uint32_t rate;          /* frames a second */
++    uint32_t channels;
++    uint32_t channel_mask;  /* the channels' speakers (WAVEFORMATEXTENSIBLE's dwChannelMask) */
++    uint32_t frame_bytes;
++    uint32_t ring_frames;
++    /* the program's */
++    uint64_t written;       /* frames put in so far */
++    uint64_t discard;       /* frames before this are not to be played (IAudioClient::Reset) */
++    uint32_t running;       /* Start .. Stop: the desktop takes frames only then */
++    float volume[PS4_AUDIO_CHANNELS];  /* master * channel * session, 0 when muted */
++    char name[64];          /* the program, for the log */
++    /* the desktop's */
++    uint64_t played;        /* frames taken so far */
++    uint32_t underruns;     /* times it was running and had too few */
++};
++
++#define PS4_AUDIO_DATA_OFFSET (((uint32_t)sizeof(struct ps4_audio_ring) + 63u) & ~63u)
++#define PS4_AUDIO_DATA(ring) ((unsigned char *)(ring) + PS4_AUDIO_DATA_OFFSET)
++
++/* the stream's first message to the desktop, with the shared memory's descriptor */
++struct ps4_audio_hello
++{
++    uint32_t magic;
++    uint32_t size;          /* of the shared memory */
++};
++
++#endif /* PS4_AUDIO_H */
+diff --git a/dlls/wineps4.drv/ps4drv_main.c b/dlls/wineps4.drv/ps4drv_main.c
+index 3ae2eca..bce5770 100755
+--- a/dlls/wineps4.drv/ps4drv_main.c
++++ b/dlls/wineps4.drv/ps4drv_main.c
+@@ -164,26 +164,9 @@ static const struct user_driver_funcs ps4drv_funcs =
+     .pWindowPosChanged = PS4DRV_WindowPosChanged,
+ };
+ 
+-static NTSTATUS ps4drv_unix_init( void *arg )
++/* the unix call table is audio.c's: mmdevapi's calls first, then this one */
++NTSTATUS ps4drv_unix_init( void *arg )
+ {
+     __wine_set_user_driver( &ps4drv_funcs, WINE_GDI_DRIVER_VERSION );
+     return STATUS_SUCCESS;
+ }
+-
+-const unixlib_entry_t __wine_unix_call_funcs[] =
+-{
+-    ps4drv_unix_init,
+-};
+-
+-C_ASSERT( ARRAYSIZE(__wine_unix_call_funcs) == ps4drv_unix_func_count );
+-
+-#ifdef _WIN64
+-
+-const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
+-{
+-    ps4drv_unix_init,
+-};
+-
+-C_ASSERT( ARRAYSIZE(__wine_unix_call_wow64_funcs) == ps4drv_unix_func_count );
+-
+-#endif /* _WIN64 */
+diff --git a/dlls/wineps4.drv/unixlib.h b/dlls/wineps4.drv/unixlib.h
+index 79855b6..c11136f 100755
+--- a/dlls/wineps4.drv/unixlib.h
++++ b/dlls/wineps4.drv/unixlib.h
+@@ -1,5 +1,5 @@
+ /*
+- * wineps4.drv: the PS4 display driver (WinePS4)
++ * wineps4.drv: the PS4 display and audio driver (WinePS4)
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -17,7 +17,8 @@
+ 
+ enum ps4drv_unix_func
+ {
+-    ps4drv_unix_func_init,
++    /* 0 to 36: the audio driver's, in mmdevapi's order (audio.c, ../mmdevapi/unixlib.h) */
++    ps4drv_unix_func_init = 37,
+     ps4drv_unix_func_count,
+ };
+ 
+diff --git a/server/mapping.c b/server/mapping.c
+index 44a8965..a0f678f 100644
+--- a/server/mapping.c
++++ b/server/mapping.c
+@@ -320,6 +320,10 @@ int grow_file( int unix_fd, file_pos_t new_size )
+         ftruncate( unix_fd, size );
+         return 1;
+     }
++#ifdef __PS4_WINE__
++    /* PS4: shared memory (ps4_anon_shm) takes no pwrite() (ESPIPE) but grows with ftruncate() */
++    if ((errno == ESPIPE || errno == EOPNOTSUPP) && !ftruncate( unix_fd, size )) return 1;
++#endif
+     file_set_error();
+     return 0;
+ }
+@@ -632,6 +636,22 @@ static int find_committed_range( struct memory_view *view, file_pos_t start, mem
+     return 0;
+ }
+ 
++#ifdef __PS4_WINE__
++/* PS4: the temp file is shared memory (ps4_anon_shm), which takes no pwrite(): copy through a mapping */
++static int write_temp_file( int fd, const void *buffer, size_t size, off_t pos )
++{
++    off_t start = pos & ~(off_t)(PS4_HOST_PAGE_SIZE - 1);
++    size_t len = pos - start + size;
++    char *ptr;
++
++    if (pwrite( fd, buffer, size, pos ) == size) return 1;
++    if ((ptr = mmap( NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, start )) == MAP_FAILED) return 0;
++    memcpy( ptr + (pos - start), buffer, size );
++    munmap( ptr, len );
++    return 1;
++}
++#endif
++
+ /* allocate and fill the temp file for a shared PE image mapping */
+ static int build_shared_mapping( struct mapping *mapping, size_t align_mask, int fd,
+                                  IMAGE_SECTION_HEADER *sec, unsigned int nb_sec )
+@@ -694,7 +714,11 @@ static int build_shared_mapping( struct mapping *mapping, size_t align_mask, int
+             toread -= res;
+             read_pos += res;
+         }
++#ifdef __PS4_WINE__
++        if (!write_temp_file( shared_fd, buffer, file_size, write_pos )) goto error;
++#else
+         if (pwrite( shared_fd, buffer, file_size, write_pos ) != file_size) goto error;
++#endif
+     }
+ 
+     if (!(shared = alloc_object( &shared_map_ops ))) goto error;
 -- 
 2.53.0
 

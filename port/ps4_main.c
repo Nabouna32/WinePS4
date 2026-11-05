@@ -832,7 +832,10 @@ static void trim_windows_startup( void )
  *   Serif, Times New Roman, Courier New...: Wine's Tahoma is not one of them) and drew no text (v00.55).
  * - Direct3D 8 to 11 from DXVK, on the PS4's GPU through Vulkan (install_dxvk puts its DLLs in the
  *   prefix; Settings > Diagnostics can give programs Wine's own again). Steam's processes keep Wine's:
- *   they only ask what the GPU is, and RADV would open it in each of them. */
+ *   they only ask what the GPU is, and RADV would open it in each of them.
+ * - Sound from wineps4.drv, which is also Wine's audio driver: mmdevapi tries the drivers named in
+ *   HKCU\Software\Wine\Drivers, Audio ("pulse,alsa,oss,coreaudio" without it: none of them here, so
+ *   v00.60's programs had no audio device at all). */
 struct reg_default
 {
     const char *key;    /* as in the file: backslashes doubled */
@@ -844,6 +847,7 @@ struct reg_default
 #define STEAM_DLLS    "Software\\\\Wine\\\\AppDefaults\\\\steam.exe\\\\DllOverrides"
 #define WEB_DLLS      "Software\\\\Wine\\\\AppDefaults\\\\steamwebhelper.exe\\\\DllOverrides"
 #define FONT_NAMES    "Software\\\\Wine\\\\Fonts\\\\Replacements"
+#define DRIVERS       "Software\\\\Wine\\\\Drivers"
 
 static const struct reg_default user_defaults[] =
 {
@@ -869,6 +873,7 @@ static const struct reg_default user_defaults[] =
     { WEB_DLLS, "d3d9", "builtin" },
     { WEB_DLLS, "d3d11", "builtin" },
     { WEB_DLLS, "dxgi", "builtin" },
+    { DRIVERS, "Audio", "ps4" },
 };
 
 /* the registry file's text with one value added to a key (made if missing), or the same text when the key
@@ -1266,6 +1271,9 @@ int main( int argc, char **argv )
      * without it Wine hands them to start.exe */
     setenv( "WINEARCH", "wow64", 0 );
     load_env_file();
+    /* (Wine's stubs Chromium and Steam call all the time: 4000 of v00.60's 6000 lines of wine.log said
+     * nothing but that; Settings > Diagnostics > Wine debug messages gives them all back) */
+    setenv( "WINEDEBUG", "fixme-manipulation,fixme-dwmapi,fixme-appbar,fixme-media,fixme-bcrypt", 0 );
     set_computer_name();
     make_lifeline();
     setenv( "WINEPS4_PROGRAM", "1", 1 );  /* for the processes it starts (ps4_launch_program) */

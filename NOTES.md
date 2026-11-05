@@ -396,3 +396,45 @@ v00.60:
 - ps4-kit bb4a45c: a direct_max under 256 MiB is tried as the main heap itself.
 - Program processes never take the system pool (system_pool_max 0): one with no heap fails alone;
   their automatic arenas 2 MiB, 6 at most.
+
+## Iron Snout's "Invalid platform", and programs' sound (v00.61, 2026-11-06)
+
+v00.60 (logs/v00.60): Steam signed in and downloaded Iron Snout (32-bit); launching it said "Invalid
+platform" (Steam's console_log: CreatingProcess, then AppError_29). IronSnout.exe has a shared
+writable section (.mydata, 8 bytes at 0x71b000: a one-instance counter). wineserver copies such
+sections into a temp file with pwrite, and since v00.57 that file is anonymous shared memory, which
+the PS4's kernel (FreeBSD 9) takes no read, write or pwrite on (ESPIPE): the image failed with
+STATUS_INVALID_IMAGE_FORMAT, which a Windows program sees as an .exe for another platform. ntdll
+could not have mapped it either: a 4 KiB section in one of the PS4's 16 KiB pages, other sections in
+the same page ("unaligned shared mapping not supported"). The same log: no audio driver at all ("No
+driver from pulse,alsa,oss,coreaudio"), Steam's "Unable to set default socket options, error 10022"
+still there though no option do_setsockopt sets was refused, 4000 of its 6000 lines Chromium's and
+Steam's stub messages, and two processes that died starting (virtual_init's anonymous mmap failed,
+fault 0xfffff, as in v00.58: direct memory was down to 1.3 GiB at the end).
+
+v00.61:
+- wineserver writes a shared section's data through a mapping of the shared memory when pwrite is
+  refused, and grows shared memory with ftruncate (grow_file: the session mapping's growth too, which
+  v00.57's shared memory had broken the same way).
+- ntdll gives a shared section that does not fill 16 KiB pages of its own a private copy, like .data:
+  its data is not shared between processes (a one-instance counter reads 0 in each).
+- A program that does not start is in wine.log with its status ("wineps4: starting ... failed").
+- Sound. wineps4.drv is also Wine's audio driver: mmdevapi loads it as "ps4" (user.reg's
+  Software\Wine\Drivers, Audio), and its unix call table is audio.c's (mmdevapi's 37 calls, then the
+  display driver's init at 37). A WASAPI stream (DirectSound, winmm's wave out, XAudio2 and Media
+  Foundation are on WASAPI) keeps its buffer in the program's memory, as wineoss does, and its timer
+  copies what was written into a ring in shared memory, 50 ms ahead at most (port/include/ps4_audio.h);
+  the ring's descriptor goes to the desktop over /data/WinePS4/.audio. The desktop's mixer
+  (port/ps4_audio_desk.c) takes 256 frames of each running stream every 5.3 ms, folds its channels to
+  stereo, interpolates its rate to 48 kHz, applies its volumes and plays the sum through one
+  sceAudioOut port (16-bit stereo, the system user). Mix format 48 kHz float stereo; any rate from 1 to
+  384 kHz, 1 to 8 channels, 8 to 32-bit PCM and float taken as they are. No capture endpoint, no MIDI
+  devices. A PC simulation of the ring's two sides (scratchpad) played in order without gaps with the
+  program's timer up to 30 ms late, and after Stop/Reset/Start. Settings > Diagnostics > Audio log.
+- Steam's 10022, the suspect: SIO_KEEPALIVE_VALS failed as a whole when the kernel refused
+  TCP_KEEPIDLE (FreeBSD 9 may not have it); keepalive now stays on at the kernel's timing. Refusals of
+  that, TCP_KEEPINTVL, SO_KEEPALIVE and IPV6_V6ONLY (neither goes through do_setsockopt) are logged.
+- WINEDEBUG leaves out the fixmes of manipulation, dwmapi, appbar, media and bcrypt unless set
+  (Settings > Diagnostics > Wine debug messages sets it).
+- Settings > Diagnostics > Performance log: every 10 s, each process's share of the CPU, the desktop's
+  drawing time and the direct memory free, for "heavy and slow" next time.

@@ -1,5 +1,5 @@
 /*
- * wineps4.drv: the PS4 display driver (WinePS4)
+ * wineps4.drv: the PS4 display and audio driver (WinePS4)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,8 @@
 
 enum ps4drv_unix_func
 {
-    ps4drv_unix_func_init,
+    /* 0 to 36: the audio driver's, in mmdevapi's order (audio.c, ../mmdevapi/unixlib.h) */
+    ps4drv_unix_func_init = 37,
     ps4drv_unix_func_count,
 };
 

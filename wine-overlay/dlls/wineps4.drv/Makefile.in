@@ -4,6 +4,7 @@ UNIX_LIBS = -lwin32u $(PTHREAD_LIBS)
 IMPORTS   = win32u
 
 SOURCES = \
+	audio.c \
 	dllmain.c \
 	display.c \
 	ps4drv_main.c \

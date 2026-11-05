@@ -31,6 +31,8 @@ int ps4_wine_ready( void );
 int ps4_launch_program( char *const args[] );
 /* ends every program process, before the desktop exits or restarts */
 void ps4_end_programs( void );
+/* the mixer programs' sound streams come to (port/ps4_audio_desk.c), started with the desktop */
+void ps4_audio_start( void );
 
 /* Task Manager: the program processes running (local processes: port/ps4_spawn_desk.c), with what
  * each last said of itself (every second), and ending one */

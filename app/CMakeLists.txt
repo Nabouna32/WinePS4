@@ -173,14 +173,14 @@ target_compile_options(wine_shell PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++20> 
 
 # --- The app -------------------------------------------------------------------------------------
 add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/ps4_wine_dirs.c ${PORT}/unused_reals.c ${PORT}/ps4_spawn_desk.c
-    ${PORT}/ps4_unixlibs.c ${PORT}/ps4_net.c ${PORT}/ps4_ifaddrs.c
+    ${PORT}/ps4_unixlibs.c ${PORT}/ps4_net.c ${PORT}/ps4_ifaddrs.c ${PORT}/ps4_audio_desk.c
     $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} ${MODULE_UNIXLIB_OBJECTS} $<TARGET_OBJECTS:wine_shell>)
 add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one ${MODULE_UNIXLIB_TARGETS})
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include ${WINEPS4_FREETYPE}/include)
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FREETYPE}/lib/libfreetype.a ${PS4_SYSROOT}/lib/libz.a ${PS4_SYSROOT}/lib/libcrypto.a)
 target_compile_definitions(wineps4 PRIVATE WINEPS4_VERSION="${WINEPS4_VERSION}" WINE_APP_DIR="${WINE_APP_DIR}")
 target_compile_options(wineps4 PRIVATE -U__FreeBSD__)
-target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceIme SceImeDialog SceCommonDialog SceNetCtl)
+target_link_libraries(wineps4 PRIVATE SceVideoOut ScePad SceUserService SceMouse SceKeyboard SceIme SceImeDialog SceCommonDialog SceNetCtl SceAudioOut)
 target_link_libraries(wineps4 PRIVATE ${WINEPS4_FFMPEG}/lib/libavformat.a ${WINEPS4_FFMPEG}/lib/libavcodec.a
     ${WINEPS4_FFMPEG}/lib/libswscale.a ${WINEPS4_FFMPEG}/lib/libavutil.a)
 ps4_kit_app(wineps4)

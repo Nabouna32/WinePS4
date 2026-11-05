@@ -1090,12 +1090,14 @@ struct Toggle {
 
 const Toggle TOGGLES[] = {
     {"Hang report", "Writes where Wine is stuck to hang.log when a program runs for 20 s and more", "WINEPS4_HANG_DUMP", "20", ""},
-    {"Wine debug messages", "Exceptions and DLL loading in wine.log (WINEDEBUG=+seh,+loaddll)", "WINEDEBUG", "+seh,+loaddll", ""},
+    {"Wine debug messages", "Exceptions, DLL loading and every stub's message in wine.log (WINEDEBUG=+seh,+loaddll)", "WINEDEBUG", "+seh,+loaddll", ""},
     {"Memory log", "Every mapping of WinePS4's memory layer in wine.log (slow)", "WINEPS4_VM_LOG", "1", ""},
     {"Budget log", "The PS4's budget for the app (open files, threads, memory) in wine.log, what holds files when they run out", "WINEPS4_FILES_LOG", "", "0"},
     {"Keyboard log", "How the USB keyboard's presses arrive and where they go, in wine.log (never which keys)", "WINEPS4_KEY_LOG", "", "0"},
     {"Socket option log", "The socket options the PS4's kernel refuses a program, each once, in wine.log", "WINEPS4_SOCKET_LOG", "", "0"},
     {"Vulkan log", "Programs' swapchains and frames a second (Vulkan, Direct3D through DXVK) in wine.log", "WINEPS4_VULKAN_LOG", "", "0"},
+    {"Audio log", "Programs' sound streams in wine.log: their formats, and when one ran dry (the program wrote it late)", "WINEPS4_AUDIO_LOG", "", "0"},
+    {"Performance log", "Every 10 s in wine.log: each process's share of the CPU, the desktop's drawing time, free memory", "WINEPS4_PERF_LOG", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
@@ -1447,7 +1449,7 @@ Window *open_window(Kind kind, const std::string &path = std::string()) {
         w.title = "Terminal";
         break;
     case Kind::Settings:
-        w.w = 1100, w.h = 760, w.x = 410, w.y = 110;
+        w.w = 1100, w.h = 940, w.x = 410, w.y = 60;  // (Diagnostics' 9 switches)
         w.bg_tab = background.kind == BgKind::Color;
         w.title = "Settings";
         break;
@@ -1655,6 +1657,53 @@ void refresh_processes(bool force = false) {
     std::memmove(memory_history, memory_history + 1, sizeof(memory_history) - sizeof(memory_history[0]));
     cpu_history[59] = std::min(total, 100.f);
     memory_history[59] = memory_total ? 100.f * (memory_total - std::min(memory_free, memory_total)) / memory_total : 0.f;
+}
+
+// Settings > Diagnostics > Performance log: every 10 s in wine.log, what had the CPU (each process's
+// share of the app's 7 cores), how long the desktop took to draw, and the direct memory left
+// (WINEPS4_PERF_LOG=0: off). v00.60 was "heavy and slow" with nothing in wine.log to say why.
+struct PerfLog {
+    double when = 0, drawing = 0, longest = 0;
+    int frames = 0;
+} perf;
+
+void perf_frame(double seconds) {
+    perf.frames++;
+    perf.drawing += seconds;
+    perf.longest = std::max(perf.longest, seconds);
+}
+
+void perf_tick(double t) {
+    static const bool on = [] {
+        const char *v = std::getenv("WINEPS4_PERF_LOG");
+        return !v || std::strcmp(v, "0") != 0;
+    }();
+    if (!on || t - perf.when < 10)
+        return;
+    const bool first = perf.when == 0;
+    perf.when = t;
+    refresh_processes(true);
+    if (!first) {
+        std::vector<const ProcessView *> busy;
+        for (const ProcessView &v : process_views)
+            if (v.cpu_percent >= 1)
+                busy.push_back(&v);
+        std::sort(busy.begin(), busy.end(), [](const ProcessView *a, const ProcessView *b) { return a->cpu_percent > b->cpu_percent; });
+        char text[160];
+        std::snprintf(text, sizeof text, "wineps4: performance: the desktop and wineserver %.0f%%", desktop_cpu_percent);
+        std::string line = text;
+        for (size_t i = 0; i < busy.size() && i < 6; i++) {
+            std::snprintf(text, sizeof text, ", %s %.0f%%", busy[i]->name.c_str(), busy[i]->cpu_percent);
+            line += text;
+        }
+        std::snprintf(text, sizeof text, " of the app's 7 cores; the desktop drew %d frames, %.1f ms each, the longest %.0f ms; "
+                      "direct memory %llu MiB free\n", perf.frames, perf.frames ? perf.drawing * 1000 / perf.frames : 0.0,
+                      perf.longest * 1000, memory_free >> 20);
+        line += text;
+        std::fputs(line.c_str(), stderr);
+    }
+    perf.frames = 0;
+    perf.drawing = perf.longest = 0;
 }
 
 // A process's program icon (its .exe's), or nullptr
@@ -6428,6 +6477,7 @@ extern "C" void ps4_shell_launch(char **args) {
 
 extern "C" void ps4_shell_run(const char *) {
     block_wine_signals();
+    ps4_audio_start();  // (programs' sound, also without a screen)
     if (!screen_open()) {
         // no screen: nothing to show; programs from run.txt still run
         for (;;) {
@@ -6911,10 +6961,13 @@ extern "C" void ps4_shell_run(const char *) {
             hx = hy = cursor->width / 2;
         }
 
+        perf_tick(t);
         if (dirty) {
+            const double drawn_from = now_seconds();
             draw_scene(scene);
             dirty = false;
             present(scene, *cursor, in.x, in.y, hx, hy);
+            perf_frame(now_seconds() - drawn_from);
             last_px = in.x, last_py = in.y, last_cursor = cursor;
         } else if (in.x != last_px || in.y != last_py || cursor != last_cursor) {
             present(scene, *cursor, in.x, in.y, hx, hy);

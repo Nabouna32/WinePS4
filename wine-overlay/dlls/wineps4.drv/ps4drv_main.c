@@ -164,26 +164,9 @@ static const struct user_driver_funcs ps4drv_funcs =
     .pWindowPosChanged = PS4DRV_WindowPosChanged,
 };
 
-static NTSTATUS ps4drv_unix_init( void *arg )
+/* the unix call table is audio.c's: mmdevapi's calls first, then this one */
+NTSTATUS ps4drv_unix_init( void *arg )
 {
     __wine_set_user_driver( &ps4drv_funcs, WINE_GDI_DRIVER_VERSION );
     return STATUS_SUCCESS;
 }
-
-const unixlib_entry_t __wine_unix_call_funcs[] =
-{
-    ps4drv_unix_init,
-};
-
-C_ASSERT( ARRAYSIZE(__wine_unix_call_funcs) == ps4drv_unix_func_count );
-
-#ifdef _WIN64
-
-const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
-{
-    ps4drv_unix_init,
-};
-
-C_ASSERT( ARRAYSIZE(__wine_unix_call_wow64_funcs) == ps4drv_unix_func_count );
-
-#endif /* _WIN64 */
