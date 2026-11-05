@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -141,7 +142,15 @@ void ps4_kit_configure_heap( ps4_kit_heap_options *options )
     }
     options->log_tag = "program";
     options->source_order = PS4_KIT_HEAP_DIRECT_FIRST;
-    options->direct_max = 256u << 20;
+    /* 64 MiB, and 64 MiB more at a time as it fills (8 times at most): the C library's heap of a Wine
+     * process holds Wine's own Unix-side data, a few dozen MiB (a game's shader compiles more), while
+     * Windows' memory is the memory layer's; a direct mapping takes its whole size at once, used or
+     * not, from the direct memory all the app's processes share (v00.58: 256 MiB each in six local
+     * processes, and Steam's web helper ran out) */
+    options->direct_max = 64u << 20;
+    options->overflow_direct_max = 64u << 20;
+    options->max_overflow_heaps = 8;
+    options->overflow_direct_reserve = 256u << 20;  /* (what the memory layer keeps for the app too) */
     /* 128 MiB of the system pool only when direct memory failed; never regular flexible memory (a
      * forked child reads a nonsense amount of it free, and tried 512 GiB, 256 GiB, ...) */
     options->system_pool_max = 128u << 20;
@@ -825,10 +834,10 @@ struct reg_default
     const char *value;
 };
 
-#define DLL_OVERRIDES "Software\\Wine\\DllOverrides"
-#define STEAM_DLLS    "Software\\Wine\\AppDefaults\\steam.exe\\DllOverrides"
-#define WEB_DLLS      "Software\\Wine\\AppDefaults\\steamwebhelper.exe\\DllOverrides"
-#define FONT_NAMES    "Software\\Wine\\Fonts\\Replacements"
+#define DLL_OVERRIDES "Software\\\\Wine\\\\DllOverrides"
+#define STEAM_DLLS    "Software\\\\Wine\\\\AppDefaults\\\\steam.exe\\\\DllOverrides"
+#define WEB_DLLS      "Software\\\\Wine\\\\AppDefaults\\\\steamwebhelper.exe\\\\DllOverrides"
+#define FONT_NAMES    "Software\\\\Wine\\\\Fonts\\\\Replacements"
 
 static const struct reg_default user_defaults[] =
 {
@@ -894,11 +903,29 @@ static char *reg_add_value( char *text, size_t *size, const struct reg_default *
     return out;
 }
 
+/* v00.58 wrote its keys with single backslashes, which Wine's registry reads as top-level keys named
+ * "SoftwareWineDllOverrides" and the like (its DXVK overrides never applied): those go. The text's length
+ * after, how many went in *dropped. */
+static size_t drop_v0058_keys( char *text, size_t len, unsigned int *dropped )
+{
+    static const char junk[] = "\n[SoftwareWine";
+    char *at, *end;
+
+    while ((at = strstr( text, junk )))
+    {
+        if (!(end = strstr( at + 1, "\n[" ))) end = text + len;
+        memmove( at, end, text + len - end + 1 );
+        len -= end - at;
+        (*dropped)++;
+    }
+    return len;
+}
+
 static void add_user_defaults( void )
 {
     char *text, added[512] = "";
     size_t len, before;
-    unsigned int i;
+    unsigned int i, dropped = 0;
     long size;
     FILE *f = fopen( PREFIX_DIR "/user.reg", "rb" );
 
@@ -915,6 +942,7 @@ static void add_user_defaults( void )
     fclose( f );
     len = size > 0 ? size : 0;
     text[len] = 0;
+    if (len) len = drop_v0058_keys( text, len, &dropped );
     for (i = 0; len && i < sizeof(user_defaults) / sizeof(user_defaults[0]); i++)
     {
         before = len;
@@ -923,11 +951,14 @@ static void add_user_defaults( void )
             snprintf( added + strlen( added ), sizeof(added) - strlen( added ), "%s%s", added[0] ? ", " : " ",
                       user_defaults[i].name );
     }
-    if (added[0] && (f = fopen( PREFIX_DIR "/user.reg.new", "wb" )))
+    if ((added[0] || dropped) && (f = fopen( PREFIX_DIR "/user.reg.new", "wb" )))
     {
         const int ok = fwrite( text, 1, len, f ) == len;
         if (!fclose( f ) && ok && !rename( PREFIX_DIR "/user.reg.new", PREFIX_DIR "/user.reg" ))
-            logf_( "wineps4: user.reg defaults added:%s\n", added );
+        {
+            if (dropped) logf_( "wineps4: user.reg: %u keys v00.58 wrote misnamed removed\n", dropped );
+            if (added[0]) logf_( "wineps4: user.reg defaults added:%s\n", added );
+        }
     }
     free( text );
 }
@@ -1146,6 +1177,27 @@ static void gpu_environment( void )
     if (dxvk && !strcmp( dxvk, "0" )) setenv( "WINEDLLOVERRIDES", "d3d8,d3d9,d3d10core,d3d11,dxgi=b", 0 );
 }
 
+/* Chromium's browsers (Steam's web helper among them) are told of the app's free memory less 1 GiB
+ * (ps4_wine_vm.c's ps4_vm_set_memory_margin) */
+extern void ps4_vm_set_memory_margin( unsigned long long margin );
+
+static void chromium_memory_margin( const char *image )
+{
+    static const char *const browsers[] = { "chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe",
+                                            "steamwebhelper.exe", "msedgewebview2.exe" };
+    const char *name = image, *p;
+    unsigned int i;
+
+    for (p = image; *p; p++)
+        if (*p == '\\' || *p == '/') name = p + 1;
+    for (i = 0; i < sizeof(browsers) / sizeof(browsers[0]); i++)
+        if (!strcasecmp( name, browsers[i] ))
+        {
+            ps4_vm_set_memory_margin( 1ull << 30 );
+            return;
+        }
+}
+
 static int program_main( int argc, char **argv )
 {
     ps4_program_process = 1;
@@ -1164,6 +1216,7 @@ static int program_main( int argc, char **argv )
     ps4_thread_register();  /* for the hang dump; ntdll registers the threads it starts */
     ps4_start_hang_watch();
     gpu_environment();
+    chromium_memory_margin( argv[1] );
     __wine_main( argc, argv );
     ps4_process_exit_now( 0 );  /* (returning from main would be ps4-kit's exit: the whole app) */
 }

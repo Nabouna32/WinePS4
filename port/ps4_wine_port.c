@@ -385,6 +385,29 @@ static void *hang_watch_thread( void *arg )
     return NULL;
 }
 
+/* The process's threads into hang.log now (the desktop's, its wineserver thread among them, when the
+ * server stops taking the desktop's input: server/ps4_input.inc), when Settings > Diagnostics > Hang
+ * report is on */
+void ps4_dump_threads_now( const char *reason )
+{
+    const char *env = getenv( "WINEPS4_HANG_DUMP" );
+    struct sigaction sa;
+    void *start, *end;
+    uint32_t prot;
+
+    if (!env || atoi( env ) <= 0) return;
+    if (!text_end)
+    {
+        if (sceKernelQueryMemoryProtection( (void *)EBOOT_TEXT, &start, &end, &prot )) return;
+        text_end = (uint64_t)end;
+        memset( &sa, 0, sizeof(sa) );
+        sa.sa_sigaction = dump_handler;
+        sa.sa_flags = SA_SIGINFO | SA_RESTART;
+        ps4_raw_sigaction( SIGXCPU, &sa, NULL );
+    }
+    dump_threads( reason );
+}
+
 void ps4_start_hang_watch( void )
 {
     const char *env = getenv( "WINEPS4_HANG_DUMP" );

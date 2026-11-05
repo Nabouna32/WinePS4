@@ -82,6 +82,7 @@ static unsigned int chunk_count, chunk_used;  /* chunk_used: pages handed out of
 static uint32_t free_pages[MAX_CHUNKS * CHUNK_PAGES];
 static unsigned int free_count;
 static size_t direct_reserve = 256u << 20;
+static size_t memory_margin;  /* (ps4_vm_set_memory_margin) */
 
 static uint32_t *l1[L1_ENTRIES];
 static pthread_mutex_t vm_lock;
@@ -551,8 +552,28 @@ void ps4_vm_memory_status( unsigned long long *total, unsigned long long *avail 
     *total = sceKernelGetDirectMemorySize();
     if (sceKernelAvailableDirectMemorySize( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, &start, &size )) size = 0;
     if (sceKernelAvailableFlexibleMemorySize( &flexible )) flexible = 0;
-    *avail = (size > direct_reserve ? size - direct_reserve : 0) + flexible;
+    *avail = (size > direct_reserve + memory_margin ? size - direct_reserve - memory_margin : 0) + flexible;
     if (*avail > *total) *avail = *total;
+}
+
+/* A Chromium program (Steam's web helper) sees the app's free memory less this much: it takes what it is
+ * told it may have, and the app's other processes (a game) share it. Told all of it, the web helper grew
+ * until the app's direct memory was gone (v00.56, v00.58: it died, then the app froze); told none, it
+ * stayed small (v00.55). With 1 GiB less, it is short of memory once the app has under 1.25 GiB free. */
+void ps4_vm_set_memory_margin( unsigned long long margin )
+{
+    memory_margin = margin;
+}
+
+/* the largest free run of the app's direct memory, less what's kept for the app: for the desktop's choice
+ * of where a new process runs (port/ps4_spawn_desk.c) */
+unsigned long long ps4_vm_direct_free( void )
+{
+    size_t size = 0;
+    off_t start = 0;
+
+    if (sceKernelAvailableDirectMemorySize( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, &start, &size )) return 0;
+    return size > direct_reserve ? size - direct_reserve : 0;
 }
 
 void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t offset )

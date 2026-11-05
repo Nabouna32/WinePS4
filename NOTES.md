@@ -344,3 +344,37 @@ v00.58:
   /data/WinePS4/shadercache (MESA_SHADER_CACHE_DIR).
 - A frame costs a GPU wait and a copy through the desktop's socket (8 MB at 1080p): a first path,
   to see games at all; sharing the frames' memory with the desktop is the next one.
+
+## Steam closed and the app froze: memory, not the 7 processes (v00.59, 2026-11-05)
+
+v00.58 (logs/v00.58): Steam's window came and went, then the app froze. The app's direct memory
+(4.6 GiB, shared by all its processes) ran out at 100.8 s ("direct memory used up, 304 MiB left"):
+Steam's web helper died of it (0xE0000008), winedbg could not start (crash.log: virtual_init, an
+anonymous mmap failed and MAP_FAILED was used, fault 0xfffff), and at 139 s every process stopped
+at once: the processes were still there (klog), nothing logged. The desktop writes the PS4's input
+into a pipe the wineserver reads, and the pipe's write end blocked: a server that stopped reading
+froze the desktop with it. Across versions: v00.55 never ran out (Chromium was told nothing was
+free and stayed small), v00.56 and v00.58 did (told the truth since v00.56, it grew), and Steam
+started hardwareupdater.exe twice and conhost.exe in local slots (the pool of the processes
+outside the 7 had 146 MiB left: its error reporter, restarted after each assert, held 64 MiB of it
+each time). Each local process maps a 256 MiB C library heap of direct memory at its start, used or
+not. No Vulkan or DXVK ran: v00.58's user.reg defaults were written with single backslashes (a
+heredoc halved them), so its DLL overrides went into top-level keys "SoftwareWineDllOverrides".
+
+The 7 processes the PS4 runs for an app are not what failed: processes past them have run outside
+the app since v00.51. Several Windows processes in one PS4 process ("a lightweight kernel") would
+not help: Wine gives each Windows process its own address space and ntdll, and the memory they need
+is the same in one process or seven.
+
+v00.59:
+- Program processes' C library heap: 64 MiB, and 64 MiB more at a time as it fills (8 at most;
+  ps4-kit a306bf5's overflow_direct_max), not 256 MiB each.
+- A new program starts outside the 7 first while the app's free direct memory is under 384 MiB
+  (ps4_spawn_desk.c, ps4_vm_direct_free): it takes the system's pool instead.
+- Chromium's browsers are told of the app's free memory less 1 GiB (ps4_vm_set_memory_margin),
+  and start with --enable-low-end-device-mode.
+- Left out: Steam's steamerrorreporter(64).exe and hardwareupdater.exe.
+- The desktop's input to the server never blocks (server/ps4_input.inc): dropped while the pipe is
+  full, said once after 5 s, with the desktop's threads in hang.log when the hang report is on.
+- user.reg's keys with their backslashes doubled again (tested on the PC on the console's user.reg),
+  v00.58's misnamed keys removed: DXVK's overrides apply now.

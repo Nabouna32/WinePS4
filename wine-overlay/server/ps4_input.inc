@@ -6,9 +6,14 @@
  * with the focus gets them. No thread of the server is "current" here: hardware input from the
  * system has no sender. */
 
+#include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "ps4_display.h"
+
+extern unsigned int ps4_request_seq;  /* fd.c: the requests handled so far */
 
 struct ps4_input
 {
@@ -135,6 +140,7 @@ void ps4_input_init(void)
 
     if (pipe( ps4_input_pipe )) return;
     fcntl( ps4_input_pipe[0], F_SETFL, O_NONBLOCK );
+    fcntl( ps4_input_pipe[1], F_SETFL, O_NONBLOCK );  /* (the desktop never waits for the server: ps4_server_input) */
     if (!(input = alloc_object( &ps4_input_ops ))) return;
     if (!(input->fd = create_anonymous_fd( &ps4_input_fd_ops, ps4_input_pipe[0], &input->obj, 0 )))
     {
@@ -146,8 +152,32 @@ void ps4_input_init(void)
 }
 
 /* the desktop's thread: records are small, a pipe write of one is atomic */
+/* port/ps4_wine_port.c: the process's threads into hang.log (Settings > Diagnostics > Hang report) */
+extern void ps4_dump_threads_now( const char *reason );
+
+/* From the desktop's main loop. It does not wait for a server that stopped taking its input: the pipe
+ * filled, the desktop's next write blocked, and the whole app froze with it (v00.58); the input is dropped
+ * meanwhile, and said once (with this thread's and the server's stacks when the hang report is on). */
 int ps4_server_input( const struct ps4_input_record *record )
 {
+    static unsigned int full_since, reported;
+    struct timespec now;
+
     if (ps4_input_pipe[1] < 0) return 0;
-    return write( ps4_input_pipe[1], record, sizeof(*record) ) == sizeof(*record);
+    if (write( ps4_input_pipe[1], record, sizeof(*record) ) == sizeof(*record))
+    {
+        full_since = 0;
+        return 1;
+    }
+    if (errno != EAGAIN) return 0;
+    clock_gettime( CLOCK_MONOTONIC, &now );
+    if (!full_since) full_since = (unsigned int)now.tv_sec | 1;
+    else if (!reported && (unsigned int)now.tv_sec - full_since >= 5)
+    {
+        reported = 1;
+        fprintf( stderr, "wineps4: wineserver has taken no input for 5 s (requests so far: %u): the desktop drops "
+                 "its input until it does\n", ps4_request_seq );
+        ps4_dump_threads_now( "wineserver takes no input" );
+    }
+    return 0;
 }

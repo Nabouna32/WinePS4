@@ -130,6 +130,10 @@ struct local_stats
  * v00.52 took it to 13 MiB, and a new local process could not start its C library: the PS4 closed
  * the app. Without the room the program goes among the 7. */
 #define OUTSIDE_MIN_POOL (256ull << 20)
+/* the app's free direct memory (beyond what's kept for it) under which a new program is tried outside
+ * the 7 first (ps4_wine_vm.c) */
+#define LOW_DIRECT_MEMORY (384ull << 20)
+extern unsigned long long ps4_vm_direct_free( void );
 static uint64_t outside_pool = ~0ull;  /* the last figure one of them sent */
 
 extern int ps4_outside_process;
@@ -463,7 +467,11 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
         if (!skip_env( envp[i] )) p = stpcpy( p, envp[i] ) + 1;
 
     /* a background program outside the 7 if it can be; else a local process, outside once 7 run */
-    started = background_program( image ) && start_outside( &sock, &pid );
+    /* where it runs: Windows' background programs and helpers outside the PS4's 7 first, and so does any
+     * program while the app's direct memory is short (a local process takes its C library's heap and
+     * Windows' memory from it, one outside takes the system's pool instead: v00.58's helpers, started
+     * with little of it left, took the rest and Steam's web helper died) */
+    started = (background_program( image ) || ps4_vm_direct_free() < LOW_DIRECT_MEMORY) && start_outside( &sock, &pid );
     if (!started)
     {
         const int local = start_local( &sock, &id, &pid );

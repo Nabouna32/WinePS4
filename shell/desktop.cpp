@@ -1753,7 +1753,7 @@ void add_one_process_switches(std::vector<std::string> &args) {
             chromium = false;
     if (chromium)
         args.insert(args.end(), {"--single-process", "--no-sandbox", "--in-process-gpu", "--disable-gpu", "--disable-breakpad",
-                                 "--disable-gpu-shader-disk-cache"});
+                                 "--disable-gpu-shader-disk-cache", "--enable-low-end-device-mode"});
 }
 
 // Starts a program as a process of its own (port/ps4_main.c); "" when it started, else why not
@@ -5861,7 +5861,7 @@ void draw_apps_page(Canvas &c, const Window &w) {
     panel(c, rr.x, rr.y, rr.w, rr.h, 6, hover == id + "rules" ? CARD_HOT : CARD, CARD_BORDER);
     draw_icon(c, Icon::Gauge, rr.x + 34, rr.y + rr.h / 2.f, 26);
     c.text(rr.x + 66, rr.y + 34, "Leave out helpers that only take processes", 16, TEXT);
-    c.text(rr.x + 66, rr.y + 58, "Steam's start-up probes, its install scripts and its overlay window", 13, TEXT3,
+    c.text(rr.x + 66, rr.y + 58, "Steam's start-up probes, install scripts, overlay window, error reporter and hardware updater", 13, TEXT3,
            Weight::Regular, rr.w - 180);
     draw_switch(c, rr, env_get("WINEPS4_PROCESS_RULES") != "0");
     // Windows' background programs and helpers outside the PS4's 7, and any program once 7 run
