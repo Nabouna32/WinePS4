@@ -482,6 +482,41 @@ static long raw_syscall3( long number, long a, long b, long c )
     return ret;
 }
 
+/* Anonymous shared memory for wineserver's sections (server/mapping.c): FreeBSD's shm_open( SHM_ANON ),
+ * by its system call (libkernel's shm_open would take SHM_ANON for a path). Not a file: the PS4 counts
+ * the files the app has open, all its processes together, to about 250, and each section was one (a
+ * temporary file in the server's folder: Chromium's hundred of them used the budget up, v00.56). -1 when
+ * the kernel says no: temporary files then, as before (for good when the first one fails). */
+int ps4_anon_shm( unsigned long long size )
+{
+    static int works = -1;
+    long fd;
+
+    if (!works) return -1;
+    if ((fd = raw_syscall3( 482 /* SYS_shm_open */, 1 /* SHM_ANON */, O_RDWR, 0600 )) == -1)
+    {
+        if (works == -1) fprintf( stderr, "wineps4: sections: no anonymous shared memory (%s): temporary files\n", strerror( errno ) );
+        works = 0;
+        return -1;
+    }
+    if (ftruncate( (int)fd, (off_t)size ) == -1)
+    {
+        const int error = errno;
+
+        close( (int)fd );
+        if (works == -1)
+        {
+            fprintf( stderr, "wineps4: sections: anonymous shared memory did not grow to %llu bytes (%s): temporary files\n",
+                     size, strerror( error ) );
+            works = 0;
+        }
+        return -1;
+    }
+    if (works == -1) fprintf( stderr, "wineps4: sections in anonymous shared memory (not files of the app's budget)\n" );
+    works = 1;
+    return (int)fd;
+}
+
 /* ps4-kit keeps a current directory of its own: relative paths are made absolute by its getcwd. */
 static const char *absolute( const char *path, char *buf, size_t size )
 {

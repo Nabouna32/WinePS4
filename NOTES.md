@@ -286,3 +286,30 @@ v00.56:
   multiple pages" every 5 s in cef_log). ntdll's get_performance_info has a PS4 branch (Wine patch):
   the app's direct memory is the RAM, its largest free run and the flexible memory free what's
   available (ps4_vm_memory_status).
+
+## The web helper's crashes, the password keyboard (v00.57, 2026-11-05)
+
+v00.56 (logs/v00.56): the fonts worked (text in Steam), the PS4's keyboard opened for the user name
+by itself, and libSceIme's keyboard worked (2 keyboards, real presses; in PS4 + Keyboard mode they
+are not sent to programs, by design). The password field's keyboard never opened: sceImeDialogInit
+refused with 0x80bc0030 (INVALID_PARAM) each time: the password option takes the Basic Latin type
+only (shadPS4's ime_dialog.cpp: option 4 needs type 1 or above Mail). Steam's web helper died four
+times: once an access violation (a read at FFFFFFFFFFE01000, PartitionAlloc freeing near null; winedbg
+came up), three times 0xE0000008 (Chromium's out-of-memory exit), each when the app's files were used
+up ("files 257 of 257"): wineserver held 263 files, about 100 of them the temporary files of
+sections (Chromium's shared memory) and about 70 Chromium's GPU shader caches on disk (GPUCache,
+GrShaderCache, ShaderCache, GraphiteDawnCache, DawnWebGPUCache, DawnGraphiteCache: five files each,
+some open three times) with the GPU off. A steam.exe started meanwhile crashed in virtual_init
+(crash.log: an anonymous mmap failed, MAP_FAILED used: fault at 0xfffff), memory being short.
+"Unable to set default socket options, error 10022" stayed: FreeBSD takes no IPPROTO_IP option on
+an IPv6 socket (ip6_ctloutput: EINVAL), Windows does on a dual-stack one.
+
+v00.57:
+- The PS4's keyboard for a password: type Basic Latin with the password option.
+- Chromium programs get --disable-gpu-shader-disk-cache (ntdll's and the desktop's switches).
+- wineserver's sections in anonymous shared memory (port ps4_anon_shm: shm_open( SHM_ANON ) by its
+  system call, 482) instead of temporary files, when the kernel allows it (else as before, logged).
+- ntdll's do_setsockopt: an IPPROTO_IP option refused (EINVAL) on an IPv6 socket is IP_TOS as
+  IPV6_TCLASS, IP_TTL as IPV6_UNICAST_HOPS, the rest taken as done; options the kernel still
+  refuses are logged, each once (Settings > Diagnostics > Socket option log, WINEPS4_SOCKET_LOG).
+- GlobalMemoryStatusEx's available memory leaves out the 256 MiB kept for the app.

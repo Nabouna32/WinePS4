@@ -1094,6 +1094,7 @@ const Toggle TOGGLES[] = {
     {"Memory log", "Every mapping of WinePS4's memory layer in wine.log (slow)", "WINEPS4_VM_LOG", "1", ""},
     {"Budget log", "The PS4's budget for the app (open files, threads, memory) in wine.log, what holds files when they run out", "WINEPS4_FILES_LOG", "", "0"},
     {"Keyboard log", "How the USB keyboard's presses arrive and where they go, in wine.log (never which keys)", "WINEPS4_KEY_LOG", "", "0"},
+    {"Socket option log", "The socket options the PS4's kernel refuses a program, each once, in wine.log", "WINEPS4_SOCKET_LOG", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
@@ -1735,7 +1736,8 @@ std::string lnk_target(const std::string &path, std::string *args = nullptr) {
 
 // A Chromium browser (Chrome, Edge, Steam's web view, CEF and Electron programs) started from the
 // desktop gets the switches that keep it in one process, as ntdll gives them to one a program starts
-// (the PS4 runs 7 processes for the app, Windows' own 4 among them; Settings > Apps)
+// (the PS4 runs 7 processes for the app, Windows' own 4 among them; Settings > Apps), and keep its GPU
+// shader caches off the disk (their files were a quarter of the app's ~250: v00.56's web helper died of it)
 void add_one_process_switches(std::vector<std::string> &args) {
     if (args.empty() || env_get("WINEPS4_CHROMIUM_ONE_PROCESS") == "0")
         return;
@@ -1749,7 +1751,8 @@ void add_one_process_switches(std::vector<std::string> &args) {
         if (a.rfind("--type=", 0) == 0 || a == "--single-process")
             chromium = false;
     if (chromium)
-        args.insert(args.end(), {"--single-process", "--no-sandbox", "--in-process-gpu", "--disable-gpu", "--disable-breakpad"});
+        args.insert(args.end(), {"--single-process", "--no-sandbox", "--in-process-gpu", "--disable-gpu", "--disable-breakpad",
+                                 "--disable-gpu-shader-disk-cache"});
 }
 
 // Starts a program as a process of its own (port/ps4_main.c); "" when it started, else why not
@@ -5716,7 +5719,7 @@ void draw_settings(Canvas &c, Window &w) {
             c.text(r.x + 22, r.y + 58, TOGGLES[i].detail, 14, TEXT3, Weight::Regular, r.w - 140);
             draw_switch(c, r, toggle_on(TOGGLES[i]));
         }
-        c.text_wrapped(a.x, a.y + 60 + 3 * 92 + 30,
+        c.text_wrapped(a.x, a.y + 60 + static_cast<int>(std::size(TOGGLES)) * 92 + 10,
                        "The switches go to /data/WinePS4/env.txt and apply the next time a program starts. "
                        "Logs: /data/WinePS4/wine.log, crash.log, hang.log.",
                        14, TEXT3, a.w, 22);

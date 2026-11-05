@@ -94,7 +94,8 @@ bool keyboard_open(const std::string &title, const std::string &text, bool passw
     sceUserServiceGetInitialUser(&user);
     OrbisImeDialogSetting setting{};
     setting.userId = static_cast<uint32_t>(user);
-    setting.type = ORBIS_TYPE_DEFAULT;
+    // (a password only with the Latin keyboard: with the default one the system refuses the dialog, 0x80bc0030)
+    setting.type = password ? ORBIS_TYPE_BASIC_LATIN : ORBIS_TYPE_DEFAULT;
     setting.option = 0x2 | (password ? 0x4 : 0);  // no automatic capital letters (file names); hidden
     setting.maxTextLength = MAX_TEXT;
     setting.inputTextBuffer = reinterpret_cast<wchar_t *>(text_buffer);
