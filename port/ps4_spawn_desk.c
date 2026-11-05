@@ -228,6 +228,7 @@ static void *local_monitor( void *arg )
     char buf[16];
     int n, i;
 
+    ps4_thread_register();  /* (the freeze report's) */
     for (;;)
     {
         fds[0].fd = wake[0];
@@ -384,16 +385,20 @@ static int start_outside( int *sock, int *pid_out )
 
     if (outside_allowed() && outside_pool < OUTSIDE_MIN_POOL)
     {
-        int i;
+        char text[512];
+        int i, len;
 
-        fprintf( stderr, "wineps4: the memory the processes outside the PS4's 7 share has %llu MiB free: "
-                 "this one starts among the 7 (Wine's memory outside:", (unsigned long long)(outside_pool >> 20) );
+        /* (written once the lock is let go: a full log pipe must not hold it, Task Manager and the
+         * Performance log take it from the desktop's loop) */
+        len = snprintf( text, sizeof(text), "wineps4: the memory the processes outside the PS4's 7 share has %llu MiB free: "
+                        "this one starts among the 7 (Wine's memory outside:", (unsigned long long)(outside_pool >> 20) );
         pthread_mutex_lock( &locals_lock );
-        for (i = 0; i < local_count; i++)
+        for (i = 0; i < local_count && len < (int)sizeof(text) - 32; i++)
             if (locals[i].local_id < 0)
-                fprintf( stderr, " %d %llu MiB", locals[i].pid, (unsigned long long)(locals[i].stats.memory >> 20) );
+                len += snprintf( text + len, sizeof(text) - len, " %d %llu MiB", locals[i].pid,
+                                 (unsigned long long)(locals[i].stats.memory >> 20) );
         pthread_mutex_unlock( &locals_lock );
-        fprintf( stderr, ")\n" );
+        fprintf( stderr, "%s)\n", text );
         return 0;
     }
     while (outside_allowed())
@@ -443,7 +448,7 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
     struct msghdr m;
     struct cmsghdr *cmsg;
     struct iovec iov;
-    int sock = -1, fds[4], nfds = 0, i, id = -1, pid = -1, ret = -EIO, started;
+    int sock = -1, fds[4], nfds = 0, i, id = -1, pid = -1, ret = -EIO, started, outside_now = 0;
     char *strings = NULL, *p;
     size_t size = 0;
 
@@ -525,12 +530,12 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
         snprintf( locals[local_count].image, sizeof(locals[local_count].image), "%s", image );
         local_count++;
         sock = -1;
-        if (id < 0)
-            fprintf( stderr, "wineps4: %s runs outside the PS4's 7 (process %d, %d outside now)\n", image, pid,
-                     outside_count() );
+        outside_now = id < 0 ? outside_count() : 0;
     }
     pthread_mutex_unlock( &locals_lock );
     if (sock != -1) goto failed;  /* (more than this table holds) */
+    if (id < 0)  /* (after the lock: see start_outside) */
+        fprintf( stderr, "wineps4: %s runs outside the PS4's 7 (process %d, %d outside now)\n", image, pid, outside_now );
     ps4_child_started( pid );
     if (wake[1] != -1) write( wake[1], "", 1 );
     ret = pid;
@@ -584,6 +589,12 @@ int ps4_process_list( struct ps4_process_info *list, int max )
     }
     pthread_mutex_unlock( &locals_lock );
     return n;
+}
+
+/* the Performance log's figure (shell.h), read without the lock */
+unsigned long long ps4_outside_pool( void )
+{
+    return __atomic_load_n( &outside_pool, __ATOMIC_RELAXED );
 }
 
 /* one of them (a stuck wineboot; Task Manager's End task) */
@@ -906,6 +917,7 @@ static void *broker_thread( void *arg )
 {
     const int listener = (int)(long)arg;
 
+    ps4_thread_register();  /* (the freeze report's) */
     for (;;)
     {
         int conn = accept( listener, NULL, NULL ), answer;

@@ -33,6 +33,14 @@ int ps4_launch_program( char *const args[] );
 void ps4_end_programs( void );
 /* the mixer programs' sound streams come to (port/ps4_audio_desk.c), started with the desktop */
 void ps4_audio_start( void );
+/* the freeze report (port/ps4_main.c): the desktop's loop says it went round; a thread of the
+ * desktop's joins the report's thread stacks (port/ps4_wine_port.c) */
+void ps4_desktop_beat( void );
+void ps4_thread_register( void );
+/* a line straight into wine.log (with its time), never waiting for the programs' pipe */
+void ps4_log_line( const char *text );
+/* the memory the processes outside the PS4's 7 share, free, as one of them last said (~0: none said) */
+unsigned long long ps4_outside_pool( void );
 
 /* Task Manager: the program processes running (local processes: port/ps4_spawn_desk.c), with what
  * each last said of itself (every second), and ending one */

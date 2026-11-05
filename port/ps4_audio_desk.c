@@ -30,6 +30,7 @@ int32_t sceAudioOutInit( void );
 int32_t sceAudioOutOpen( int32_t user, int32_t type, int32_t index, uint32_t frames, uint32_t rate, uint32_t param );
 int32_t sceAudioOutOutput( int32_t port, const void *buffer );
 int32_t sceAudioOutSetVolume( int32_t port, int32_t flag, int32_t *volume );
+extern void ps4_thread_register( void );  /* (the freeze report's thread stacks: port/ps4_wine_port.c) */
 
 #define GRAIN        256    /* frames the port takes at a time */
 #define MAX_STREAMS  32
@@ -247,6 +248,7 @@ static void *mixer_thread( void *arg )
     double next = now_seconds(), last_report = next;
     int i;
 
+    ps4_thread_register();
     fprintf( stderr, "wineps4: audio: the PS4's port %s (init 0x%x, port 0x%x): programs' sound%s\n",
              port >= 0 ? "opened" : "did not open", init, port, port >= 0 ? " mixed into it" : " is not heard" );
     if (port >= 0)
@@ -443,6 +445,7 @@ static void *listen_thread( void *arg )
     const int server = (int)(intptr_t)arg;
     struct pollfd fds[1 + MAX_STREAMS];
 
+    ps4_thread_register();
     for (;;)
     {
         int n = 0, i;

@@ -142,6 +142,7 @@ void *client_thread(void *arg) {
     int pid = 0;
     std::vector<uint8_t> data;
     ps4_display_header m;
+    ps4_thread_register();  // (the freeze report's thread stacks)
     while (read_all(fd, &m, sizeof(m))) {
         if (m.size < sizeof(m) || m.size > 64u << 20) {
             std::fprintf(stderr, "shell: display: bad message (type %u, size %u) from %d\n", m.type, m.size, pid);
@@ -171,6 +172,7 @@ void *client_thread(void *arg) {
 
 void *listen_thread(void *arg) {
     const int server = static_cast<int>(reinterpret_cast<intptr_t>(arg));
+    ps4_thread_register();
     for (;;) {
         const int fd = accept(server, nullptr, nullptr);
         if (fd < 0) {

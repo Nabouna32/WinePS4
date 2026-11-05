@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -194,6 +195,11 @@ static void logf_( const char *fmt, ... )
 
 static int log_fd = -1;
 static struct timespec app_start;
+/* the freeze report's (below): the log thread's and the desktop's loop's counts, what the log thread
+ * is doing (0 reading the pipe, 1 writing wine.log, 2 giving the desktop its text) and its pipe */
+static unsigned int output_beats, desktop_beats;
+static volatile int output_state;
+static int output_read_fd = -1;
 
 /* seconds since the app started */
 static double app_seconds( void )
@@ -212,8 +218,10 @@ static void *output_thread( void *arg )
     ssize_t n;
     int fd = (int)(long)arg, line_start = 1;
 
+    ps4_thread_register();  /* (its stack in the freeze report) */
     while ((n = read( fd, buffer, sizeof(buffer) )) > 0)
     {
+        output_state = 1;
         if (log_fd >= 0)
         {
             const char *p = buffer, *end = buffer + n;
@@ -231,9 +239,32 @@ static void *output_thread( void *arg )
             }
             write( log_fd, out, len );
         }
+        output_state = 2;
         ps4_shell_output( buffer, n );
+        output_state = 0;
+        __atomic_add_fetch( &output_beats, 1, __ATOMIC_RELAXED );
     }
     return NULL;
+}
+
+/* a line straight into wine.log, not through the programs' pipe: the desktop's loop and the freeze
+ * report, which must never wait for it */
+void ps4_log_line( const char *text )
+{
+    char line[1024];
+    int len;
+
+    if (log_fd < 0) return;
+    len = snprintf( line, sizeof(line) - 1, "[%7.2f] %s", app_seconds(), text );
+    if (len > (int)sizeof(line) - 2) len = sizeof(line) - 2;
+    if (len > 0 && line[len - 1] != '\n') line[len++] = '\n';
+    write( log_fd, line, len );
+}
+
+/* the desktop's loop, each time round (the freeze report) */
+void ps4_desktop_beat( void )
+{
+    __atomic_add_fetch( &desktop_beats, 1, __ATOMIC_RELAXED );
 }
 
 static void open_log( void )
@@ -253,6 +284,11 @@ static void open_log( void )
     else
     {
         pthread_detach( thread );
+        /* never waited on: every program process writes into it (they have it as 1 and 2), and a pipe
+         * nobody empties stops all of them and the desktop at once, wineserver among them (its log
+         * lines); v00.61 froze that way, all quiet at the same second. A line that does not fit is lost. */
+        fcntl( fds[1], F_SETFL, fcntl( fds[1], F_GETFL ) | O_NONBLOCK );
+        output_read_fd = fds[0];
         dup2( fds[1], 1 );
         dup2( fds[1], 2 );
         close( fds[1] );
@@ -1065,9 +1101,72 @@ static void make_user_folders( void )
     }
 }
 
+/* Settings > Diagnostics > Freeze report (WINEPS4_FREEZE_REPORT=0: off). v00.61 froze 100 s into
+ * Steam with nothing in wine.log to say where. The desktop's loop and the thread that writes the log
+ * each move a count; when one stands still for 10 s (the log thread with output waiting in its pipe),
+ * where each of the desktop's threads is goes into hang.log (wineserver's thread among them), and
+ * wine.log says so, written straight: the pipe may be what stands. Once a stand, three at most.
+ * (wineserver alone may rightly wait long, with only Windows' own programs: its stand is told where
+ * it matters, when it stops taking the desktop's input, server/ps4_input.inc.) */
+#define FREEZE_SECONDS 10
+#define PS4_FIONREAD 0x4004667fUL  /* FreeBSD's (the C library's headers have Linux's) */
+extern unsigned int ps4_request_seq;  /* wineserver's requests so far (server/fd.c) */
+extern void ps4_dump_threads_quiet( const char *reason );
+
+static void *freeze_watch( void *arg )
+{
+    unsigned int desktop = desktop_beats, output = output_beats, requests[FREEZE_SECONDS] = { 0 };
+    int desktop_still = 0, output_still = 0, reports = 0, standing = 0, tick = 0;
+    char text[512];
+    sigset_t set;
+
+    sigfillset( &set );
+    pthread_sigmask( SIG_BLOCK, &set, NULL );
+    for (;;)
+    {
+        int pending = 0;
+
+        sleep( 1 );
+        if (!desktop_beats) continue;  /* (the desktop's loop has not started yet: its screen, its wallpaper) */
+        if (output_read_fd >= 0 && ioctl( output_read_fd, PS4_FIONREAD, &pending )) pending = 0;
+        desktop_still = desktop_beats == desktop ? desktop_still + 1 : 0;
+        output_still = output_beats == output && pending > 0 ? output_still + 1 : 0;
+        desktop = desktop_beats;
+        output = output_beats;
+        requests[tick++ % FREEZE_SECONDS] = ps4_request_seq;  /* (the one 10 s ago is overwritten next) */
+        if (desktop_still < FREEZE_SECONDS && output_still < FREEZE_SECONDS)
+        {
+            standing = 0;
+            continue;
+        }
+        if (standing || reports == 3) continue;
+        standing = 1;
+        reports++;
+        snprintf( text, sizeof(text), "wineps4: a freeze: the desktop's loop still for %d s, the log thread for %d s "
+                  "(%s, %d bytes waiting for it), wineserver %u requests in the last %d s: the desktop's threads go "
+                  "into /data/WinePS4/hang.log\n", desktop_still, output_still,
+                  output_state == 1 ? "writing wine.log" : output_state == 2 ? "giving the desktop its text" : "reading",
+                  pending, ps4_request_seq - requests[tick % FREEZE_SECONDS], FREEZE_SECONDS - 1 );
+        ps4_log_line( text );
+        ps4_dump_threads_quiet( text );
+        ps4_log_line( "wineps4: the freeze's thread stacks are in hang.log\n" );
+    }
+    return NULL;
+}
+
+static void start_freeze_watch( void )
+{
+    const char *setting = getenv( "WINEPS4_FREEZE_REPORT" );
+    pthread_t thread;
+
+    if (setting && !strcmp( setting, "0" )) return;
+    if (!pthread_create( &thread, NULL, freeze_watch, NULL )) pthread_detach( thread );
+}
+
 /* the programs' ends, for the desktop */
 static void *reaper_thread( void *arg )
 {
+    ps4_thread_register();  /* (the freeze report's) */
     for (;;)
     {
         int status = 0;
@@ -1112,6 +1211,7 @@ extern void ps4_budget_probe( void );
 /* the console's open files, every 5 s (port/ps4_wine_dirs.c; Settings > Diagnostics > Open files) */
 static void *files_thread( void *arg )
 {
+    ps4_thread_register();
     for (;;)
     {
         ps4_files_watch();
@@ -1282,6 +1382,8 @@ int main( int argc, char **argv )
     pthread_attr_setstacksize( &attr, 1 << 20 );
     if (pthread_create( &thread, &attr, setup_thread, NULL )) logf_( "wineps4: could not start the setup thread\n" );
     pthread_attr_destroy( &attr );
+    ps4_thread_register();  /* (the desktop's loop: the freeze report's first thread) */
+    start_freeze_watch();
     ps4_shell_run( NULL );  /* does not return */
     return 0;
 }

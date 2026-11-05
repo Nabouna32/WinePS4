@@ -177,6 +177,34 @@ std::string last_ended;                        // "<name> ended (exit code N)"
 int last_ended_code = 0;
 std::deque<std::string> ended_toasts;          // for the desktop's thread
 std::atomic<bool> program_changed{false};
+// what the log thread (port/ps4_main.c) has for the Terminal, until the desktop's loop takes it: it
+// waits for this lock only, never for program_lock, which the desktop's loop holds while it draws
+std::mutex output_lock;
+std::string output_pending;
+
+// the log thread's text into the Terminal's lines (the desktop's loop)
+void take_output() {
+    std::string text;
+    {
+        std::lock_guard lock(output_lock);
+        text.swap(output_pending);
+    }
+    if (text.empty())
+        return;
+    std::lock_guard lock(program_lock);
+    for (const char ch : text) {
+        if (ch == '\n') {
+            // (the desktop's own lines are for wine.log only)
+            if (program_partial.rfind("shell: ", 0) != 0)
+                program_lines.push_back(program_partial);
+            program_partial.clear();
+            if (program_lines.size() > 4000)
+                program_lines.pop_front();
+        } else if (ch != '\r') {
+            program_partial += ch;
+        }
+    }
+}
 
 Input last_input;  // this frame's, for drawing
 
@@ -1098,6 +1126,7 @@ const Toggle TOGGLES[] = {
     {"Vulkan log", "Programs' swapchains and frames a second (Vulkan, Direct3D through DXVK) in wine.log", "WINEPS4_VULKAN_LOG", "", "0"},
     {"Audio log", "Programs' sound streams in wine.log: their formats, and when one ran dry (the program wrote it late)", "WINEPS4_AUDIO_LOG", "", "0"},
     {"Performance log", "Every 10 s in wine.log: each process's share of the CPU, the desktop's drawing time, free memory", "WINEPS4_PERF_LOG", "", "0"},
+    {"Freeze report", "When the desktop stands still for 10 s: where each of its threads is, in hang.log", "WINEPS4_FREEZE_REPORT", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
@@ -1449,7 +1478,7 @@ Window *open_window(Kind kind, const std::string &path = std::string()) {
         w.title = "Terminal";
         break;
     case Kind::Settings:
-        w.w = 1100, w.h = 940, w.x = 410, w.y = 60;  // (Diagnostics' 9 switches)
+        w.w = 1100, w.h = 1000, w.x = 410, w.y = 30;  // (Diagnostics' 10 switches)
         w.bg_tab = background.kind == BgKind::Color;
         w.title = "Settings";
         break;
@@ -1697,10 +1726,15 @@ void perf_tick(double t) {
             line += text;
         }
         std::snprintf(text, sizeof text, " of the app's 7 cores; the desktop drew %d frames, %.1f ms each, the longest %.0f ms; "
-                      "direct memory %llu MiB free\n", perf.frames, perf.frames ? perf.drawing * 1000 / perf.frames : 0.0,
+                      "direct memory %llu MiB free", perf.frames, perf.frames ? perf.drawing * 1000 / perf.frames : 0.0,
                       perf.longest * 1000, memory_free >> 20);
         line += text;
-        std::fputs(line.c_str(), stderr);
+        const unsigned long long pool = ps4_outside_pool();
+        if (pool != ~0ull) {
+            std::snprintf(text, sizeof text, ", the pool outside the 7 %llu MiB", pool >> 20);
+            line += text;
+        }
+        ps4_log_line((line + "\n").c_str());  // (straight into wine.log: never waiting for the programs' pipe)
     }
     perf.frames = 0;
     perf.drawing = perf.longest = 0;
@@ -6420,19 +6454,10 @@ void block_wine_signals() {
 using namespace shell;
 
 extern "C" void ps4_shell_output(const char *text, size_t len) {
-    std::lock_guard lock(program_lock);
-    for (size_t i = 0; i < len; i++) {
-        const char ch = text[i];
-        if (ch == '\n') {
-            // (the desktop's own lines are for wine.log only)
-            if (program_partial.rfind("shell: ", 0) != 0)
-                program_lines.push_back(program_partial);
-            program_partial.clear();
-            if (program_lines.size() > 4000)
-                program_lines.pop_front();
-        } else if (ch != '\r') {
-            program_partial += ch;
-        }
+    {
+        std::lock_guard lock(output_lock);
+        if (output_pending.size() < (4u << 20))  // (4 MiB at most while the desktop's loop is away)
+            output_pending.append(text, len);
     }
     program_changed = true;
 }
@@ -6482,6 +6507,7 @@ extern "C" void ps4_shell_run(const char *) {
         // no screen: nothing to show; programs from run.txt still run
         for (;;) {
             sleep(1);
+            ps4_desktop_beat();
             std::vector<std::vector<std::string>> queue;
             {
                 std::lock_guard lock(launch_lock);
@@ -6507,6 +6533,7 @@ extern "C" void ps4_shell_run(const char *) {
     float last_px = -1, last_py = -1;
     const Image *last_cursor = nullptr;
     for (;;) {
+        ps4_desktop_beat();  // (the freeze report: port/ps4_main.c)
         const double t = now_seconds();
         const float dt = static_cast<float>(std::min(0.1, t - last));
         last = t;
@@ -6536,6 +6563,7 @@ extern "C" void ps4_shell_run(const char *) {
 
         if (program_changed.exchange(false)) {
             dirty = true;
+            take_output();
             std::lock_guard lock(program_lock);
             if (!ended_toasts.empty()) {
                 toast = Toast{ended_toasts.back(), t + 5};

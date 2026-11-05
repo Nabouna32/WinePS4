@@ -336,7 +336,7 @@ static void dump_handler( int sig, siginfo_t *info, void *context )
     __atomic_store_n( &dump_done, 1, __ATOMIC_RELEASE );
 }
 
-static void dump_threads( const char *reason )
+static void dump_threads( const char *reason, int notice )
 {
     FILE *f = fopen( "/data/WinePS4/hang.log", "a" );
     int i, j, waited;
@@ -364,7 +364,30 @@ static void dump_threads( const char *reason )
         fprintf( f, "\n" );
     }
     fclose( f );
-    fprintf( stderr, "wineps4: %s: thread stacks in /data/WinePS4/hang.log\n", reason );
+    if (notice) fprintf( stderr, "wineps4: %s: thread stacks in /data/WinePS4/hang.log\n", reason );
+}
+
+static int install_dump_handler( void )
+{
+    struct sigaction sa;
+    void *start, *end;
+    uint32_t prot;
+
+    if (text_end) return 1;
+    if (sceKernelQueryMemoryProtection( (void *)EBOOT_TEXT, &start, &end, &prot )) return 0;
+    text_end = (uint64_t)end;
+    memset( &sa, 0, sizeof(sa) );
+    sa.sa_sigaction = dump_handler;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    ps4_raw_sigaction( SIGXCPU, &sa, NULL );
+    return 1;
+}
+
+/* The desktop's freeze report (port/ps4_main.c): its threads into hang.log, nothing on stderr (the
+ * programs' pipe may be what stands) */
+void ps4_dump_threads_quiet( const char *reason )
+{
+    if (install_dump_handler()) dump_threads( reason, 0 );
 }
 
 static void *hang_watch_thread( void *arg )
@@ -379,7 +402,7 @@ static void *hang_watch_thread( void *arg )
     for (n = 0; n < 3 && !__atomic_load_n( &program_ended, __ATOMIC_ACQUIRE ); n++)
     {
         snprintf( reason, sizeof(reason), "still running after %d s", seconds + 30 * n );
-        dump_threads( reason );
+        dump_threads( reason, 1 );
         sleep( 30 );
     }
     return NULL;
@@ -391,21 +414,9 @@ static void *hang_watch_thread( void *arg )
 void ps4_dump_threads_now( const char *reason )
 {
     const char *env = getenv( "WINEPS4_HANG_DUMP" );
-    struct sigaction sa;
-    void *start, *end;
-    uint32_t prot;
 
     if (!env || atoi( env ) <= 0) return;
-    if (!text_end)
-    {
-        if (sceKernelQueryMemoryProtection( (void *)EBOOT_TEXT, &start, &end, &prot )) return;
-        text_end = (uint64_t)end;
-        memset( &sa, 0, sizeof(sa) );
-        sa.sa_sigaction = dump_handler;
-        sa.sa_flags = SA_SIGINFO | SA_RESTART;
-        ps4_raw_sigaction( SIGXCPU, &sa, NULL );
-    }
-    dump_threads( reason );
+    if (install_dump_handler()) dump_threads( reason, 1 );
 }
 
 void ps4_start_hang_watch( void )

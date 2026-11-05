@@ -438,3 +438,31 @@ v00.61:
   (Settings > Diagnostics > Wine debug messages sets it).
 - Settings > Diagnostics > Performance log: every 10 s, each process's share of the CPU, the desktop's
   drawing time and the direct memory free, for "heavy and slow" next time.
+
+## The freeze 100 s into Steam (v00.62, 2026-11-06)
+
+v00.61 (logs/v00.61): the user started Steam 210 s after the app and the app froze about 100 s later,
+no game started. wine.log stops at 313 s: Steam's lines (a few a second, no burst), the desktop's
+open-files line due at 315 s and the Performance log's due at 320 s never came, so the whole desktop
+process went quiet at once, not one program. Nothing before it: direct memory 1776 MiB free, the
+desktop drawing at 14 ms a frame, Steam's web helper at 36%. crash.log was v00.60's (no crash), and
+the kernel's log had moved on to another app before it was read. No v00.61 change had run that could
+be it (no audio stream, no shared section, no failed start). What is new for the desktop's loop is a
+line on stderr every 10 s (the Performance log) and ps4_process_list (the spawner's lock); and every
+process's stderr, the desktop's threads and wineserver's included, is one pipe that one thread empties
+into wine.log and the Terminal: if that thread stops, everything that writes a line stops with it.
+Also seen: the kernel refuses TCP_KEEPIDLE/TCP_KEEPINTVL (level 6, options 256 and 512, "Protocol not
+available"), now taken as done, yet Steam's 10022 asserts stayed (65): another call fails.
+
+v00.62:
+- Settings > Diagnostics > Freeze report (on): the desktop's loop and the log thread each move a count;
+  10 s without (the log thread with output waiting in its pipe) puts the stack of each of the desktop's
+  threads into hang.log (the desktop's loop, the log thread, wineserver, the spawner's monitor and
+  broker, the display's and the mixer's threads registered for it) and says so in wine.log, written
+  straight to the file; with wineserver's requests in the last 9 s. Once a stand, three at most.
+- Nothing waits for the log pipe: its write end is non-blocking (a line that does not fit is lost;
+  Wine's NtWriteFile polls and retries, so programs' console output is not); the log thread hands the
+  Terminal its text under a lock of its own, never the one the desktop's loop draws with; the
+  Performance log writes straight to wine.log and adds the pool outside the 7; the spawner writes its
+  lines after letting its lock go.
+- Settings window 1000 high (10 switches).
