@@ -378,3 +378,21 @@ v00.59:
   full, said once after 5 s, with the desktop's threads in hang.log when the hang report is on.
 - user.reg's keys with their backslashes doubled again (tested on the PC on the console's user.reg),
   v00.58's misnamed keys removed: DXVK's overrides apply now.
+
+## The app closed: program heaps in the PS4's own pool (v00.60, 2026-11-05)
+
+v00.59 (logs/v00.59): Steam opened, asked to install its service, and the PS4 closed the app
+("Failed to create the system memory", AppCrash 0xa002008f, as in v00.53). Every program's heap said
+"dlmalloc on 128 MiB of system flexible memory": ps4-kit's direct-first heap never tried a size
+under 256 MiB, so v00.59's 64 MiB direct heap was skipped and each program took 128 MiB of the
+system's pool instead, the one the PS4 itself and the processes outside the 7 live on. services.exe
+(outside) could not make its threads ("RPCRT4_new_client failed to create thread, error 8"), so
+Steam could not open the service manager ("BOpenSCMgr failed (GLE 1726)") and offered to install
+its service; then the pool ran out for good. (v00.58's misnamed user.reg keys were removed and
+DXVK's overrides added, as meant. Crash Bandicoot ran 6 s and ended, DXVK never loaded: no
+dxgi/d3d11 logs.)
+
+v00.60:
+- ps4-kit bb4a45c: a direct_max under 256 MiB is tried as the main heap itself.
+- Program processes never take the system pool (system_pool_max 0): one with no heap fails alone;
+  their automatic arenas 2 MiB, 6 at most.

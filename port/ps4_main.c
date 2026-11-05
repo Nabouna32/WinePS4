@@ -151,9 +151,15 @@ void ps4_kit_configure_heap( ps4_kit_heap_options *options )
     options->overflow_direct_max = 64u << 20;
     options->max_overflow_heaps = 8;
     options->overflow_direct_reserve = 256u << 20;  /* (what the memory layer keeps for the app too) */
-    /* 128 MiB of the system pool only when direct memory failed; never regular flexible memory (a
-     * forked child reads a nonsense amount of it free, and tried 512 GiB, 256 GiB, ...) */
-    options->system_pool_max = 128u << 20;
+    /* (the automatic arenas of threads that wait for the heap's lock come out of the main heap: a few small ones) */
+    options->auto_arena_size = 2u << 20;
+    options->max_auto_arenas = 6;
+    /* never the system pool: what the PS4 itself and the processes outside the 7 live on, and when it
+     * runs out the PS4 closes the whole app ("Failed to create the system memory": v00.53, and v00.59,
+     * whose 64 MiB direct heaps the kit never tried, every program taking 128 MiB of the pool instead);
+     * a program with no heap fails alone. Never regular flexible memory either (a forked child reads a
+     * nonsense amount of it free, and tried 512 GiB, 256 GiB, ...). */
+    options->system_pool_max = 0;
     options->regular_reserve = (size_t)-1 - (32u << 20);
 }
 
