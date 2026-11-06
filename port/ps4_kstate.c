@@ -866,12 +866,16 @@ static const char *const probe_names[PROBE_STEPS] =
 };
 static struct
 {
-    int wake[2];
+    int alive;           /* its thread runs */
     volatile int state;  /* 0 idle, 1 asked, 2 answered */
     unsigned int ms;
     int error;           /* what the kernel refused it with, 0 none */
     int stale;           /* still asked from an earlier freeze */
 } probes[PROBE_STEPS];
+/* (no descriptors: the app has ~250 for all its processes; the lock is held only by probes waiting to
+ * be asked, never by one in its step) */
+static pthread_mutex_t probe_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t probe_asked_cond = PTHREAD_COND_INITIALIZER;
 static volatile unsigned char *probe_heap;  /* 64 KiB of the desktop's heap, written as it starts */
 static uint64_t probe_asked;
 
@@ -923,16 +927,20 @@ static void *probe_thread( void *arg )
 {
     const int step = (int)(long)arg;
     sigset_t set;
-    char c;
 
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
     ps4_thread_name( "memory probe" );
     ps4_touch_stack( 16 << 10 );
-    while (kstate_syscall3( 3 /* SYS_read */, probes[step].wake[0], (long)&c, 1 ) == 1)
+    for (;;)
     {
-        const uint64_t start = now_us();
+        uint64_t start;
 
+        pthread_mutex_lock( &probe_lock );
+        while (__atomic_load_n( &probes[step].state, __ATOMIC_ACQUIRE ) != 1)
+            pthread_cond_wait( &probe_asked_cond, &probe_lock );
+        pthread_mutex_unlock( &probe_lock );
+        start = now_us();
         probes[step].error = probe_run( step );
         probes[step].ms = (unsigned int)((now_us() - start) / 1000);
         __atomic_store_n( &probes[step].state, 2, __ATOMIC_RELEASE );
@@ -951,16 +959,9 @@ static void memory_probe_start( void )
     if ((probe_heap = malloc( 4 * PROBE_PAGE ))) memset( (void *)probe_heap, 0, 4 * PROBE_PAGE );
     for (i = 0; i < PROBE_STEPS; i++)
     {
-        probes[i].wake[0] = probes[i].wake[1] = -1;
-        if (pipe( probes[i].wake )) continue;
-        if (pthread_create( &thread, NULL, probe_thread, (void *)(long)i ))
-        {
-            close( probes[i].wake[0] );
-            close( probes[i].wake[1] );
-            probes[i].wake[0] = probes[i].wake[1] = -1;
-            continue;
-        }
+        if (pthread_create( &thread, NULL, probe_thread, (void *)(long)i )) continue;
         pthread_detach( thread );
+        probes[i].alive = 1;
         started++;
     }
     l.len = 0;
@@ -979,13 +980,15 @@ static void memory_probe_wake( void )
     int i;
 
     probe_asked = now_us();
+    pthread_mutex_lock( &probe_lock );
     for (i = 0; i < PROBE_STEPS; i++)
     {
-        if (probes[i].wake[1] < 0) continue;
+        if (!probes[i].alive) continue;
         if ((probes[i].stale = __atomic_load_n( &probes[i].state, __ATOMIC_ACQUIRE ) == 1)) continue;
         __atomic_store_n( &probes[i].state, 1, __ATOMIC_RELEASE );
-        kstate_syscall3( 4 /* SYS_write */, probes[i].wake[1], (long)"", 1 );
     }
+    pthread_cond_broadcast( &probe_asked_cond );
+    pthread_mutex_unlock( &probe_lock );
 }
 
 /* waits until 2 s after they were asked, then tells each */
@@ -1008,7 +1011,7 @@ static void memory_probe_report( void )
     {
         const int state = __atomic_load_n( &probes[i].state, __ATOMIC_ACQUIRE );
 
-        if (probes[i].wake[1] < 0) continue;
+        if (!probes[i].alive) continue;
         ps4_line_str( &l, i ? ", " : " " );
         ps4_line_str( &l, probe_names[i] );
         if (state == 1)
