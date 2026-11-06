@@ -6902,12 +6902,15 @@ extern "C" void ps4_shell_run(const char *) {
         const double t = now_seconds();
         const float dt = static_cast<float>(std::min(0.1, t - last));
         last = t;
+        // (each phase marked: the freeze report tells where the loop stands, with no signal needed)
+        ps4_desktop_phase("reading the controller");
         Input in = input_poll(dt);
         last_input = in;
 
         // the system keyboard: the desktop waits while it's open, then takes its text
         if (keyboard_active()) {
             std::string text;
+            ps4_desktop_phase("on the system keyboard");
             const int done = keyboard_poll(text);
             if (done == 0) {
                 const timespec pause = {0, 16000000};
@@ -6926,6 +6929,7 @@ extern "C" void ps4_shell_run(const char *) {
             input_held_back = false;
         const bool live = !input_held_back;
 
+        ps4_desktop_phase("taking the programs' output");
         if (program_changed.exchange(false)) {
             dirty = true;
             take_output();
@@ -6943,12 +6947,14 @@ extern "C" void ps4_shell_run(const char *) {
                     queue.swap(launch_queue);
             }
             for (const auto &a : queue) {
+                ps4_desktop_phase("starting a program");
                 const std::string error = launch(a);
                 if (!error.empty())
                     show_message("Run " + base_name(a.back()), error);
                 dirty = true;
             }
         }
+        ps4_desktop_phase("handling windows and input");
         // a copy, move or delete: its progress a few times a second, its end
         const JobStatus job = job_status();
         if (job.running && t - last_job_frame > 0.25) {
@@ -7354,9 +7360,11 @@ extern "C" void ps4_shell_run(const char *) {
             hx = hy = cursor->width / 2;
         }
 
+        ps4_desktop_phase("the performance log");
         perf_tick(t);
         if (dirty || programs_dirty) {
             const double drawn_from = now_seconds();
+            ps4_desktop_phase("drawing");
             // only programs' pixels changed, where nothing of the desktop's is: those copied in as
             // they are, the rest of the scene as it was (a full scene took 12-14 ms, v00.62)
             std::vector<WinRect> patched;
@@ -7369,13 +7377,16 @@ extern "C" void ps4_shell_run(const char *) {
                 scene_changed();
             }
             dirty = programs_dirty = false;
+            ps4_desktop_phase("presenting");
             present(scene, *cursor, in.x, in.y, hx, hy);
             perf_frame(now_seconds() - drawn_from, quick);
             last_px = in.x, last_py = in.y, last_cursor = cursor;
         } else if (in.x != last_px || in.y != last_py || cursor != last_cursor) {
+            ps4_desktop_phase("presenting the pointer");
             present(scene, *cursor, in.x, in.y, hx, hy);
             last_px = in.x, last_py = in.y, last_cursor = cursor;
         } else {
+            ps4_desktop_phase("idle");
             const timespec pause = {0, 8000000};
             nanosleep(&pause, nullptr);
         }

@@ -638,7 +638,7 @@ static long raw_syscall3( long number, long a, long b, long c )
  * the files the app has open, all its processes together, to about 250, and each section was one (a
  * temporary file in the server's folder: Chromium's hundred of them used the budget up, v00.56). -1 when
  * the kernel says no: temporary files then, as before (for good when the first one fails). */
-int ps4_anon_shm( unsigned long long size )
+static int anon_shm( unsigned long long size )
 {
     static int works = -1;
     long fd;
@@ -1006,4 +1006,18 @@ int ps4_thread_kill2( int pid, int tid, int sig )
 {
     if (pid == getpid()) return ps4_thread_kill( tid, sig );
     return (int)raw_syscall3( 481 /* SYS_thr_kill2 */, pid, tid, sig );
+}
+
+/* wineserver's sections (server/mapping.c), marked while it runs (port/ps4_kstate.c) */
+extern void ps4_call_enter( const char *what );
+extern void ps4_call_leave( void );
+
+int ps4_anon_shm( unsigned long long size )
+{
+    int ret;
+
+    ps4_call_enter( "shared memory for a section" );
+    ret = anon_shm( size );
+    ps4_call_leave();
+    return ret;
 }

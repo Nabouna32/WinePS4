@@ -190,6 +190,9 @@ extern void ps4_kstate_report( const char *reason );
 extern void (*ps4_kstate_log)( const char *line );
 extern void ps4_thread_name( const char *name );
 extern void ps4_memory_guard_start( void );
+extern void ps4_touch_stack( size_t size );
+extern void ps4_kstate_probe( void );
+extern void ps4_calls_report( struct ps4_line *l );
 
 /* ntdll starts every thread on a 1 MiB stack of its own (kernel_stack_size, pthread_attr_setstack):
  * ps4-kit's 2 MiB minimum would grow it past its end */
@@ -1191,7 +1194,9 @@ static void *kstate_thread( void *arg )
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
     ps4_thread_name( "kernel report" );
+    ps4_touch_stack( 64 << 10 );
     ps4_kstate_prepare();  /* (its pages touched now: the freeze may be the memory's) */
+    ps4_kstate_probe();
     while (early_syscall3( 3 /* SYS_read */, kstate_wake[0], (long)&c, 1 ) == 1) ps4_kstate_report( kstate_reason );
     return NULL;
 }
@@ -1208,13 +1213,13 @@ static void *freeze_watch( void *arg )
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
     ps4_thread_name( "freeze watch" );
+    ps4_touch_stack( 64 << 10 );  /* (its report's pages: v00.66's was never written) */
     if (!pipe( kstate_wake ) && !pthread_create( &thread, NULL, kstate_thread, NULL )) pthread_detach( thread );
     for (;;)
     {
         int pending = 0;
 
         sleep( 1 );
-        ps4_heartbeat_requests( ps4_request_seq );
         if (!desktop_beats) continue;  /* (the desktop's loop has not started yet: its screen, its wallpaper) */
         if (output_read_fd >= 0 && ioctl( output_read_fd, PS4_FIONREAD, &pending )) pending = 0;
         desktop_still = desktop_beats == desktop ? desktop_still + 1 : 0;
@@ -1253,6 +1258,7 @@ static void *freeze_watch( void *arg )
             ps4_line_num( &text, ps4_windows_lock_holder );
         }
         else ps4_line_str( &text, "free" );
+        ps4_calls_report( &text );
         ps4_line_str( &text, ": its threads go into /data/WinePS4/hang.log" );
         freeze_log( &text );
         text.text[text.len] = 0;

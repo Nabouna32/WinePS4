@@ -576,7 +576,7 @@ unsigned long long ps4_vm_direct_free( void )
     return size > direct_reserve ? size - direct_reserve : 0;
 }
 
-void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t offset )
+static void *vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t offset )
 {
     uintptr_t start = (uintptr_t)addr & ~(uintptr_t)(HOST_PAGE - 1);
     size_t size = ((uintptr_t)addr + len - start + HOST_PAGE - 1) & ~(size_t)(HOST_PAGE - 1);
@@ -659,7 +659,7 @@ done:
     return ret;
 }
 
-int ps4_vm_munmap( void *addr, size_t len )
+static int vm_munmap( void *addr, size_t len )
 {
     uintptr_t start = (uintptr_t)addr & ~(uintptr_t)(HOST_PAGE - 1);
     uintptr_t end = ((uintptr_t)addr + len + HOST_PAGE - 1) & ~(uintptr_t)(HOST_PAGE - 1);
@@ -673,7 +673,7 @@ int ps4_vm_munmap( void *addr, size_t len )
     return ret;
 }
 
-int ps4_vm_mprotect( void *addr, size_t len, int prot )
+static int vm_mprotect( void *addr, size_t len, int prot )
 {
     uintptr_t start = (uintptr_t)addr & ~(uintptr_t)(HOST_PAGE - 1);
     uintptr_t end = ((uintptr_t)addr + len + HOST_PAGE - 1) & ~(uintptr_t)(HOST_PAGE - 1);
@@ -720,7 +720,54 @@ int ps4_vm_mprotect( void *addr, size_t len, int prot )
 }
 
 /* Wine's hints (huge pages, discard, read ahead): nothing the PS4 needs */
-int ps4_vm_madvise( void *addr, size_t len, int advice )
+static int vm_madvise( void *addr, size_t len, int advice )
 {
     return 0;
+}
+
+/* --- The calls, each marked while it runs ----------------------------------------------------------- */
+
+/* A thread that stands in one of these is seen in the freeze report by its mark (port/ps4_kstate.c):
+ * no signal reaches a thread that waits in the kernel (v00.64 to v00.66). */
+extern void ps4_call_enter( const char *what );
+extern void ps4_call_leave( void );
+
+void *ps4_vm_mmap( void *addr, size_t len, int prot, int flags, int fd, off_t offset )
+{
+    void *ret;
+
+    ps4_call_enter( fd != -1 && (flags & MAP_SHARED) ? "mmap (shared)" : "mmap" );
+    ret = vm_mmap( addr, len, prot, flags, fd, offset );
+    ps4_call_leave();
+    return ret;
+}
+
+int ps4_vm_munmap( void *addr, size_t len )
+{
+    int ret;
+
+    ps4_call_enter( "munmap" );
+    ret = vm_munmap( addr, len );
+    ps4_call_leave();
+    return ret;
+}
+
+int ps4_vm_mprotect( void *addr, size_t len, int prot )
+{
+    int ret;
+
+    ps4_call_enter( "mprotect" );
+    ret = vm_mprotect( addr, len, prot );
+    ps4_call_leave();
+    return ret;
+}
+
+int ps4_vm_madvise( void *addr, size_t len, int advice )
+{
+    int ret;
+
+    ps4_call_enter( "madvise" );
+    ret = vm_madvise( addr, len, advice );
+    ps4_call_leave();
+    return ret;
 }

@@ -620,3 +620,37 @@ Next, by what the census shows: Wine's sections in direct memory shared between 
 (the pool's largest part if Chromium's is shared memory), or the app's flexible size in the
 executable's process parameters (sceKernelFlexibleMemorySize; ours asks nothing, SDK 4.508, so
 shadPS4's loader would also drop the extended memory region).
+
+## Iron Snout reaches Direct3D, and a freeze the guard didn't see (v00.67, 2026-11-06)
+
+v00.66 (logs/v00.66, Steam's logs in steam/; klog in logs/v00.65/klog.txt, captured live): Iron Snout
+got further than ever. Its window connected (113.68), DXVK found RADV, and Direct3D 11 failed as in
+v00.62, now on "placed cpu map of bo 8 at 0x7310000 (0x8000 bytes) failed": the kit's placed map
+(Mesa 0030) maps a buffer's direct memory a second time, which the PS4 refuses unless the process
+turned direct memory aliasing on (sceKernelEnableDmemAliasing; shadPS4's turns off the kernel's check
+that the memory isn't mapped already). The memory guard warned at 184, 181 and 191 MiB free (the
+largest holders: steamwebhelper.exe 229 to 456 MiB flexible, steam.exe 126, IronSnout.exe 53 to 100,
+explorer.exe 67, the desktop 94 to 101; nothing "shared": VirtualQuery calls sections flexible, or
+there are none). x86launcher.exe started among the 7 anyway: the pool outside had 247 MiB, under the
+256 it needs. Then at 139 s everything stood, 250 MiB free at the last look (130 s): wine.log ends at
+138.95 and Steam's console_log at the same second (its lines every 3 s stop); no freeze report, no
+guard line, no program's report. The PS4 had the app running for the next ten minutes (no exit in the
+klog), and GoldHEN's FTP read every file. The heartbeat page, read over FTP, stayed at loop count
+14960, told 0, watcher 0: the desktop's loop, its freeze watch and every program's stats thread had
+stopped. The freeze watch stored into that page each second, and a file's page that was written back
+faults on the next store: a fault that waits stands with everything else.
+
+v00.67:
+- ps4-kit Mesa patch 0031 (kit 53cf427): a placed map turns the process's direct memory aliasing on
+  first (sceKernelEnableDmemAliasing, its result logged once); a failed one says the kernel's error.
+- No heartbeat page (no form of kern.proc with threads answers on the PS4: the programs' watch had
+  nothing to tell); kern.proc's forms probed as the desktop starts.
+- The freeze watch, the kernel report and the memory guard touch their stack pages as they start.
+- Seen without a signal: the desktop's loop marks its phase (reading the controller, the system
+  keyboard, the programs' output, starting a program, windows and input, the performance log,
+  drawing, presenting, the pointer, idle), and threads mark the memory call they are in (the memory
+  layer's mmap, mmap (shared), munmap, mprotect, madvise; wineserver's shared memory for a section).
+  The freeze report's line says the loop's phase and every thread in a memory call for a second or
+  more.
+- A program with 192 MiB of flexible mappings or more tells what they are once a minute, by name,
+  memory type, protection and kind ("wineps4: memory: steamwebhelper.exe's flexible mappings ...").

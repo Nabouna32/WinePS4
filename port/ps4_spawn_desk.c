@@ -41,6 +41,7 @@ struct spawn_header
 extern pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 );
 extern void ps4_child_started( int pid, const char *image );
 extern void ps4_thread_name( const char *name );  /* (port/ps4_kstate.c) */
+extern void ps4_touch_stack( size_t size );
 
 /* held while the desktop forks: no child gets a descriptor received for another one */
 pthread_mutex_t ps4_spawn_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -706,6 +707,7 @@ static void *memory_guard( void *arg )
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
     ps4_thread_name( "memory guard" );
+    ps4_touch_stack( 32 << 10 );  /* (pages first touched when memory is gone: a fault that stands) */
     for (;;)
     {
         size_t free_size = 0;
@@ -794,15 +796,21 @@ static void *desktop_watch( void *arg )
 extern unsigned long long ps4_vm_backed_bytes( void );
 extern void ps4_heartbeat_check( void );
 extern int ps4_memory_census( uint64_t *flexible, uint64_t *shared );
+extern void ps4_memory_breakdown( const char *who );
+
+/* a local process's program (its file name), for its own lines */
+static char program_name[64] = "a program";
 
 /* the process's figures for the desktop's Task Manager, every second (one write each: they don't
- * mix with the exit code's), its mappings every 5 s; and whether the desktop still beats (port/
- * ps4_kstate.c: before the write, which a desktop that stands stops reading) */
+ * mix with the exit code's), its mappings every 5 s, what they are once a minute while they are many
+ * (BREAKDOWN_FLEXIBLE); and whether the desktop still beats (port/ps4_kstate.c: before the write,
+ * which a desktop that stands stops reading) */
+#define BREAKDOWN_FLEXIBLE (192ull << 20)
 static void *stats_thread( void *arg )
 {
     const int sock = (int)(long)arg;
     uint64_t flexible = 0, shared = 0;
-    unsigned int tick = 0;
+    unsigned int tick = 0, last_breakdown = 0;
     sigset_t all;
 
     sigfillset( &all );
@@ -815,6 +823,11 @@ static void *stats_thread( void *arg )
 
         ps4_heartbeat_check();
         if (!(tick++ % 5)) ps4_memory_census( &flexible, &shared );
+        if (flexible >= BREAKDOWN_FLEXIBLE && (!last_breakdown || tick - last_breakdown >= 60))
+        {
+            last_breakdown = tick;
+            ps4_memory_breakdown( program_name );
+        }
         m.stats.flexible = flexible;
         m.stats.shared = shared;
         if (!getrusage( RUSAGE_SELF, &usage ))
@@ -932,6 +945,7 @@ int ps4_local_child_setup( int outside, int *argc_out, char ***argv_out )
     if (!write_all( sock, &msg, sizeof(msg) )) return 0;
     fcntl( sock, F_SETFD, FD_CLOEXEC );
     ps4_control_fd = sock;
+    snprintf( program_name, sizeof(program_name), "%s", image_name( header.argc > 1 ? list[1] : list[0] ) );
     pthread_attr_init( &attr );
     pthread_attr_setstacksize( &attr, 64 << 10 );
     if (!pthread_create( &thread, &attr, desktop_watch, (void *)(long)sock )) pthread_detach( thread );

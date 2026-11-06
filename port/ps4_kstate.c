@@ -18,8 +18,10 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -64,6 +66,7 @@ static struct heartbeat *heartbeat;
 static int is_desktop;
 
 int sceKernelAvailableFlexibleMemorySize( size_t *size );
+int pthread_getthreadid_np( void );
 static uint64_t flexible_free( void );
 
 /* where a summary line goes: the desktop's wine.log, written straight (port/ps4_main.c); a program's
@@ -343,28 +346,15 @@ static int report_off( void )
     return setting && !strcmp( setting, "0" );
 }
 
-/* the shared page, made new as the desktop starts (before any program) */
+/* The shared page, made new as the desktop starts (before any program). Not any more (v00.67): the
+ * PS4 answers no form of kern.proc with threads (v00.65), so a program that sees the desktop stand
+ * has nothing to tell, and the page is a file's: the desktop's loop and its freeze watch stored to it,
+ * and a store to a written-back file page is a fault, which may stand with everything else (v00.66's
+ * freeze watch never wrote its report). An earlier session's page goes; the programs find none. */
 void ps4_heartbeat_open( void )
 {
-    int fd;
-    void *page;
-
     is_desktop = 1;
-    if (report_off())
-    {
-        unlink( HEARTBEAT_FILE );  /* (an earlier session's, which stands still) */
-        return;
-    }
-    if ((fd = open( HEARTBEAT_FILE, O_RDWR | O_CREAT | O_TRUNC, 0666 )) < 0) return;
-    if (!ftruncate( fd, HEARTBEAT_SIZE ) &&
-        (page = mmap( NULL, HEARTBEAT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0 )) != MAP_FAILED)
-    {
-        heartbeat = page;
-        memset( heartbeat, 0, sizeof(*heartbeat) );
-        heartbeat->desktop_pid = getpid();
-        __atomic_store_n( &heartbeat->magic, HEARTBEAT_MAGIC, __ATOMIC_RELEASE );
-    }
-    close( fd );
+    unlink( HEARTBEAT_FILE );
 }
 
 void ps4_heartbeat_beat( unsigned int beats )
@@ -536,4 +526,158 @@ static uint64_t flexible_free( void )
     size_t size = 0;
 
     return sceKernelAvailableFlexibleMemorySize( &size ) ? 0 : size;
+}
+
+/* A program's flexible mappings by name, kind and memory type, the largest first, into wine.log (its
+ * standard error): what the census counts, told when it is large (v00.66: Steam's web helper had 390
+ * to 456 MiB flexible and nothing "shared", which the memory layer can't account for). */
+void ps4_memory_breakdown( const char *who )
+{
+    struct { char name[32]; int32_t type, prot; uint8_t kind; uint64_t size; unsigned int count; } top[40];
+    struct vq_info info;
+    const char *addr = NULL;
+    char line[1200];
+    int n = 0, len, i, j, steps = 0;
+
+    while (steps++ < 100000 && !sceKernelVirtualQuery( addr, 1, &info, sizeof(info) ))
+    {
+        const uint64_t size = info.end > info.start ? info.end - info.start : 0;
+
+        if (info.end <= (uint64_t)(uintptr_t)addr) break;
+        addr = (const char *)(uintptr_t)info.end;
+        if (!(info.kind & 1)) continue;
+        info.name[sizeof(info.name) - 1] = 0;
+        for (i = 0; i < n; i++)
+            if (top[i].type == info.memory_type && top[i].prot == info.protection && top[i].kind == info.kind &&
+                !strcmp( top[i].name, info.name ))
+                break;
+        if (i == n)
+        {
+            if (n == (int)(sizeof(top) / sizeof(top[0]))) continue;
+            memcpy( top[n].name, info.name, sizeof(top[n].name) );
+            top[n].type = info.memory_type;
+            top[n].prot = info.protection;
+            top[n].kind = info.kind;
+            top[n].size = 0;
+            top[n].count = 0;
+            n++;
+        }
+        top[i].size += size;
+        top[i].count++;
+    }
+    len = snprintf( line, sizeof(line), "wineps4: memory: %s's flexible mappings, the largest first:", who );
+    for (i = 0; i < 10 && i < n; i++)
+    {
+        int best = i;
+        for (j = i + 1; j < n; j++)
+            if (top[j].size > top[best].size) best = j;
+        if (best != i)
+        {
+            const typeof(top[0]) swap = top[i];
+            top[i] = top[best];
+            top[best] = swap;
+        }
+        len += snprintf( line + len, sizeof(line) - len, "%s '%s' %llu MiB in %u (type %d, prot %#x, kind %#x)",
+                         i ? "," : "", top[i].name, (unsigned long long)(top[i].size >> 20), top[i].count,
+                         top[i].type, top[i].prot, top[i].kind );
+        if (len >= (int)sizeof(line)) break;
+    }
+    fprintf( stderr, "%s\n", line );
+}
+
+/* --- What the desktop's threads are in, without a signal --------------------------------------------- */
+
+/* This thread's stack, size bytes below here, touched now: a page first touched at a freeze is a
+ * fault, and a fault can stand with everything else (v00.66's freeze watch never wrote its report). */
+void ps4_touch_stack( size_t size )
+{
+    volatile char *p = __builtin_alloca( size );
+    size_t i;
+
+    for (i = 0; i < size; i += 4096) p[i] = 0;
+}
+
+/* which forms of kern.proc this kernel answers, told at the start (the report's own, at a freeze, may
+ * never run) */
+void ps4_kstate_probe( void )
+{
+    probe_kern_proc( getpid() );
+}
+
+static uint64_t now_us( void )
+{
+    struct timespec t;
+
+    clock_gettime( CLOCK_MONOTONIC, &t );
+    return (uint64_t)t.tv_sec * 1000000 + (uint64_t)t.tv_nsec / 1000;
+}
+
+/* The memory calls each thread is in (the memory layer's, wineserver's shared memory): a thread that
+ * stands in one is seen in the freeze report by this table, as no signal reaches it (v00.64 to v00.66).
+ * A place a thread, taken at its first call; not nested. */
+#define MAX_CALL_SLOTS 512
+static struct { int tid; const char *what; uint64_t since; } call_slots[MAX_CALL_SLOTS];
+static __thread int call_slot = -1;
+
+void ps4_call_enter( const char *what )
+{
+    if (call_slot < 0)
+    {
+        const int tid = pthread_getthreadid_np();
+        int i;
+
+        for (i = 0; i < MAX_CALL_SLOTS && call_slot < 0; i++)
+        {
+            int expected = 0;
+            if (__atomic_compare_exchange_n( &call_slots[i].tid, &expected, tid, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE ))
+                call_slot = i;
+        }
+        if (call_slot < 0) return;
+    }
+    call_slots[call_slot].since = now_us();
+    __atomic_store_n( &call_slots[call_slot].what, what, __ATOMIC_RELEASE );
+}
+
+void ps4_call_leave( void )
+{
+    if (call_slot >= 0) __atomic_store_n( &call_slots[call_slot].what, NULL, __ATOMIC_RELEASE );
+}
+
+/* the desktop's loop: what it is doing, since when (shell/desktop.cpp) */
+static const char *volatile desktop_phase = "starting";
+static volatile uint64_t desktop_phase_since;
+
+void ps4_desktop_phase( const char *phase )
+{
+    desktop_phase_since = now_us();
+    desktop_phase = phase;
+}
+
+/* For the freeze report: where the desktop's loop is, and the threads in a memory call for a second
+ * or more ("; the desktop's loop presenting for 7 s; in memory calls: thread 101 in mmap for 7 s") */
+void ps4_calls_report( struct ps4_line *l )
+{
+    const uint64_t now = now_us();
+    int i, n = 0;
+
+    ps4_line_str( l, "; the desktop's loop " );
+    ps4_line_str( l, desktop_phase );
+    ps4_line_str( l, " for " );
+    ps4_line_num( l, (long long)((now - desktop_phase_since) / 1000000) );
+    ps4_line_str( l, " s; in memory calls:" );
+    for (i = 0; i < MAX_CALL_SLOTS; i++)
+    {
+        const char *what = __atomic_load_n( &call_slots[i].what, __ATOMIC_ACQUIRE );
+        const uint64_t since = call_slots[i].since;
+
+        if (!what || now < since + 1000000) continue;
+        ps4_line_str( l, n++ ? ", thread " : " thread " );
+        ps4_line_num( l, call_slots[i].tid );
+        ps4_line_str( l, " in " );
+        ps4_line_str( l, what );
+        ps4_line_str( l, " for " );
+        ps4_line_num( l, (long long)((now - since) / 1000000) );
+        ps4_line_str( l, " s" );
+    }
+    if (!n) ps4_line_str( l, " none" );
 }
