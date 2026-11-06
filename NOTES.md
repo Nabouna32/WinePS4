@@ -581,3 +581,42 @@ v00.65:
 - The desktop's threads are named (desktop, log, wineserver, freeze watch, kernel report, display,
   display client, audio, audio mixer, spawn monitor, spawn broker, reaper, files; stats in programs),
   so the kernel's view says which is which.
+
+## The cause: the app's flexible memory runs out (v00.66, 2026-11-06)
+
+v00.65 (logs/v00.65, with the PS4's kernel log captured live: klog.txt): the same freeze, 6 s after
+Iron Snout started from Big Picture. The kernel report got nothing: kern.proc.pid with threads is
+ENOENT on the PS4 for every process. The signals' dump stood after four threads again. The kernel log
+says why. ps4-kit logs the flexible memory free as each process starts its heap, and for the local
+processes it is one pool that falls as they start and comes back as they end: the desktop 395 MiB,
+wineboot 306, explorer 251, then 741 after wineboot ended, steam.exe 739, steamwebhelper.exe 677, Iron
+Snout 222, x86launcher.exe 169. SceShellCore's FMEM table had the web helper at 356 then 465 MiB (64
+GiB of address space: Chromium's), steam.exe about 147, the desktop 86, Iron Snout 79 while loading.
+The pool is about 1 GiB at most (448 MiB when the app started, more as the PS4 had it), the app's
+direct memory 4608 MiB with 1.4 GiB of it free. The PS4 doesn't refuse a page when the pool is gone:
+the thread that touched it waits in the kernel, and one after another every process of the app stood
+(threads that answer no signal, a dump that stands on its own stack's next page). v00.63's and
+v00.64's freezes came at the same point. In a local process the VM layer already backs Windows'
+memory with direct memory; what takes flexible memory is every anonymous mapping outside it, shared
+mappings (Wine's sections: Chromium's shared memory) and each process's own data (the binary's 12.6
+MiB of data and bss, stacks).
+
+v00.66:
+- x86launcher.exe runs outside the 7 (Steam's helper as a 32-bit game starts: half a second, 53 MiB
+  of the pool at the worst moment).
+- The memory guard (Settings > Diagnostics, on): four times a second the desktop reads the pool's
+  free size; under 192 MiB it tells who holds it, under 96 MiB it ends the web helper that holds the
+  most (steamwebhelper.exe, epicwebhelper.exe, qtwebengineprocess.exe, msedgewebview2.exe,
+  cefsharp.browsersubprocess.exe), which its launcher starts again, once in 30 s. Without printf or
+  the desktop's locks; the toast after the kill.
+- Each program's mappings every 5 s (sceKernelVirtualQuery: flexible ones; shared ones, neither
+  flexible nor direct) in its stats; the Performance log says the pool's free size and its four
+  largest holders, flexible+shared ("flexible memory 222 MiB free (the desktop 86+2 MiB,
+  steamwebhelper.exe 300+165, ...)").
+- The kernel report: the pool's free size first, and once the forms of kern.proc this kernel answers
+  (pid_td, pid, all, proc) with their errors or sizes.
+
+Next, by what the census shows: Wine's sections in direct memory shared between the app's processes
+(the pool's largest part if Chromium's is shared memory), or the app's flexible size in the
+executable's process parameters (sceKernelFlexibleMemorySize; ours asks nothing, SDK 4.508, so
+shadPS4's loader would also drop the extended memory region).

@@ -53,6 +53,7 @@ struct ps4_process_info
     char image[260];            /* the program: a Windows path (C:\...) or one of the console's */
     double cpu_seconds;         /* its CPU time so far */
     unsigned long long memory;  /* what Wine has mapped for it */
+    unsigned long long flexible, shared;  /* its flexible and shared mappings (port/ps4_kstate.c) */
     int outside;                /* started outside the PS4's 7 local processes (port/ps4_spawn_desk.c) */
 };
 int ps4_process_list( struct ps4_process_info *list, int max );

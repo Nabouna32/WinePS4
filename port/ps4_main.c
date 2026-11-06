@@ -189,6 +189,7 @@ extern void ps4_kstate_prepare( void );
 extern void ps4_kstate_report( const char *reason );
 extern void (*ps4_kstate_log)( const char *line );
 extern void ps4_thread_name( const char *name );
+extern void ps4_memory_guard_start( void );
 
 /* ntdll starts every thread on a 1 MiB stack of its own (kernel_stack_size, pthread_attr_setstack):
  * ps4-kit's 2 MiB minimum would grow it past its end */
@@ -1521,6 +1522,7 @@ int main( int argc, char **argv )
     ps4_thread_register();  /* (the desktop's loop: the freeze report's first thread) */
     ps4_thread_name( "desktop" );
     start_freeze_watch();
+    ps4_memory_guard_start();  /* (port/ps4_spawn_desk.c: the app's flexible memory) */
     ps4_shell_run( NULL );  /* does not return */
     return 0;
 }

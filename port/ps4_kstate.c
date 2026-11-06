@@ -63,6 +63,9 @@ static unsigned char kinfo[MAX_KTHREADS * KINFO_SIZE] __attribute__((aligned(16)
 static struct heartbeat *heartbeat;
 static int is_desktop;
 
+int sceKernelAvailableFlexibleMemorySize( size_t *size );
+static uint64_t flexible_free( void );
+
 /* where a summary line goes: the desktop's wine.log, written straight (port/ps4_main.c); a program's
  * standard error (the desktop's log pipe) when NULL */
 void (*ps4_kstate_log)( const char *line );
@@ -119,6 +122,46 @@ static void log_line( struct ps4_line *l )
     }
 }
 
+/* Which forms of kern.proc this kernel answers, told once (v00.65: kern.proc.pid with threads gave
+ * ENOENT for every process): with threads (17), the process alone (1), every process (0, 8). */
+static void probe_kern_proc( int pid )
+{
+    static int done;
+    static const struct { int number, mib_len; const char *name; } forms[] =
+    {
+        { 1 | 0x10, 4, "pid_td" }, { 1, 4, "pid" }, { 0, 3, "all" }, { 8, 3, "proc" },
+    };
+    struct ps4_line l;
+    unsigned int i;
+
+    if (done) return;
+    done = 1;
+    l.len = 0;
+    ps4_line_str( &l, "wineps4: kernel: kern.proc's forms here:" );
+    for (i = 0; i < sizeof(forms) / sizeof(forms[0]); i++)
+    {
+        int mib[4] = { 1, 14, forms[i].number, pid }, size = 0;
+        size_t len = sizeof(kinfo);
+        const long err = kstate_sysctl( mib, forms[i].mib_len, kinfo, &len );
+
+        memcpy( &size, kinfo, sizeof(size) );
+        ps4_line_str( &l, i ? ", " : " " );
+        ps4_line_str( &l, forms[i].name );
+        if (err && err != -ENOMEM)
+        {
+            ps4_line_str( &l, " error " );
+            ps4_line_num( &l, -err );
+            continue;
+        }
+        ps4_line_str( &l, " " );
+        ps4_line_num( &l, (long long)len );
+        ps4_line_str( &l, " bytes (records of " );
+        ps4_line_num( &l, len >= sizeof(int) ? size : 0 );
+        ps4_line_str( &l, ")" );
+    }
+    log_line( &l );
+}
+
 /* Each thread of process pid: a line into fd (hang.log), and how many wait for what into wine.log. */
 static void report_process( long fd, int pid, const char *name )
 {
@@ -140,6 +183,7 @@ static void report_process( long fd, int pid, const char *name )
         ps4_line_num( &sum, -err );
         ps4_line_str( &sum, ")" );
         log_line( &sum );
+        probe_kern_proc( pid );
         return;
     }
     memcpy( &size, kinfo, sizeof(size) );
@@ -370,6 +414,13 @@ void ps4_kstate_prepare( void )
 /* the desktop's freeze report (its own thread) */
 void ps4_kstate_report( const char *reason )
 {
+    struct ps4_line l;
+
+    l.len = 0;
+    ps4_line_str( &l, "wineps4: kernel: the app's flexible memory " );
+    ps4_line_num( &l, (long long)(flexible_free() >> 20) );
+    ps4_line_str( &l, " MiB free (v00.63 to v00.65 froze as it ran out)" );
+    log_line( &l );
     report_all( reason );
     if (heartbeat) __atomic_store_n( &heartbeat->told, __atomic_load_n( &heartbeat->beats, __ATOMIC_RELAXED ) | 1,
                                      __ATOMIC_RELEASE );
@@ -440,4 +491,49 @@ void ps4_heartbeat_check( void )
 void ps4_thread_name( const char *name )
 {
     pthread_set_name_np( pthread_self(), name );
+}
+
+/* --- What a process takes of the app's flexible memory ---------------------------------------------- */
+
+/* sceKernelVirtualQuery's record (72 bytes: shadPS4's OrbisVirtualQueryInfo) */
+struct vq_info
+{
+    uint64_t start, end, offset;
+    int32_t protection, memory_type;
+    uint8_t kind;  /* 1 flexible, 2 direct, 4 stack, 8 pooled, 16 committed */
+    char name[32];
+    uint8_t pad[7];
+};
+int sceKernelVirtualQuery( const void *addr, int flags, struct vq_info *info, size_t size );
+
+/* This process's mappings (v00.65: the app's flexible memory ran out as a game started, Steam's web
+ * helper holding 465 MiB of it): flexible ones (every anonymous mapping, the kernel's, accessible or
+ * not, charged whole) and shared ones that are neither flexible nor direct (shared memory, files:
+ * Wine's sections, charged as touched), in bytes. 0: the kernel told nothing. */
+int ps4_memory_census( uint64_t *flexible, uint64_t *shared )
+{
+    struct vq_info info;
+    const char *addr = NULL;
+    int n = 0;
+
+    *flexible = *shared = 0;
+    while (n < 100000 && !sceKernelVirtualQuery( addr, 1 /* the next mapping from addr */, &info, sizeof(info) ))
+    {
+        const uint64_t size = info.end > info.start ? info.end - info.start : 0;
+
+        if (info.kind & 1) *flexible += size;
+        else if (!(info.kind & 2) && info.protection) *shared += size;
+        if (info.end <= (uint64_t)(uintptr_t)addr) break;
+        addr = (const char *)(uintptr_t)info.end;
+        n++;
+    }
+    return n > 0;
+}
+
+/* the app's flexible memory free: the pool every local process takes from */
+static uint64_t flexible_free( void )
+{
+    size_t size = 0;
+
+    return sceKernelAvailableFlexibleMemorySize( &size ) ? 0 : size;
 }

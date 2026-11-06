@@ -18,9 +18,11 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/resource.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "../shell/shell.h"
+#include "include/ps4_line.h"
 
 #define SPAWN_SOCKET "/data/WinePS4/.spawn"
 #define SPAWN_MAGIC  0x50533457  /* "W4SP" */
@@ -123,6 +125,7 @@ struct local_stats
     uint64_t cpu_us;  /* the process's CPU time */
     uint64_t memory;  /* what its memory layer has backed (port/ps4_wine_vm.c) */
     uint64_t pool;    /* outside the 7: the memory all of those share, free (the kernel's figure) */
+    uint64_t flexible, shared;  /* its flexible and shared mappings, every 5 s (port/ps4_kstate.c) */
 };
 
 /* A process outside the 7 starts only while the memory they share with the PS4 has room for it: 75
@@ -278,8 +281,9 @@ static const char *const background_programs[] =
     "hostname.exe", "whoami.exe", "where.exe", "find.exe", "findstr.exe", "attrib.exe", "xcopy.exe",
     "expand.exe", "extrac32.exe", "icacls.exe", "cacls.exe", "fsutil.exe", "cscript.exe",
     "wscript.exe", "certutil.exe", "systeminfo.exe", "wmic.exe", "powershell.exe",
-    /* Steam's */
-    "steamservice.exe", "steamerrorreporter.exe", "steamerrorreporter64.exe",
+    /* Steam's (x86launcher.exe: half a second as a 32-bit game starts, when the app's flexible memory
+     * is what the game needs: v00.63 to v00.65 ran out of it then) */
+    "steamservice.exe", "steamerrorreporter.exe", "steamerrorreporter64.exe", "x86launcher.exe",
     /* Chrome's: Google's updater, crash handlers */
     "updater.exe", "googleupdate.exe", "googlecrashhandler.exe", "googlecrashhandler64.exe",
     "crashpad_handler.exe", "elevation_service.exe", "notification_helper.exe",
@@ -587,6 +591,8 @@ int ps4_process_list( struct ps4_process_info *list, int max )
         snprintf( list[n].image, sizeof(list[n].image), "%s", locals[i].image );
         list[n].cpu_seconds = locals[i].stats.cpu_us / 1e6;
         list[n].memory = locals[i].stats.memory;
+        list[n].flexible = locals[i].stats.flexible;
+        list[n].shared = locals[i].stats.shared;
         list[n].outside = locals[i].local_id < 0;
     }
     pthread_mutex_unlock( &locals_lock );
@@ -612,6 +618,170 @@ void ps4_local_kill( int pid )
     kill( pid, SIGKILL );
 }
 
+/* The memory guard (Settings > Diagnostics > Memory guard; WINEPS4_MEMORY_GUARD=0: off). The local
+ * processes all take the app's flexible memory, about 1 GiB between them, and the PS4 doesn't refuse
+ * a page when it is gone: the thread that touched it waits in the kernel for good, and the app's
+ * processes stood one after another (v00.63 to v00.65, each time as a game started from Steam, whose
+ * web helper held 465 MiB of it). Four times a second the desktop reads what is free: under
+ * GUARD_WARN it tells who holds it, under GUARD_LOW it ends the web helper (a launcher's browser,
+ * which the launcher starts again) that holds the most, once in GUARD_PAUSE seconds. Without printf
+ * or the desktop's locks: it runs when anything else may stand. */
+#define GUARD_WARN  (192ull << 20)
+#define GUARD_LOW   (96ull << 20)
+#define GUARD_PAUSE 30
+extern void (*ps4_kstate_log)( const char *line );
+
+static const char *const web_helpers[] =
+{
+    "steamwebhelper.exe", "epicwebhelper.exe", "qtwebengineprocess.exe", "msedgewebview2.exe",
+    "cefsharp.browsersubprocess.exe", NULL
+};
+
+static const char *image_name( const char *image )
+{
+    const char *name = image, *p;
+
+    for (p = image; *p; p++)
+        if (*p == '\\' || *p == '/') name = p + 1;
+    return name;
+}
+
+static int is_web_helper( const char *image )
+{
+    int i;
+
+    for (i = 0; web_helpers[i]; i++)
+        if (!strcasecmp( image_name( image ), web_helpers[i] )) return 1;
+    return 0;
+}
+
+static void guard_log( struct ps4_line *l )
+{
+    l->text[l->len] = 0;
+    if (ps4_kstate_log) ps4_kstate_log( l->text );
+}
+
+/* who holds the app's flexible memory: its four largest local processes */
+static void guard_holders( struct ps4_line *l )
+{
+    struct { int pid; uint64_t flexible, shared; char name[40]; } top[4] = { { 0 } };
+    int i, j, n = 0;
+
+    pthread_mutex_lock( &locals_lock );
+    for (i = 0; i < local_count; i++)
+    {
+        const uint64_t size = locals[i].stats.flexible + locals[i].stats.shared;
+
+        if (locals[i].local_id < 0) continue;  /* (outside the 7: the system's memory) */
+        for (j = n < 4 ? n : 4; j > 0 && top[j - 1].flexible + top[j - 1].shared < size; j--)
+            if (j < 4) top[j] = top[j - 1];
+        if (j >= 4) continue;
+        top[j].pid = locals[i].pid;
+        top[j].flexible = locals[i].stats.flexible;
+        top[j].shared = locals[i].stats.shared;
+        snprintf( top[j].name, sizeof(top[j].name), "%s", image_name( locals[i].image ) );
+        if (n < 4) n++;
+    }
+    pthread_mutex_unlock( &locals_lock );
+    for (i = 0; i < n; i++)
+    {
+        ps4_line_str( l, i ? ", " : " (" );
+        ps4_line_str( l, top[i].name );
+        ps4_line_str( l, " " );
+        ps4_line_num( l, (long long)(top[i].flexible >> 20) );
+        ps4_line_str( l, " MiB flexible and " );
+        ps4_line_num( l, (long long)(top[i].shared >> 20) );
+        ps4_line_str( l, " MiB shared" );
+    }
+    if (n) ps4_line_str( l, ")" );
+}
+
+static void *memory_guard( void *arg )
+{
+    const struct timespec tick = { 0, 250000000 };
+    time_t last_end = 0;
+    int warned = 0;
+    sigset_t set;
+
+    sigfillset( &set );
+    pthread_sigmask( SIG_BLOCK, &set, NULL );
+    ps4_thread_name( "memory guard" );
+    for (;;)
+    {
+        size_t free_size = 0;
+        uint64_t most = 0;
+        int i, victim = -1;
+        char name[40] = "";
+        struct ps4_line l;
+        struct timespec now;
+
+        nanosleep( &tick, NULL );
+        if (sceKernelAvailableFlexibleMemorySize( &free_size )) continue;
+        if (free_size >= GUARD_WARN)
+        {
+            warned = 0;
+            continue;
+        }
+        if (!warned)
+        {
+            warned = 1;
+            l.len = 0;
+            ps4_line_str( &l, "wineps4: memory guard: the app's flexible memory is down to " );
+            ps4_line_num( &l, (long long)(free_size >> 20) );
+            ps4_line_str( &l, " MiB free" );
+            guard_holders( &l );
+            guard_log( &l );
+        }
+        if (free_size >= GUARD_LOW) continue;
+        clock_gettime( CLOCK_MONOTONIC, &now );
+        if (last_end && now.tv_sec - last_end < GUARD_PAUSE) continue;
+        pthread_mutex_lock( &locals_lock );
+        for (i = 0; i < local_count; i++)
+        {
+            const uint64_t size = locals[i].stats.flexible + locals[i].stats.shared;
+
+            if (locals[i].local_id < 0 || !is_web_helper( locals[i].image ) || size < most) continue;
+            most = size;
+            victim = locals[i].pid;
+            snprintf( name, sizeof(name), "%s", image_name( locals[i].image ) );
+        }
+        pthread_mutex_unlock( &locals_lock );
+        l.len = 0;
+        ps4_line_str( &l, "wineps4: memory guard: " );
+        ps4_line_num( &l, (long long)(free_size >> 20) );
+        ps4_line_str( &l, " MiB of the app's flexible memory free" );
+        if (victim < 0)
+        {
+            ps4_line_str( &l, ", and no web helper to end: the app may stand" );
+            guard_holders( &l );
+            guard_log( &l );
+            last_end = now.tv_sec;  /* (told once a pause) */
+            continue;
+        }
+        last_end = now.tv_sec;
+        ps4_local_kill( victim );  /* (first: the notice takes the desktop's lock) */
+        ps4_line_str( &l, ": " );
+        ps4_line_str( &l, name );
+        ps4_line_str( &l, " (process " );
+        ps4_line_num( &l, victim );
+        ps4_line_str( &l, ", " );
+        ps4_line_num( &l, (long long)(most >> 20) );
+        ps4_line_str( &l, " MiB of it) ended, its launcher starts it again" );
+        guard_log( &l );
+        ps4_shell_notice( "Memory for programs was nearly used up: the launcher's window was restarted to free it" );
+    }
+    return NULL;
+}
+
+void ps4_memory_guard_start( void )
+{
+    const char *setting = getenv( "WINEPS4_MEMORY_GUARD" );
+    pthread_t thread;
+
+    if (setting && !strcmp( setting, "0" )) return;
+    if (!pthread_create( &thread, NULL, memory_guard, NULL )) pthread_detach( thread );
+}
+
 /* the end of the desktop: the local process ends at once */
 static void *desktop_watch( void *arg )
 {
@@ -623,13 +793,16 @@ static void *desktop_watch( void *arg )
 
 extern unsigned long long ps4_vm_backed_bytes( void );
 extern void ps4_heartbeat_check( void );
+extern int ps4_memory_census( uint64_t *flexible, uint64_t *shared );
 
 /* the process's figures for the desktop's Task Manager, every second (one write each: they don't
- * mix with the exit code's); and whether the desktop still beats (port/ps4_kstate.c: before the
- * write, which a desktop that stands stops reading) */
+ * mix with the exit code's), its mappings every 5 s; and whether the desktop still beats (port/
+ * ps4_kstate.c: before the write, which a desktop that stands stops reading) */
 static void *stats_thread( void *arg )
 {
     const int sock = (int)(long)arg;
+    uint64_t flexible = 0, shared = 0;
+    unsigned int tick = 0;
     sigset_t all;
 
     sigfillset( &all );
@@ -641,6 +814,9 @@ static void *stats_thread( void *arg )
         struct rusage usage;
 
         ps4_heartbeat_check();
+        if (!(tick++ % 5)) ps4_memory_census( &flexible, &shared );
+        m.stats.flexible = flexible;
+        m.stats.shared = shared;
         if (!getrusage( RUSAGE_SELF, &usage ))
             m.stats.cpu_us = (uint64_t)(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1000000 +
                              usage.ru_utime.tv_usec + usage.ru_stime.tv_usec;

@@ -54,7 +54,9 @@ int sceSystemServiceLoadExec(const char *path, const char *args[]);
 void ps4_boot_trace(const char *line);
 size_t sceKernelGetDirectMemorySize(void);
 int32_t sceKernelAvailableDirectMemorySize(off_t start, off_t end, size_t align, off_t *start_out, size_t *size_out);
+int32_t sceKernelAvailableFlexibleMemorySize(size_t *size);
 int32_t sceKernelIsNeoMode(void);
+int ps4_memory_census(uint64_t *flexible, uint64_t *shared);  // (port/ps4_kstate.c)
 }
 
 using namespace ps4ui;
@@ -1127,6 +1129,7 @@ const Toggle TOGGLES[] = {
     {"Audio log", "Programs' sound streams in wine.log: their formats, and when one ran dry (the program wrote it late)", "WINEPS4_AUDIO_LOG", "", "0"},
     {"Performance log", "Every 10 s in wine.log: each process's share of the CPU, the desktop's drawing time, free memory", "WINEPS4_PERF_LOG", "", "0"},
     {"Freeze report", "When the desktop stands still for 6 s: where each thread of the app is (the kernel's view too), in hang.log", "WINEPS4_FREEZE_REPORT", "", "0"},
+    {"Memory guard", "When the memory programs share is nearly gone, restarts a launcher's web window (Steam's) instead of the app standing still", "WINEPS4_MEMORY_GUARD", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
@@ -1626,6 +1629,7 @@ struct ProcessView {
     double cpu = 0;        // seconds of CPU so far
     float cpu_percent = 0; // of the console's 7 cores, over the last second
     unsigned long long memory = 0;
+    unsigned long long flexible = 0, shared = 0;  // its flexible and shared mappings (port/ps4_kstate.c)
     bool windows_own = false;  // C:\windows: Windows' own (services, explorer, ...)
     bool outside = false;      // started outside the PS4's 7 (port/ps4_spawn_desk.c)
 };
@@ -1661,6 +1665,8 @@ void refresh_processes(bool force = false) {
         v.name = slash == std::string::npos ? v.image : v.image.substr(slash + 1);
         v.cpu = list[i].cpu_seconds;
         v.memory = list[i].memory;
+        v.flexible = list[i].flexible;
+        v.shared = list[i].shared;
         auto it = last_cpu.find(v.pid);
         if (it != last_cpu.end())
             v.cpu_percent = std::clamp(static_cast<float>((v.cpu - it->second) / elapsed * 100.0 / APP_CORES), 0.f, 100.f);
@@ -1734,6 +1740,27 @@ void perf_tick(double t) {
         if (pool != ~0ull) {
             std::snprintf(text, sizeof text, ", the pool outside the 7 %llu MiB", pool >> 20);
             line += text;
+        }
+        // the app's flexible memory, which its local processes share and which the app stood without
+        // (v00.63 to v00.65), and its largest holders
+        size_t flexible_free = 0;
+        if (sceKernelAvailableFlexibleMemorySize(&flexible_free) == 0) {
+            uint64_t desktop_flexible = 0, desktop_shared = 0;
+            ps4_memory_census(&desktop_flexible, &desktop_shared);
+            std::snprintf(text, sizeof text, "; flexible memory %llu MiB free (the desktop %llu+%llu MiB", static_cast<unsigned long long>(flexible_free >> 20),
+                          static_cast<unsigned long long>(desktop_flexible >> 20), static_cast<unsigned long long>(desktop_shared >> 20));
+            line += text;
+            std::vector<const ProcessView *> holders;
+            for (const ProcessView &v : process_views)
+                if (!v.outside && v.flexible + v.shared)
+                    holders.push_back(&v);
+            std::sort(holders.begin(), holders.end(),
+                      [](const ProcessView *a, const ProcessView *b) { return a->flexible + a->shared > b->flexible + b->shared; });
+            for (size_t i = 0; i < holders.size() && i < 4; i++) {
+                std::snprintf(text, sizeof text, ", %s %llu+%llu", holders[i]->name.c_str(), holders[i]->flexible >> 20, holders[i]->shared >> 20);
+                line += text;
+            }
+            line += ": flexible+shared)";
         }
         char heap[120];
         ps4rt_heap_report(heap, sizeof heap);  // (the desktop process's own: wineserver's and the desktop's)
