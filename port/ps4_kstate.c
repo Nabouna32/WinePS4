@@ -28,6 +28,7 @@
 #include <unistd.h>
 
 #include "include/ps4_line.h"
+#include "include/ps4_prio.h"
 
 /* FreeBSD 9's struct kinfo_proc for amd64 (sys/user.h): where what is read of it is, in a record of
  * kern.proc. This kernel's own replace them as the desktop starts (calibrate): the PS4's records are
@@ -220,6 +221,24 @@ static int record_int( const unsigned char *e, int offset )
     return value;
 }
 
+/* the 8 bytes after the thread id, as four 16-bit numbers: the thread's priority (FreeBSD 9's struct
+ * priority, four bytes, is there; the PS4's records are 8 bytes longer and its priorities need more than
+ * a byte), told as found ("pri a/b/c/d") */
+static void put_priority( struct ps4_line *l, const unsigned char *e )
+{
+    int i;
+
+    ps4_line_str( l, " pri " );
+    for (i = 0; i < 4 && kl.tid + 4 + 2 * i + 2 <= kl.size; i++)
+    {
+        uint16_t value;
+
+        memcpy( &value, e + kl.tid + 4 + 2 * i, sizeof(value) );
+        if (i) ps4_line_str( l, "/" );
+        ps4_line_num( l, value );
+    }
+}
+
 /* This kernel's layout of kern.proc's record, from the calling thread's own record in kern.proc.all
  * (a record a thread of every process): its size, and where the pid, the thread id and the thread's
  * name are; the fields next to the name (the state, the wait's message, the lock's name) are taken to
@@ -296,6 +315,10 @@ static void calibrate( const char *own_name )
         ps4_line_str( &l, " (FreeBSD 9: 72, 600, 394), state " );
         ps4_line_num( &l, e[kl.stat] );
         ps4_line_str( &l, e[kl.stat] == 2 ? " (running: the layout holds)" : " (not running: states may be misread)" );
+        ps4_line_str( &l, "; its priority " );
+        ps4_line_num( &l, ps4_kit_thread_priority() );
+        ps4_line_str( &l, " is in its record as" );
+        put_priority( &l, e );
         log_line( &l );
         return;
     }
@@ -347,6 +370,7 @@ static void report_process( long fd, int n, int pid, const char *name )
             put_name( &l, e + kl.tdname, 16 );
             ps4_line_str( &l, "'" );
         }
+        put_priority( &l, e );
         k.len = 0;
         if (stat == 7 /* SLOCK */ || (kiflag & KI_LOCKBLOCK))
         {
@@ -930,6 +954,7 @@ static void *probe_thread( void *arg )
 
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
+    ps4_kit_set_thread_priority( PS4_PRIO_REPORT );
     ps4_thread_name( "memory probe" );
     ps4_touch_stack( 16 << 10 );
     for (;;)

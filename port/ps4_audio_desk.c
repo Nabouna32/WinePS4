@@ -25,6 +25,7 @@
 #include <sys/mman.h>
 
 #include "ps4_audio.h"
+#include "ps4_prio.h"
 
 int32_t sceAudioOutInit( void );
 int32_t sceAudioOutOpen( int32_t user, int32_t type, int32_t index, uint32_t frames, uint32_t rate, uint32_t param );
@@ -249,6 +250,7 @@ static void *mixer_thread( void *arg )
     double next = now_seconds(), last_report = next;
     int i;
 
+    ps4_kit_set_thread_priority( PS4_PRIO_AUDIO );  /* (the hardware never runs dry: include/ps4_prio.h) */
     ps4_thread_register();
     ps4_thread_name( "audio mixer" );
     fprintf( stderr, "wineps4: audio: the PS4's port %s (init 0x%x, port 0x%x): programs' sound%s\n",

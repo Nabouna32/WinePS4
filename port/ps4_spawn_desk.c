@@ -661,7 +661,8 @@ static const char *image_name( const char *image )
     return name;
 }
 
-static int is_web_helper( const char *image )
+/* (the memory guard's, and the priority a program process takes: port/ps4_main.c) */
+int ps4_is_web_helper( const char *image )
 {
     int i;
 
@@ -756,7 +757,7 @@ static void *memory_guard( void *arg )
         {
             const uint64_t size = locals[i].stats.flexible + locals[i].stats.shared;
 
-            if (locals[i].local_id < 0 || !is_web_helper( locals[i].image ) || size < most) continue;
+            if (locals[i].local_id < 0 || !ps4_is_web_helper( locals[i].image ) || size < most) continue;
             most = size;
             victim = locals[i].pid;
             snprintf( name, sizeof(name), "%s", image_name( locals[i].image ) );

@@ -786,3 +786,45 @@ behaviour).
   and the report tells which answered within 2 s and which stood; thread names in both signal dumps
   ("-- thread 109913 'desktop': no answer"); the freeze watch's last line without the direct memory
   query; a process's end names its program ("process 818 (IronSnout.exe) ended (no exit code)").
+
+## v00.70's run: CPU starvation, not memory; the GPU address space the desktop must free (v00.71, 2026-11-06)
+
+v00.70 RAN (logs/v00.70; the klog in logs/v00.69/klog.txt from line 13755; user: "It froze"): the app
+froze about 9 s after Iron Snout started from Steam (not as it closed this time), and v00.70's freeze
+report told why:
+- The memory probe answered everywhere in 0 ms (heap, screen, direct memory query, new flexible and
+  direct pages): no memory stood. The kernel's view: the desktop's loop ('desktop') and the audio mixer
+  "running" (ready) in both reports, 44 s apart, with the same CPU time (7.44 s, 0.23 s): ready and
+  given no core; wineserver ran 0.09 s in those 44 s (55 s in the 105 before). Steam's web helper had
+  20 threads ready, six of them on six cores with 48-51 s of CPU each (Chromium drawing its pages on
+  the CPU: --disable-gpu, its raster threads), and Iron Snout's main thread 49 s on the seventh. The
+  PS4 runs an app's threads by priority alone, with no turns among threads of one priority (ps4-kit's
+  notes); every WinePS4 thread had the system's 700. The signal dump's "no answer" threads of v00.63
+  to v00.69 were threads that never got a core: v00.69's freeze after closing the game was most
+  likely Big Picture coming back and its raster threads taking the cores.
+- v00.70's "root cause" was wrong, and removing the budget probe broke the game's GPU: "gc_open.
+  Can't open GPU VA space. ret:-2142502909(0x804c0003)", "radv/amdgpu: failed to initialize device".
+  The app has one GPU address space (vm#1) and the PS4 gives it to the app's first process, the
+  desktop; the probe's vfork child (budget_set 0, then exit on the desktop's address space) freed it
+  ("gbase_free_vm_space_2 has mapped memory vmid:1" = freed while the desktop's screen buffers were
+  still mapped for the GPU), and the game's RADV then got it. The desktop's screen goes on without it.
+  A program that ends frees it quietly (no line). The app's end then logs "no vm space" and
+  gvmsw_close errors, which do no harm.
+
+v00.71:
+- Priorities (port/include/ps4_prio.h; ps4-kit: ps4_kit_set_new_thread_priority, a priority ps4_thread_
+  entry gives each new thread, ps4_kit_set_thread_priority, ps4_kit_thread_priority): the freeze watch,
+  its kernel report and memory probe 300, the desktop's audio mixer 450, wineserver 600, the desktop's
+  loop and its other threads 640, programs 700 (set as a program process starts, before Wine starts
+  threads), launchers' web helpers (steamwebhelper, epicwebhelper, qtwebengineprocess, msedgewebview2,
+  cefsharp) 760, below the games. wine.log: "threads' priorities (256 highest, 767 lowest; the desktop
+  started at N): ..." and "process N: a launcher's web helper: below the games (priority 760)".
+- The app's GPU address space freed for the programs on purpose (ps4_release_gpu_space: the v00.69
+  probe's code, always run, not under Budget log): "GPU: the app's GPU address space freed for the
+  programs (...)".
+- No Big Picture: Steam starts with no -gamepadui; the Settings > Apps card is gone.
+- The freeze report's kernel view gives each thread's priority fields ("pri a/b/c/d": the 8 bytes after
+  the thread id as 16-bit numbers; FreeBSD 9's struct priority is 4 bytes there), and the calibration
+  line says how the kernel report thread's own priority (300) reads there.
+- To check: the priorities line; Iron Snout's RADV starting ("+++ num clients 2" in the klog); no freeze
+  when a game starts or closes; Steam's window instead of Big Picture.

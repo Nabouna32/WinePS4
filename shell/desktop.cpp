@@ -2054,21 +2054,9 @@ void add_one_process_switches(std::vector<std::string> &args) {
                                  "--disable-gpu-shader-disk-cache", "--enable-low-end-device-mode"});
 }
 
-// Steam started from the desktop in its Big Picture mode (Settings > Apps): -gamepadui, which opens it
-// full screen once it has signed in (a Steam already running switches to it)
-void add_steam_switches(std::vector<std::string> &args) {
-    if (args.empty() || env_get("WINEPS4_STEAM_BIGPICTURE") == "0" || lower(base_name(console_path(args[0]))) != "steam.exe")
-        return;
-    for (const std::string &a : args)
-        if (lower(a) == "-gamepadui" || lower(a) == "-bigpicture" || lower(a) == "-tenfoot")
-            return;
-    args.insert(args.begin() + 1, "-gamepadui");
-}
-
 // Starts a program as a process of its own (port/ps4_main.c); "" when it started, else why not
 std::string launch(std::vector<std::string> args) {
     add_one_process_switches(args);
-    add_steam_switches(args);
     std::vector<char *> argv;
     for (const std::string &a : args)
         argv.push_back(const_cast<char *>(a.c_str()));
@@ -3402,8 +3390,7 @@ Rect chromium_card(const Window &w) { return card_at(w, 56, 84); }
 Rect rules_card(const Window &w) { return card_at(w, 150, 84); }
 Rect outside_card(const Window &w) { return card_at(w, 244, 84); }
 Rect dxvk_card(const Window &w) { return card_at(w, 338, 84); }
-Rect bigpicture_card(const Window &w) { return card_at(w, 432, 84); }
-Rect app_row(const Window &w, int i) { return card_at(w, 572 + i * 70, 62); }
+Rect app_row(const Window &w, int i) { return card_at(w, 478 + i * 70, 62); }
 Rect app_uninstall(const Window &w, int i) { const Rect r = app_row(w, i); return Rect{r.x + r.w - 140, r.y + 13, 120, 36}; }
 
 // --- typing on a USB keyboard: characters, edit boxes ---------------------------------------------
@@ -5007,8 +4994,6 @@ std::string settings_hit(const Window &w, float px, float py) {
             return "outside";
         if (dxvk_card(w).contains(px, py))
             return "dxvk";
-        if (bigpicture_card(w).contains(px, py))
-            return "bigpicture";
         for (int i = 0; i < static_cast<int>(installed_apps().size()); i++)
             if (app_uninstall(w, i).contains(px, py))
                 return "uninstall" + std::to_string(i);
@@ -5240,9 +5225,6 @@ void settings_click(Window &w, const std::string &part) {
     } else if (part == "dxvk") {
         env_set("WINEPS4_DXVK", env_get("WINEPS4_DXVK") != "0" ? "0" : "");
         toast = Toast{"Applies the next time a program starts", now_seconds() + 3};
-    } else if (part == "bigpicture") {
-        env_set("WINEPS4_STEAM_BIGPICTURE", env_get("WINEPS4_STEAM_BIGPICTURE") != "0" ? "0" : "");
-        toast = Toast{"Applies the next time Steam starts", now_seconds() + 3};
     } else if (part.rfind("uninstall", 0) == 0) {
         const auto &apps = installed_apps();
         const int i = number_after(part, "uninstall");
@@ -6251,17 +6233,7 @@ void draw_apps_page(Canvas &c, const Window &w) {
     c.text(dr.x + 66, dr.y + 58, "Direct3D 8 to 11 through DXVK and Vulkan; off: Wine's own Direct3D, which has no GPU here", 13,
            TEXT3, Weight::Regular, dr.w - 180);
     draw_switch(c, dr, env_get("WINEPS4_DXVK") != "0");
-    // Steam started in its Big Picture mode: full screen, made for a controller, the desktop not drawn
-    // under it
-    const Rect br = bigpicture_card(w);
-    panel(c, br.x, br.y, br.w, br.h, 6, hover == id + "bigpicture" ? CARD_HOT : CARD, CARD_BORDER);
-    draw_icon(c, Icon::Program, br.x + 34, br.y + br.h / 2.f, 26);
-    c.text(br.x + 66, br.y + 34, "Steam in Big Picture", 16, TEXT);
-    c.text(br.x + 66, br.y + 58, "Steam opens full screen in its Big Picture mode, and the desktop is not drawn under it "
-                                 "(less work for the PS4); off: Steam's own windows on the desktop", 13, TEXT3, Weight::Regular,
-           br.w - 180);
-    draw_switch(c, br, env_get("WINEPS4_STEAM_BIGPICTURE") != "0");
-    c.text(a.x, a.y + 548, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
+    c.text(a.x, a.y + 454, apps.empty() ? "No Windows programs are installed yet: run an installer (.exe or .msi) from Files."
                                         : "Installed apps (" + std::to_string(apps.size()) + ")",
            15, TEXT2);
     for (int i = 0; i < static_cast<int>(apps.size()); i++) {

@@ -24,6 +24,8 @@
 
 #include <machine/sysarch.h>
 
+#include "include/ps4_prio.h"
+
 #include "ps4_line.h"
 
 __thread void *ps4_thread_teb;
@@ -174,6 +176,7 @@ static void *wineserver_thread( void *arg )
     sigdelset( &all, SIGTRAP );
     sigdelset( &all, SIGXCPU );  /* the hang dump's */
     pthread_sigmask( SIG_BLOCK, &all, NULL );
+    ps4_kit_set_thread_priority( PS4_PRIO_SERVER );  /* (every program waits on it: include/ps4_prio.h) */
     ps4_thread_register();
     ps4_thread_name( "wineserver" );
     ps4_wineserver_main( (int)(long)arg );
@@ -765,7 +768,8 @@ struct spawn_request
 
 /* vfork (or fork) and exec, the child running only this code: no stack, nothing but system calls
  * on the request (FreeBSD 9 on the PS4 clobbers rcx, r8-r11 in a syscall; rbx survives). The child
- * never ends before its exec but when the exec fails (see "More than 7 processes" for why) */
+ * never ends before its exec but when the exec fails (see "More than 7 processes" for why: it would
+ * free the app's GPU address space under a program using it) */
 static long fork_exec( long syscall_number, struct spawn_request *req, long *child_pid )
 {
     long ret, flag;
@@ -818,22 +822,70 @@ static long fork_exec( long syscall_number, struct spawn_request *req, long *chi
     return 0;
 }
 
-/* --- More than 7 processes ----------------------------------------------------------------------
+/* --- More than 7 processes, and the app's GPU address space ----------------------------------------
  * The PS4 runs 7 local processes for an app (sceSystemServiceAddLocalProcess refuses the 8th, nested
  * or not, whatever their memory: PS5_MihawkOS measured the same on the PS5). Processes forked by the
  * app are not counted, but closing the app from the PS4 menu tore the app down under them (a kernel
  * panic, v00.30-00.42). On the PS5 the payload loader starts processes outside every app: the child
- * leaves its budget (budget_set 571 with 0), so it is no app's; v00.50's test found a child of this
- * app may do it on the PS4 too (ps4_spawn_outside, below).
+ * leaves its budget (budget_set 571 with 0), so it is no app's; a child of this app may do it on the
+ * PS4 too (ps4_spawn_outside, below).
  *
- * A vfork child must exec, never end on its own: it ends on its parent's address space, which the PS4
- * takes as the end of the desktop's own. That test's child (v00.50 to v00.69: budget_set, then exit)
- * freed the app's GPU address space 0.5 s into every session (the kernel's log: "dmem_handle_vmspace_
- * exited" with ptype 2 and the desktop's map, then "gbase_free_vm_space_2 has mapped memory vmid:1",
- * which a game's last process prints as the game closes; the app's own end then found "no vm space").
- * The desktop's screen and every program's GPU memory went on in a space the kernel had freed: most
- * likely why the app stood as a program's process ended (v00.68, v00.69). A failed exec still ends the
- * child that way; the app's own path never fails to exec. */
+ * The app has one GPU address space (vm#1), and the PS4 gives it to the app's first process: the
+ * desktop, which draws on the CPU. A program's Vulkan (RADV) opens it only when it is free: v00.70,
+ * without what follows, logged "gc_open. Can't open GPU VA space. ret:0x804c0003" and Iron Snout's
+ * RADV failed to start. A vfork child that leaves the app's budget and ends without an exec ends on the
+ * desktop's address space, and the kernel frees the GPU address space with it ("dmem_handle_vmspace_
+ * exited ... ptype=2" and "gbase_free_vm_space_2 has mapped memory vmid:1"); the first program to open
+ * the GPU then has it, and the desktop's screen goes on (the display reads it without it). v00.50 to
+ * v00.69 did this by chance, as a test of whether a child of the app may leave its budget; the app's
+ * end then logs "no vm space" and gvmsw_close errors, which do no harm. Any other vfork child must
+ * exec, never end on its own. */
+void ps4_release_gpu_space( void )
+{
+    static long result[4];  /* budget_set's result and failure, then budget_getid's */
+    sigset_t all, old;
+    long ret, flag;
+
+    memset( result, 0, sizeof(result) );
+    sigfillset( &all );
+    pthread_sigmask( SIG_SETMASK, &all, &old );
+    __asm__ volatile( "syscall\n\t"
+                      "jnc 1f\n\t"
+                      "movq $-1,%%rdx\n\t"          /* failed: rax = errno */
+                      "jmp 9f\n"
+                      "1:\ttestq %%rdx,%%rdx\n\t"   /* rdx: 0 in the parent, 1 in the child */
+                      "jz 9f\n\t"
+                      /* the child: budget_set( 0 ), budget_getid(), exit( 0 ) */
+                      "xorl %%edi,%%edi\n\t"
+                      "movl $571,%%eax\n\t"
+                      "syscall\n\t"
+                      "movq %%rax,0(%%rbx)\n\t"
+                      "sbbq %%rax,%%rax\n\t"
+                      "movq %%rax,8(%%rbx)\n\t"
+                      "movl $609,%%eax\n\t"
+                      "syscall\n\t"
+                      "movq %%rax,16(%%rbx)\n\t"
+                      "sbbq %%rax,%%rax\n\t"
+                      "movq %%rax,24(%%rbx)\n\t"
+                      "xorl %%edi,%%edi\n\t"
+                      "movl $1,%%eax\n\t"
+                      "syscall\n"
+                      "9:"
+                      : "=a" (ret), "=d" (flag)
+                      : "a" (66 /* SYS_vfork */), "b" (result)
+                      : "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory", "cc" );
+    pthread_sigmask( SIG_SETMASK, &old, NULL );
+    if (flag < 0)
+    {
+        fprintf( stderr, "wineps4: GPU: vfork refused (errno %ld): the desktop keeps the app's GPU address space, "
+                 "programs' Vulkan may not start\n", ret );
+        return;
+    }
+    fprintf( stderr, "wineps4: GPU: the app's GPU address space freed for the programs (a child of the app %s its "
+             "budget: %s %ld, its budget then %s%ld; then it ended on the desktop's address space)\n",
+             result[1] ? "may not leave" : "left", result[1] ? "errno" : "result", result[0],
+             result[3] ? "unknown, errno " : "", result[2] );
+}
 
 /* Starts path (the app) as a new process: vfork, which the PS4 may not have (then fork). envp,
  * argv and their strings must be malloc'd (see struct spawn_request). */

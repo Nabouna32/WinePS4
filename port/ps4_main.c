@@ -43,6 +43,7 @@
 #include "../shell/shell.h"
 #include "include/ps4_display.h"
 #include "include/ps4_line.h"
+#include "include/ps4_prio.h"
 
 #define DESKTOP_LOCK_FILE "/data/WinePS4/.desktop-lock"  /* locked by the desktop while it runs */
 #define DESKTOP_PID_FILE  "/data/WinePS4/.desktop-pid"   /* the desktop's pid, written as it starts */
@@ -193,6 +194,7 @@ extern void ps4_memory_guard_start( void );
 extern void ps4_touch_stack( size_t size );
 extern void ps4_kstate_probe( void );
 extern int ps4_child_name( int pid, char *name, size_t size );
+extern int ps4_is_web_helper( const char *image );
 extern void ps4_calls_report( struct ps4_line *l );
 
 /* ntdll starts every thread on a 1 MiB stack of its own (kernel_stack_size, pthread_attr_setstack):
@@ -1197,6 +1199,7 @@ static void *kstate_thread( void *arg )
 
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
+    ps4_kit_set_thread_priority( PS4_PRIO_REPORT );  /* (before ps4_kstate_probe: it reads its own record) */
     ps4_thread_name( "kernel report" );
     ps4_touch_stack( 64 << 10 );
     ps4_kstate_prepare();  /* (its pages touched now: the freeze may be the memory's) */
@@ -1216,6 +1219,7 @@ static void *freeze_watch( void *arg )
 
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
+    ps4_kit_set_thread_priority( PS4_PRIO_REPORT );
     ps4_thread_name( "freeze watch" );
     ps4_touch_stack( 64 << 10 );  /* (its report's pages: v00.66's was never written) */
     if (!pipe( kstate_wake ) && !pthread_create( &thread, NULL, kstate_thread, NULL )) pthread_detach( thread );
@@ -1351,6 +1355,7 @@ static int read_program( const char *path, int remove_it, char **args, int max )
 
 extern void ps4_files_watch( void );
 extern void ps4_budget_log( const char *why );
+extern void ps4_release_gpu_space( void );
 
 /* the console's open files, every 5 s (port/ps4_wine_dirs.c; Settings > Diagnostics > Open files) */
 static void *files_thread( void *arg )
@@ -1401,10 +1406,10 @@ static void *setup_thread( void *arg )
                    (unsigned long long)files.rlim_max );
     }
     /* the PS4's budget for the app (its open files are the ones that ran out; Settings > Diagnostics >
-     * Budget log). No more test of whether a process of the app may leave it (v00.50 to v00.69): its
-     * child ended on the desktop's address space, and the PS4 freed the app's GPU address space with
-     * it (port/ps4_wine_port.c) */
+     * Budget log); then the app's GPU address space, which the PS4 gave the desktop, freed for the
+     * programs' Vulkan before any starts (port/ps4_wine_port.c; v00.70 without it: no GPU for games) */
     if (!files_log || strcmp( files_log, "0" )) ps4_budget_log( "the app's, at start" );
+    ps4_release_gpu_space();
     wine_ready = 1;
     if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
     if ((!files_log || strcmp( files_log, "0" )) && !pthread_create( &files, NULL, files_thread, NULL ))
@@ -1452,6 +1457,19 @@ static void chromium_memory_margin( const char *image )
         }
 }
 
+/* A program's threads below the desktop's, a launcher's web helper below the games (include/
+ * ps4_prio.h); set as the process starts, before Wine starts threads (a process the desktop forked would
+ * have kept the priority of the desktop's thread that started it) */
+static void program_priority( const char *image )
+{
+    const int priority = ps4_is_web_helper( image ) ? PS4_PRIO_WEB : PS4_PRIO_PROGRAM;
+
+    ps4_kit_set_new_thread_priority( priority );
+    ps4_kit_set_thread_priority( priority );
+    if (priority == PS4_PRIO_WEB)
+        logf_( "wineps4: process %d: a launcher's web helper: below the games (priority %d)\n", (int)getpid(), priority );
+}
+
 static int program_main( int argc, char **argv )
 {
     ps4_program_process = 1;
@@ -1471,6 +1489,7 @@ static int program_main( int argc, char **argv )
     ps4_start_hang_watch();
     gpu_environment();
     chromium_memory_margin( argv[1] );
+    program_priority( argv[1] );
     __wine_main( argc, argv );
     ps4_process_exit_now( 0 );  /* (returning from main would be ps4-kit's exit: the whole app) */
 }
@@ -1479,7 +1498,7 @@ int main( int argc, char **argv )
 {
     pthread_t thread;
     pthread_attr_t attr;
-    int kind;
+    int kind, started_priority;
 
     ps4_kit_set_min_thread_stack( WINE_KERNEL_STACK_SIZE );
     if ((kind = ps4_local_child( argc, argv )))  /* the PS4 (or the desktop) started it: what to run comes from the desktop */
@@ -1493,6 +1512,11 @@ int main( int argc, char **argv )
     }
     if (getenv( "WINESERVERSOCKET" ) || getenv( "WINEPS4_PROGRAM" )) return program_main( argc, argv );
 
+    /* the desktop: its threads above every program's (include/ps4_prio.h), before it starts any */
+    started_priority = ps4_kit_thread_priority();
+    ps4_kit_set_new_thread_priority( PS4_PRIO_DESKTOP );
+    ps4_kit_set_thread_priority( PS4_PRIO_DESKTOP );
+
     /* the desktop: holds its lock (taken in static init unless the data folder wasn't there yet) */
     if (desktop_lock < 0)
     {
@@ -1505,6 +1529,9 @@ int main( int argc, char **argv )
     ps4_kstate_log = kstate_log;
     ps4_dirs_reset();  /* (the processes' shared folder paths: none from the last session) */
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );
+    logf_( "wineps4: threads' priorities (256 highest, 767 lowest; the desktop started at %d): the freeze report %d, "
+           "audio %d, wineserver %d, the desktop %d, programs %d, launchers' web helpers %d\n", started_priority,
+           PS4_PRIO_REPORT, PS4_PRIO_AUDIO, PS4_PRIO_SERVER, PS4_PRIO_DESKTOP, PS4_PRIO_PROGRAM, PS4_PRIO_WEB );
     if (desktop_lock < 0)
         logf_( "wineps4: %s could not be locked: programs will take the system's memory\n", DESKTOP_LOCK_FILE );
     setenv( "HOME", DATA_DIR, 1 );
