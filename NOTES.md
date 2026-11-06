@@ -741,3 +741,48 @@ v00.69:
   most of its 223 MiB of flexible mappings); the memory guard's warnings; any view not mapped. If the
   PS4 comes down as the app is suspended with sections mapped in several processes, the switch turns
   it off.
+
+## v00.69's run: the freeze as a game closes; the app's GPU address space freed at start (v00.70, 2026-11-06)
+
+v00.69 RAN (logs/v00.69 with klog.txt and the user's clip iron-snout-clip.mp4, 4.5 min of Steam and
+Iron Snout saved before the game was closed): Iron Snout played (windowed over Steam's store page);
+closing it froze the app. The section test failed in every local process: "the desktop's direct
+memory does not map here (0x8002000d, aliasing 0)", so sections stayed shared memory (v00.68's
+behaviour).
+
+- The freeze: process 818 (Iron Snout) ended at 352.12 with no exit code (its control socket closed
+  first; the desktop's sceSystemServiceKillLocalProcess caught it in its exit). About 1.3 s later the
+  desktop's loop stood in "presenting the pointer" (present(): the copy into the screen's
+  write-combined direct memory, the flip's status and submit) and wineserver in create_event from
+  steam.exe (only memory there: no ntsync device, no file); both, and a third thread, never answered
+  the dump's signal = waiting in the kernel. The freeze watch then never wrote its last line, which
+  starts with ps4_vm_direct_free(), a bare sceKernelAvailableDirectMemorySize: it stood in a direct
+  memory query too (v00.64's "memory line never written" was the same). The kernel's log shows the
+  app's exit dmem bookkeeping ("dmem_handle_vmspace_exited ... app_maps_count 5 -> 4") and nothing
+  else; the app closed normally from the PS4 menu afterwards.
+- The cause found in the kernel's log: 0.5 s into EVERY session since v00.50, the budget probe's vfork
+  child (budget_set 571, then exit, no exec) ended on the desktop's shared address space: "[KERNEL]
+  dmem_handle_vmspace_exited pid: 808, ptype=2, <the desktop's own map>->pt_loaded is TRUE", then
+  "gbase_free_vm_space_2 has mapped memory vmid:1" - the line a game's last process prints as the game
+  closes. The app's GPU address space (vmid 1, which the desktop's screen buffers and every program's
+  RADV memory live in) was freed while the app ran on in it; its own end then found "gbase_free_vm_
+  space_2 no vm space. vmid:1 / gbase_gvmsw_close free_vm_space error / release_vmid error:22" (every
+  WinePS4 session's end in the klogs, never another title's). The freezes as a program's process ended
+  (v00.68's 776, v00.69's Iron Snout; also v00.63-65 after x86launcher) are most likely that freed
+  space being torn down again. The outside processes' vfork children exec at once and leave no such
+  line.
+- v00.70: no budget probe (port/ps4_wine_port.c says why: a vfork child must exec, never end on its
+  own); the Budget log line stays. To check in v00.70's klog: no "gbase_free_vm_space_2" as the app
+  starts, "has mapped memory" (not "no vm space") as it closes, and no freeze as a game ends.
+- v00.69's sections stay off unless asked (WINEPS4_SECTIONS_DIRECT=1; Settings > Diagnostics > Direct
+  shared memory now says the PS4 refused it): no test page, no aliasing turned on in every process.
+- The freeze report, in case anything still stands: the kernel's view from kern.proc.all (a record a
+  thread of the system, 2.25 MiB of flexible memory the desktop maps), its layout found in the kernel
+  report thread's own record as the desktop starts ("kernel: kern.proc.all N records of 1096 bytes;
+  this thread's: pid at, thread id at, name at ... (FreeBSD 9: 72, 600, 394), state 2 (running: the
+  layout holds)"), every thread of the desktop and of each program it started with its name, state,
+  wait message or kernel lock; the memory probe: five threads that, at a freeze, touch an old page of
+  the desktop's heap, the screen, the direct memory query, a new page of flexible and of direct memory,
+  and the report tells which answered within 2 s and which stood; thread names in both signal dumps
+  ("-- thread 109913 'desktop': no answer"); the freeze watch's last line without the direct memory
+  query; a process's end names its program ("process 818 (IronSnout.exe) ended (no exit code)").

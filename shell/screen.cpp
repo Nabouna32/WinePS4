@@ -93,6 +93,10 @@ uint32_t *screen_back_buffer() {
 
 int screen_back_index() { return current; }
 
+// the freeze report's memory probe (port/ps4_kstate.c): a pixel of the screen, read to see whether the
+// desktop's direct memory answers; nullptr without a screen
+extern "C" volatile uint32_t *ps4_screen_probe_pixel() { return buffers[0]; }
+
 void screen_flip() {
     __builtin_ia32_sfence();  // the write-combined stores out before the flip
     const int flip = sceVideoOutSubmitFlip(video, FIRST_SLOT + current, ORBIS_VIDEO_OUT_FLIP_VSYNC, FLIP_ARG_BASE + ++flips);

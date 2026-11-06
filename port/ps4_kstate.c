@@ -1,22 +1,24 @@
 /* WinePS4: where the kernel has the app's threads, read without a signal: the freeze report's other
  * half. v00.64's thread dump had two of the desktop's threads that never answered its signal, then
  * stood itself on the next one: they waited in the kernel, where a signal waits until they return.
- * __sysctl kern.proc.pid with threads tells each thread's state and what it waits on: its sleep's
- * message (umtxn a mutex, select, accept, ufs a file's lock, pfault memory, biord the disk, ...) or the
- * kernel lock it is blocked on, and for how long. Read as FreeBSD 9's kinfo_proc for amd64 (1088
- * bytes); another size is only told.
+ * The kernel's record of a thread tells its state and what it waits on: its sleep's message (umtxn a
+ * mutex, select, accept, ufs a file's lock, pfault memory, biord the disk, ...) or the kernel lock it
+ * is blocked on, and for how long. The PS4 answers kern.proc.pid with threads with ENOENT (v00.65)
+ * and its records are 1096 bytes, not FreeBSD 9's 1088 (v00.67's look at the forms), so the report
+ * reads every thread of the system from kern.proc.all, with the offsets found in this thread's own
+ * record as the desktop starts (calibrate).
  *
  * The desktop asks at a freeze (port/ps4_main.c, on a thread of its own: the report's signals and
  * this don't wait for each other). Asking wires the asker's buffer, which takes its address space's
- * lock, so a desktop whose address space is what stands can't ask. The program processes watch it
- * too, each second from their stats thread (port/ps4_spawn_desk.c): the desktop's loop counts in a
- * page of shared memory (/data/WinePS4/.heartbeat) with the app's processes and their names, and the
- * first program to see it still for 10 s, when the desktop hasn't told it already, asks for every
- * process of the app. All of it without printf, malloc or a lock a stuck thread may hold. */
+ * lock, so a desktop whose address space is what stands can't ask. Threads of their own touch memory
+ * of each kind the desktop has at the same time (the memory probe): v00.69's freeze watch stood in a
+ * query of the app's direct memory, as the desktop's loop and wineserver had in their work. All of it
+ * without printf, malloc or a lock a stuck thread may hold. */
 
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,21 +29,15 @@
 
 #include "include/ps4_line.h"
 
-/* FreeBSD 9's struct kinfo_proc for amd64 (sys/user.h): what is read of it */
-#define KINFO_SIZE     1088
-#define KI_WCHAN       64
-#define KI_PID         72
-#define KI_SLPTIME     316   /* seconds since it went to sleep */
-#define KI_RUNTIME     328   /* microseconds it ran */
-#define KI_KIFLAG      376
-#define KI_STAT        388
-#define KI_ONCPU       392
-#define KI_TDNAME      394   /* 17 bytes */
-#define KI_WMESG       411   /* 9 */
-#define KI_LOCKNAME    438   /* 9 */
-#define KI_TID         600
+/* FreeBSD 9's struct kinfo_proc for amd64 (sys/user.h): where what is read of it is, in a record of
+ * kern.proc. This kernel's own replace them as the desktop starts (calibrate): the PS4's records are
+ * 8 bytes longer. */
+static struct
+{
+    int size, wchan, pid, slptime, runtime, kiflag, stat, oncpu, tdname, wmesg, lockname, tid;
+} kl = { 1088, 64, 72, 316, 328, 376, 388, 392, 394, 411, 438, 600 };
 #define KI_LOCKBLOCK   0x4   /* (ki_kiflag) blocked on a kernel lock: ki_lockname says which */
-#define MAX_KTHREADS   256
+#define KINFO_BUFFER   (2304u << 10)  /* kern.proc.all: a record a thread of the system, ~2100 of them */
 
 #define HEARTBEAT_FILE  "/data/WinePS4/.heartbeat"
 #define HEARTBEAT_MAGIC 0x57504842  /* "WPHB" */
@@ -61,13 +57,21 @@ struct heartbeat
     char names[MAX_PIDS][32];     /* their programs' file names */
 };
 
-static unsigned char kinfo[MAX_KTHREADS * KINFO_SIZE] __attribute__((aligned(16)));
+/* kern.proc's records: KINFO_BUFFER of flexible memory the desktop maps (ps4_kstate_prepare), not
+ * of its heap's direct memory, which is what may stand at a freeze */
+static unsigned char *kinfo;
+static size_t kinfo_size;
 static struct heartbeat *heartbeat;
 static int is_desktop;
 
 int sceKernelAvailableFlexibleMemorySize( size_t *size );
+int32_t sceKernelMapFlexibleMemory( void **addr, size_t len, int prot, int flags );
 int pthread_getthreadid_np( void );
 static uint64_t flexible_free( void );
+static void memory_probe_start( void );
+static void memory_probe_wake( void );
+static void memory_probe_report( void );
+extern void ps4_thread_table_name( const char *name );  /* (port/ps4_wine_port.c) */
 
 /* where a summary line goes: the desktop's wine.log, written straight (port/ps4_main.c); a program's
  * standard error (the desktop's log pipe) when NULL */
@@ -137,14 +141,14 @@ static void probe_kern_proc( int pid )
     struct ps4_line l;
     unsigned int i;
 
-    if (done) return;
+    if (done || !kinfo) return;
     done = 1;
     l.len = 0;
     ps4_line_str( &l, "wineps4: kernel: kern.proc's forms here:" );
     for (i = 0; i < sizeof(forms) / sizeof(forms[0]); i++)
     {
         int mib[4] = { 1, 14, forms[i].number, pid }, size = 0;
-        size_t len = sizeof(kinfo);
+        size_t len = kinfo_size;
         const long err = kstate_sysctl( mib, forms[i].mib_len, kinfo, &len );
 
         memcpy( &size, kinfo, sizeof(size) );
@@ -165,56 +169,170 @@ static void probe_kern_proc( int pid )
     log_line( &l );
 }
 
-/* Each thread of process pid: a line into fd (hang.log), and how many wait for what into wine.log. */
-static void report_process( long fd, int pid, const char *name )
+/* The app's program processes the desktop started, with their programs' file names: the freeze
+ * report's list, and the desktop's line as one ends (written under port/ps4_main.c's children lock,
+ * read without it). */
+static struct { int32_t pid; char name[32]; } kids[MAX_PIDS];
+
+static void kids_update( int pid, const char *image )
 {
-    int mib[4] = { 1 /* CTL_KERN */, 14 /* KERN_PROC */, 1 | 0x10 /* KERN_PROC_PID | KERN_PROC_INC_THREAD */, pid };
+    const char *base = image, *p;
+    int i;
+
+    for (i = 0; i < MAX_PIDS; i++)
+    {
+        if (image && !kids[i].pid)
+        {
+            for (p = image; *p; p++)
+                if (*p == '\\' || *p == '/') base = p + 1;
+            memset( kids[i].name, 0, sizeof(kids[i].name) );
+            strncpy( kids[i].name, base, sizeof(kids[i].name) - 1 );
+            __atomic_store_n( &kids[i].pid, pid, __ATOMIC_RELEASE );
+            return;
+        }
+        if (!image && kids[i].pid == pid)
+        {
+            __atomic_store_n( &kids[i].pid, 0, __ATOMIC_RELEASE );
+            return;
+        }
+    }
+}
+
+/* the file name of the program process pid runs: 0 if it isn't one the desktop started */
+int ps4_child_name( int pid, char *name, size_t size )
+{
+    int i;
+
+    for (i = 0; i < MAX_PIDS; i++)
+        if (__atomic_load_n( &kids[i].pid, __ATOMIC_ACQUIRE ) == pid)
+        {
+            snprintf( name, size, "%s", kids[i].name );
+            return 1;
+        }
+    return 0;
+}
+
+static int record_int( const unsigned char *e, int offset )
+{
+    int value;
+
+    memcpy( &value, e + offset, sizeof(value) );
+    return value;
+}
+
+/* This kernel's layout of kern.proc's record, from the calling thread's own record in kern.proc.all
+ * (a record a thread of every process): its size, and where the pid, the thread id and the thread's
+ * name are; the fields next to the name (the state, the wait's message, the lock's name) are taken to
+ * move with it, the state checked against this thread's own (running). Told in wine.log. */
+static void calibrate( const char *own_name )
+{
+    int mib[3] = { 1 /* CTL_KERN */, 14 /* KERN_PROC */, 0 /* KERN_PROC_ALL */ };
+    const int pid = getpid(), tid = pthread_getthreadid_np(), name_len = (int)strlen( own_name );
+    size_t len = kinfo_size;
+    struct ps4_line l;
+    long err;
+    int size = 0, n, i;
+
+    if (!kinfo) return;
+    err = kstate_sysctl( mib, 3, kinfo, &len );
+    l.len = 0;
+    ps4_line_str( &l, "wineps4: kernel: kern.proc.all " );
+    if (err && err != -ENOMEM)
+    {
+        ps4_line_str( &l, "error " );
+        ps4_line_num( &l, -err );
+        ps4_line_str( &l, ": no kernel's view in a freeze report" );
+        log_line( &l );
+        return;
+    }
+    if (len >= sizeof(size)) memcpy( &size, kinfo, sizeof(size) );
+    ps4_line_num( &l, (long long)(size > 0 ? len / (size_t)size : 0) );
+    ps4_line_str( &l, " records of " );
+    ps4_line_num( &l, size );
+    ps4_line_str( &l, " bytes" );
+    if (size < 1024 || size > 4096)
+    {
+        ps4_line_str( &l, ": not a kinfo_proc, no kernel's view in a freeze report" );
+        kl.size = 0;
+        log_line( &l );
+        return;
+    }
+    kl.size = size;
+    n = (int)(len / (size_t)size);
+    for (i = 0; i < n; i++)
+    {
+        const unsigned char *e = kinfo + (size_t)i * size;
+        int name_at = -1, tid_at = -1, pid_at = -1, off, shift;
+
+        if (394 + name_len < size && !memcmp( e + 394, own_name, name_len + 1 )) name_at = 394;
+        for (off = 300; name_at < 0 && off + name_len < size && off < 800; off++)
+            if (!memcmp( e + off, own_name, name_len + 1 )) name_at = off;
+        if (name_at < 0) continue;
+        shift = name_at - 394;
+        if (record_int( e, 72 ) == pid) pid_at = 72;
+        for (off = 40; pid_at < 0 && off < 160; off += 4)
+            if (record_int( e, off ) == pid) pid_at = off;
+        for (off = 520; off + 4 <= size; off += 4)
+            if (record_int( e, off ) == tid && (tid_at < 0 || abs( off - 600 - shift ) < abs( tid_at - 600 - shift )))
+                tid_at = off;
+        if (pid_at < 0 || tid_at < 0) continue;
+        kl.pid = pid_at;
+        kl.wchan = pid_at - 8;
+        kl.tid = tid_at;
+        kl.tdname = name_at;
+        kl.wmesg = 411 + shift;
+        kl.lockname = 438 + shift;
+        kl.stat = 388 + shift;
+        kl.oncpu = 392 + shift;
+        kl.kiflag = 376 + shift;
+        kl.slptime = 316 + shift;
+        kl.runtime = 328 + shift;
+        ps4_line_str( &l, "; this thread's: pid at " );
+        ps4_line_num( &l, pid_at );
+        ps4_line_str( &l, ", thread id at " );
+        ps4_line_num( &l, tid_at );
+        ps4_line_str( &l, ", name at " );
+        ps4_line_num( &l, name_at );
+        ps4_line_str( &l, " (FreeBSD 9: 72, 600, 394), state " );
+        ps4_line_num( &l, e[kl.stat] );
+        ps4_line_str( &l, e[kl.stat] == 2 ? " (running: the layout holds)" : " (not running: states may be misread)" );
+        log_line( &l );
+        return;
+    }
+    ps4_line_str( &l, "; this thread's own not found: FreeBSD 9's offsets" );
+    log_line( &l );
+}
+
+/* Each thread of process pid among the n records read: a line into fd (hang.log), and how many wait
+ * for what into wine.log. */
+static void report_process( long fd, int n, int pid, const char *name )
+{
     struct { char key[16]; int count; } kinds[12];
     struct ps4_line l, sum;
-    size_t len = sizeof(kinfo);
-    long err = kstate_sysctl( mib, 4, kinfo, &len );
-    int n, i, j, nkinds = 0, size;
+    int i, j, nkinds = 0, threads = 0;
 
     sum.len = 0;
     ps4_line_str( &sum, "wineps4: kernel: " );
     ps4_line_str( &sum, name );
     ps4_line_str( &sum, " (pid " );
     ps4_line_num( &sum, pid );
-    if (err && err != -ENOMEM)
-    {
-        ps4_line_str( &sum, "): the kernel told nothing (error " );
-        ps4_line_num( &sum, -err );
-        ps4_line_str( &sum, ")" );
-        log_line( &sum );
-        probe_kern_proc( pid );
-        return;
-    }
-    memcpy( &size, kinfo, sizeof(size) );
-    if (len < sizeof(int) || size != KINFO_SIZE)
-    {
-        ps4_line_str( &sum, "): its kinfo_proc has " );
-        ps4_line_num( &sum, len < sizeof(int) ? 0 : size );
-        ps4_line_str( &sum, " bytes, not FreeBSD 9's 1088: not read" );
-        log_line( &sum );
-        return;
-    }
-    n = (int)(len / KINFO_SIZE);
     for (i = 0; i < n; i++)
     {
-        const unsigned char *e = kinfo + (size_t)i * KINFO_SIZE;
-        const int stat = e[KI_STAT];
-        int tid, slept, p;
+        const unsigned char *e = kinfo + (size_t)i * kl.size;
+        const int stat = e[kl.stat];
+        int tid, slept;
         long kiflag;
         uint64_t wchan, runtime;
         char key[16];
         struct ps4_line k;
 
-        memcpy( &tid, e + KI_TID, sizeof(tid) );
-        memcpy( &slept, e + KI_SLPTIME, sizeof(slept) );
-        memcpy( &kiflag, e + KI_KIFLAG, sizeof(kiflag) );
-        memcpy( &wchan, e + KI_WCHAN, sizeof(wchan) );
-        memcpy( &runtime, e + KI_RUNTIME, sizeof(runtime) );
-        memcpy( &p, e + KI_PID, sizeof(p) );
+        if (record_int( e, kl.pid ) != pid) continue;
+        threads++;
+        tid = record_int( e, kl.tid );
+        slept = record_int( e, kl.slptime );
+        memcpy( &kiflag, e + kl.kiflag, sizeof(kiflag) );
+        memcpy( &wchan, e + kl.wchan, sizeof(wchan) );
+        memcpy( &runtime, e + kl.runtime, sizeof(runtime) );
 
         l.len = 0;
         ps4_line_str( &l, "-- " );
@@ -223,37 +341,37 @@ static void report_process( long fd, int pid, const char *name )
         ps4_line_str( &l, name );
         ps4_line_str( &l, ", thread " );
         ps4_line_num( &l, tid );
-        if (e[KI_TDNAME])
+        if (e[kl.tdname])
         {
             ps4_line_str( &l, " '" );
-            put_name( &l, e + KI_TDNAME, 16 );
+            put_name( &l, e + kl.tdname, 16 );
             ps4_line_str( &l, "'" );
         }
         k.len = 0;
         if (stat == 7 /* SLOCK */ || (kiflag & KI_LOCKBLOCK))
         {
             ps4_line_str( &l, ": blocked on the kernel lock '" );
-            put_name( &l, e + KI_LOCKNAME, 8 );
+            put_name( &l, e + kl.lockname, 8 );
             ps4_line_str( &l, "'" );
             ps4_line_str( &k, "lock " );
-            put_name( &k, e + KI_LOCKNAME, 8 );
+            put_name( &k, e + kl.lockname, 8 );
         }
         else if (stat == 3 /* SSLEEP */)
         {
             ps4_line_str( &l, ": asleep in " );
-            put_name( &l, e + KI_WMESG, 8 );
+            put_name( &l, e + kl.wmesg, 8 );
             ps4_line_str( &l, " for " );
             ps4_line_num( &l, slept );
             ps4_line_str( &l, " s" );
-            put_name( &k, e + KI_WMESG, 8 );
+            put_name( &k, e + kl.wmesg, 8 );
         }
         else if (stat == 2 /* SRUN */)
         {
             ps4_line_str( &l, ": running" );
-            if (e[KI_ONCPU] != 0xff)
+            if (e[kl.oncpu] != 0xff)
             {
                 ps4_line_str( &l, " on core " );
-                ps4_line_num( &l, e[KI_ONCPU] );
+                ps4_line_num( &l, e[kl.oncpu] );
             }
             ps4_line_str( &k, "running" );
         }
@@ -271,9 +389,7 @@ static void report_process( long fd, int pid, const char *name )
         }
         ps4_line_str( &l, ", ran " );
         ps4_line_seconds( &l, runtime / 1e6, 1 );
-        ps4_line_str( &l, " s" );
-        if (p != pid) ps4_line_str( &l, " (another process's record?)" );
-        ps4_line_str( &l, "\n" );
+        ps4_line_str( &l, " s\n" );
         put_text( fd, &l );
 
         k.text[k.len] = 0;
@@ -288,9 +404,17 @@ static void report_process( long fd, int pid, const char *name )
         }
         if (j < nkinds) kinds[j].count++;
     }
+    if (!threads)
+    {
+        ps4_line_str( &sum, "): none of its threads among the kernel's " );
+        ps4_line_num( &sum, n );
+        ps4_line_str( &sum, " records" );
+        log_line( &sum );
+        return;
+    }
     ps4_line_str( &sum, ", " );
-    ps4_line_num( &sum, n );
-    ps4_line_str( &sum, n >= MAX_KTHREADS ? "+ threads):" : " threads):" );
+    ps4_line_num( &sum, threads );
+    ps4_line_str( &sum, " threads):" );
     /* the most first */
     for (i = 0; i < nkinds; i++)
     {
@@ -311,28 +435,48 @@ static void report_process( long fd, int pid, const char *name )
     log_line( &sum );
 }
 
-/* every process of the app: the desktop, then each program the desktop started */
+/* every process of the app: the desktop, then each program the desktop started, from one list of
+ * every thread of the system */
 static void report_all( const char *reason )
 {
     long fd = kstate_syscall3( 5 /* SYS_open */, (long)"/data/WinePS4/hang.log", 0x0001 | 0x0008 | 0x0200, 0666 );
+    int mib[3] = { 1 /* CTL_KERN */, 14 /* KERN_PROC */, 0 /* KERN_PROC_ALL */ };
+    size_t len = kinfo_size;
     struct ps4_line l;
-    int i, desktop = heartbeat ? heartbeat->desktop_pid : (int)getpid();
+    long err = 0;
+    int i, n = 0, desktop = heartbeat ? heartbeat->desktop_pid : (int)getpid();
 
     l.len = 0;
     ps4_line_str( &l, "==== " );
     ps4_line_str( &l, reason );
     ps4_line_str( &l, ": the kernel's view of the app's threads (port/ps4_kstate.c)\n" );
     put_text( fd, &l );
-    report_process( fd, desktop, "the desktop" );
-    for (i = 0; heartbeat && i < MAX_PIDS; i++)
+    if (kinfo && kl.size)
     {
-        const int pid = __atomic_load_n( &heartbeat->pids[i], __ATOMIC_ACQUIRE );
-        char name[32];
+        err = kstate_sysctl( mib, 3, kinfo, &len );
+        if (!err || err == -ENOMEM) n = (int)(len / (size_t)kl.size);
+    }
+    if (!n)
+    {
+        l.len = 0;
+        ps4_line_str( &l, "wineps4: kernel: kern.proc.all told nothing (error " );
+        ps4_line_num( &l, -err );
+        ps4_line_str( &l, !kinfo ? ", no buffer for it)" : kl.size ? ")" : ", its records unread)" );
+        log_line( &l );
+    }
+    else
+    {
+        report_process( fd, n, desktop, "the desktop" );
+        for (i = 0; i < MAX_PIDS; i++)
+        {
+            const int pid = __atomic_load_n( &kids[i].pid, __ATOMIC_ACQUIRE );
+            char name[32];
 
-        if (pid <= 0 || pid == desktop) continue;
-        memcpy( name, heartbeat->names[i], sizeof(name) );
-        name[sizeof(name) - 1] = 0;
-        report_process( fd, pid, name[0] ? name : "a program" );
+            if (pid <= 0 || pid == desktop) continue;
+            memcpy( name, kids[i].name, sizeof(name) );
+            name[sizeof(name) - 1] = 0;
+            report_process( fd, n, pid, name[0] ? name : "a program" );
+        }
     }
     if (fd >= 0) kstate_syscall3( 6 /* SYS_close */, fd, 0, 0 );
 }
@@ -374,7 +518,9 @@ void ps4_heartbeat_child( int pid, const char *image )
     const char *base = image;
     int i;
 
-    if (!heartbeat || pid <= 0) return;
+    if (pid <= 0) return;
+    kids_update( pid, image );
+    if (!heartbeat) return;
     for (i = 0; i < MAX_PIDS; i++)
     {
         if (image && !heartbeat->pids[i])
@@ -395,10 +541,17 @@ void ps4_heartbeat_child( int pid, const char *image )
     }
 }
 
-/* its pages touched now: the freeze may be the memory's */
+/* the desktop's buffer for kern.proc, its pages touched now: the freeze may be the memory's */
 void ps4_kstate_prepare( void )
 {
-    memset( kinfo, 0, sizeof(kinfo) );
+    void *buffer = NULL;
+
+    if (!kinfo && !sceKernelMapFlexibleMemory( &buffer, KINFO_BUFFER, PROT_READ | PROT_WRITE, 0 ))
+    {
+        kinfo = buffer;
+        kinfo_size = KINFO_BUFFER;
+    }
+    if (kinfo) memset( kinfo, 0, kinfo_size );
 }
 
 /* the desktop's freeze report (its own thread) */
@@ -411,7 +564,9 @@ void ps4_kstate_report( const char *reason )
     ps4_line_num( &l, (long long)(flexible_free() >> 20) );
     ps4_line_str( &l, " MiB free (v00.63 to v00.65 froze as it ran out)" );
     log_line( &l );
+    memory_probe_wake();  /* (its threads touch memory while the kernel is asked) */
     report_all( reason );
+    memory_probe_report();
     if (heartbeat) __atomic_store_n( &heartbeat->told, __atomic_load_n( &heartbeat->beats, __ATOMIC_RELAXED ) | 1,
                                      __ATOMIC_RELEASE );
 }
@@ -481,6 +636,7 @@ void ps4_heartbeat_check( void )
 void ps4_thread_name( const char *name )
 {
     pthread_set_name_np( pthread_self(), name );
+    ps4_thread_table_name( name );  /* (the signals' dump's names) */
 }
 
 /* --- What a process takes of the app's flexible memory ---------------------------------------------- */
@@ -597,11 +753,14 @@ void ps4_touch_stack( size_t size )
     for (i = 0; i < size; i += 4096) p[i] = 0;
 }
 
-/* which forms of kern.proc this kernel answers, told at the start (the report's own, at a freeze, may
- * never run) */
+/* As the desktop starts, on the kernel report's thread: which forms of kern.proc this kernel answers,
+ * its record's layout (port/ps4_main.c names this thread "kernel report"), and the memory probe's
+ * threads */
 void ps4_kstate_probe( void )
 {
     probe_kern_proc( getpid() );
+    calibrate( "kernel report" );
+    memory_probe_start();
 }
 
 static uint64_t now_us( void )
@@ -680,4 +839,196 @@ void ps4_calls_report( struct ps4_line *l )
         ps4_line_str( l, " s" );
     }
     if (!n) ps4_line_str( l, " none" );
+}
+
+/* --- The memory probe ------------------------------------------------------------------------------ */
+
+/* At a freeze, a thread for each kind of memory the desktop has touches it, and the report tells which
+ * answered and which stood: v00.64 to v00.69's stuck threads were the desktop's loop copying a frame
+ * into the screen, wineserver in its heap and, in v00.69, the freeze watch in a query of the app's
+ * direct memory, while the threads that waited in system calls answered. A probe still standing at
+ * the next freeze is told so, not asked again. */
+#define PROBE_STEPS 5
+#define PROBE_PAGE  16384
+
+int32_t sceKernelMunmap( void *addr, size_t len );
+int32_t sceKernelAllocateDirectMemory( off_t start, off_t end, size_t len, size_t align, int type, off_t *phys );
+int32_t sceKernelMapDirectMemory( void **addr, size_t len, int prot, int flags, off_t phys, size_t align );
+int32_t sceKernelReleaseDirectMemory( off_t start, size_t len );
+int32_t sceKernelAvailableDirectMemorySize( off_t start, off_t end, size_t align, off_t *phys, size_t *size );
+size_t sceKernelGetDirectMemorySize( void );
+volatile uint32_t *ps4_screen_probe_pixel( void );  /* (shell/screen.cpp) */
+
+static const char *const probe_names[PROBE_STEPS] =
+{
+    "an old page of the heap", "the screen", "the direct memory query", "a new page of flexible memory",
+    "a new page of direct memory",
+};
+static struct
+{
+    int wake[2];
+    volatile int state;  /* 0 idle, 1 asked, 2 answered */
+    unsigned int ms;
+    int error;           /* what the kernel refused it with, 0 none */
+    int stale;           /* still asked from an earlier freeze */
+} probes[PROBE_STEPS];
+static volatile unsigned char *probe_heap;  /* 64 KiB of the desktop's heap, written as it starts */
+static uint64_t probe_asked;
+
+static int probe_run( int step )
+{
+    void *p = NULL;
+    off_t phys = 0;
+    size_t largest = 0;
+    int ret = 0;
+
+    switch (step)
+    {
+    case 0:  /* a page of the desktop's heap (direct memory), written as the desktop started */
+        if (probe_heap) probe_heap[PROBE_PAGE] = (unsigned char)(probe_heap[PROBE_PAGE] + 1);
+        break;
+    case 1:  /* the screen: the buffers the display reads (write-combined direct memory) */
+    {
+        volatile uint32_t *pixel = ps4_screen_probe_pixel();
+        if (pixel) (void)*pixel;
+        break;
+    }
+    case 2:  /* how much of the app's direct memory is free */
+        ret = sceKernelAvailableDirectMemorySize( 0, (off_t)sceKernelGetDirectMemorySize(), PROBE_PAGE, &phys, &largest );
+        break;
+    case 3:  /* a new page of flexible memory */
+        if (!(ret = sceKernelMapFlexibleMemory( &p, PROBE_PAGE, PROT_READ | PROT_WRITE, 0 )))
+        {
+            *(volatile char *)p = 1;
+            sceKernelMunmap( p, PROBE_PAGE );
+        }
+        break;
+    case 4:  /* a new page of direct memory */
+        if (!(ret = sceKernelAllocateDirectMemory( 0, (off_t)sceKernelGetDirectMemorySize(), PROBE_PAGE, PROBE_PAGE, 0,
+                                                   &phys )))
+        {
+            if (!(ret = sceKernelMapDirectMemory( &p, PROBE_PAGE, PROT_READ | PROT_WRITE, 0, phys, PROBE_PAGE )))
+            {
+                *(volatile char *)p = 1;
+                sceKernelMunmap( p, PROBE_PAGE );
+            }
+            sceKernelReleaseDirectMemory( phys, PROBE_PAGE );
+        }
+        break;
+    }
+    return ret;
+}
+
+static void *probe_thread( void *arg )
+{
+    const int step = (int)(long)arg;
+    sigset_t set;
+    char c;
+
+    sigfillset( &set );
+    pthread_sigmask( SIG_BLOCK, &set, NULL );
+    ps4_thread_name( "memory probe" );
+    ps4_touch_stack( 16 << 10 );
+    while (kstate_syscall3( 3 /* SYS_read */, probes[step].wake[0], (long)&c, 1 ) == 1)
+    {
+        const uint64_t start = now_us();
+
+        probes[step].error = probe_run( step );
+        probes[step].ms = (unsigned int)((now_us() - start) / 1000);
+        __atomic_store_n( &probes[step].state, 2, __ATOMIC_RELEASE );
+    }
+    return NULL;
+}
+
+/* the desktop, as it starts: the heap's block, and a thread for each step */
+static void memory_probe_start( void )
+{
+    struct vq_info info;
+    struct ps4_line l;
+    pthread_t thread;
+    int i, started = 0;
+
+    if ((probe_heap = malloc( 4 * PROBE_PAGE ))) memset( (void *)probe_heap, 0, 4 * PROBE_PAGE );
+    for (i = 0; i < PROBE_STEPS; i++)
+    {
+        probes[i].wake[0] = probes[i].wake[1] = -1;
+        if (pipe( probes[i].wake )) continue;
+        if (pthread_create( &thread, NULL, probe_thread, (void *)(long)i ))
+        {
+            close( probes[i].wake[0] );
+            close( probes[i].wake[1] );
+            probes[i].wake[0] = probes[i].wake[1] = -1;
+            continue;
+        }
+        pthread_detach( thread );
+        started++;
+    }
+    l.len = 0;
+    ps4_line_str( &l, "wineps4: kernel: memory probe: " );
+    ps4_line_num( &l, started );
+    ps4_line_str( &l, " threads; its block of the heap is " );
+    memset( &info, 0, sizeof(info) );
+    if (!probe_heap) ps4_line_str( &l, "missing" );
+    else if (sceKernelVirtualQuery( (const void *)probe_heap, 0, &info, sizeof(info) )) ps4_line_str( &l, "unknown to the kernel" );
+    else ps4_line_str( &l, info.kind & 2 ? "direct memory" : info.kind & 1 ? "flexible memory" : "other memory" );
+    log_line( &l );
+}
+
+static void memory_probe_wake( void )
+{
+    int i;
+
+    probe_asked = now_us();
+    for (i = 0; i < PROBE_STEPS; i++)
+    {
+        if (probes[i].wake[1] < 0) continue;
+        if ((probes[i].stale = __atomic_load_n( &probes[i].state, __ATOMIC_ACQUIRE ) == 1)) continue;
+        __atomic_store_n( &probes[i].state, 1, __ATOMIC_RELEASE );
+        kstate_syscall3( 4 /* SYS_write */, probes[i].wake[1], (long)"", 1 );
+    }
+}
+
+/* waits until 2 s after they were asked, then tells each */
+static void memory_probe_report( void )
+{
+    const struct { long sec, nsec; } tick = { 0, 50000000 };
+    struct ps4_line l;
+    int i, asked;
+
+    for (;;)
+    {
+        for (i = asked = 0; i < PROBE_STEPS; i++)
+            if (!probes[i].stale && __atomic_load_n( &probes[i].state, __ATOMIC_ACQUIRE ) == 1) asked++;
+        if (!asked || now_us() > probe_asked + 2000000) break;
+        kstate_syscall3( 240 /* SYS_nanosleep */, (long)&tick, 0, 0 );
+    }
+    l.len = 0;
+    ps4_line_str( &l, "wineps4: kernel: memory probe:" );
+    for (i = 0; i < PROBE_STEPS; i++)
+    {
+        const int state = __atomic_load_n( &probes[i].state, __ATOMIC_ACQUIRE );
+
+        if (probes[i].wake[1] < 0) continue;
+        ps4_line_str( &l, i ? ", " : " " );
+        ps4_line_str( &l, probe_names[i] );
+        if (state == 1)
+        {
+            ps4_line_str( &l, probes[i].stale ? " still standing from an earlier freeze" : " STOOD (2 s and more)" );
+            continue;
+        }
+        if (probes[i].error)
+        {
+            ps4_line_str( &l, " refused (" );
+            ps4_line_hex( &l, (unsigned int)probes[i].error );
+            ps4_line_str( &l, ")" );
+        }
+        else
+        {
+            ps4_line_str( &l, " answered in " );
+            ps4_line_num( &l, probes[i].ms );
+            ps4_line_str( &l, " ms" );
+        }
+        __atomic_store_n( &probes[i].state, 0, __ATOMIC_RELEASE );
+    }
+    log_line( &l );
 }

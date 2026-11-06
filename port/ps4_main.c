@@ -192,6 +192,7 @@ extern void ps4_thread_name( const char *name );
 extern void ps4_memory_guard_start( void );
 extern void ps4_touch_stack( size_t size );
 extern void ps4_kstate_probe( void );
+extern int ps4_child_name( int pid, char *name, size_t size );
 extern void ps4_calls_report( struct ps4_line *l );
 
 /* ntdll starts every thread on a 1 MiB stack of its own (kernel_stack_size, pthread_attr_setstack):
@@ -622,8 +623,11 @@ static void process_gone( int pid, int code )
 /* a local process has ended, with its exit code (-1: it ended without telling one) */
 void ps4_process_ended( int pid, int code )
 {
-    if (code == -1) logf_( "wineps4: process %d ended (no exit code)\n", pid );
-    else logf_( "wineps4: process %d ended (exit code %d)\n", pid, code );
+    char name[32], what[48] = "";
+
+    if (ps4_child_name( pid, name, sizeof(name) ) && name[0]) snprintf( what, sizeof(what), " (%s)", name );
+    if (code == -1) logf_( "wineps4: process %d%s ended (no exit code)\n", pid, what );
+    else logf_( "wineps4: process %d%s ended (exit code %d)\n", pid, what, code );
     process_gone( pid, code );
 }
 
@@ -1135,7 +1139,6 @@ extern void ps4_dump_threads_quiet( const char *reason );
 extern volatile int ps4_windows_lock_holder;  /* (port/ps4_wine_port.c, set by shell/winwindows.cpp) */
 extern volatile int ps4_server_where, ps4_server_req, ps4_server_req_pid;  /* (server/fd.c) */
 extern const char *ps4_request_name( int req );  /* (server/trace.c) */
-extern unsigned long long ps4_vm_direct_free( void );
 int sceKernelAvailableFlexibleMemorySize( size_t *size );
 
 /* where wineserver's thread is now: told by the server itself, as its thread may not answer the
@@ -1277,18 +1280,19 @@ static void *freeze_watch( void *arg )
             early_syscall3( 4 /* SYS_write */, kstate_wake[1], (long)"", 1 );
         }
         ps4_dump_threads_quiet( text.text );
-        /* the app's memory after the report, as asking the kernel may itself be what stands */
+        /* the app's memory after the report, as asking the kernel may itself be what stands; not its
+         * direct memory: v00.69's freeze watch stood in that query here, its line never written (the
+         * memory probe asks it on a thread of its own: port/ps4_kstate.c) */
         text.len = 0;
-        ps4_line_str( &text, "wineps4: the freeze's thread stacks are in hang.log; the app's memory: direct " );
-        ps4_line_num( &text, (long long)(ps4_vm_direct_free() >> 20) );
-        ps4_line_str( &text, " MiB free in one run, flexible " );
+        ps4_line_str( &text, "wineps4: the freeze's thread stacks are in hang.log; the app's flexible memory " );
         ps4_line_num( &text, sceKernelAvailableFlexibleMemorySize( &flexible ) ? -1 : (long long)(flexible >> 20) );
+        ps4_line_str( &text, " MiB free" );
         if (ps4_outside_pool() != ~0ull)
         {
-            ps4_line_str( &text, " MiB, the pool outside the 7 " );
+            ps4_line_str( &text, ", the pool outside the 7 " );
             ps4_line_num( &text, (long long)(ps4_outside_pool() >> 20) );
+            ps4_line_str( &text, " MiB" );
         }
-        ps4_line_str( &text, " MiB" );
         freeze_log( &text );
     }
     return NULL;
@@ -1347,7 +1351,6 @@ static int read_program( const char *path, int remove_it, char **args, int max )
 
 extern void ps4_files_watch( void );
 extern void ps4_budget_log( const char *why );
-extern void ps4_budget_probe( void );
 
 /* the console's open files, every 5 s (port/ps4_wine_dirs.c; Settings > Diagnostics > Open files) */
 static void *files_thread( void *arg )
@@ -1397,13 +1400,11 @@ static void *setup_thread( void *arg )
             logf_( "wineps4: open files: %llu at once (the most allowed %llu)\n", (unsigned long long)files.rlim_cur,
                    (unsigned long long)files.rlim_max );
     }
-    /* the PS4's budget for the app (its open files are the ones that ran out), and whether a process
-     * of the app may leave it (Settings > Diagnostics > Budget log) */
-    if (!files_log || strcmp( files_log, "0" ))
-    {
-        ps4_budget_log( "the app's, at start" );
-        ps4_budget_probe();
-    }
+    /* the PS4's budget for the app (its open files are the ones that ran out; Settings > Diagnostics >
+     * Budget log). No more test of whether a process of the app may leave it (v00.50 to v00.69): its
+     * child ended on the desktop's address space, and the PS4 freed the app's GPU address space with
+     * it (port/ps4_wine_port.c) */
+    if (!files_log || strcmp( files_log, "0" )) ps4_budget_log( "the app's, at start" );
     wine_ready = 1;
     if (!pthread_create( &reaper, NULL, reaper_thread, NULL )) pthread_detach( reaper );
     if ((!files_log || strcmp( files_log, "0" )) && !pthread_create( &files, NULL, files_thread, NULL ))

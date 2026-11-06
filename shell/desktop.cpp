@@ -1128,7 +1128,7 @@ const Toggle TOGGLES[] = {
     {"Freeze report", "When the desktop stands still for 6 s: where each thread of the app is (the kernel's view too), in hang.log", "WINEPS4_FREEZE_REPORT", "", "0"},
     {"Memory guard", "When the memory programs share is nearly gone, restarts a launcher's web window (Steam's) instead of the app standing still", "WINEPS4_MEMORY_GUARD", "", "0"},
     {"Crash trace", "A program that crashes ends at once with where (its module and calls) in wine.log; off: Wine's debugger comes up, two more of the PS4's 7 processes", "WINEPS4_CRASH_TRACE", "", "0"},
-    {"Direct shared memory", "Programs' shared memory (Chromium's: Steam's web helper) in the PS4's direct memory, not the 1 GiB all programs share; applies when WinePS4 starts again", "WINEPS4_SECTIONS_DIRECT", "", "0"},
+    {"Direct shared memory", "Tries programs' shared memory in the PS4's direct memory, not the 1 GiB all programs share (the PS4 refused it in v00.69); applies when WinePS4 starts again", "WINEPS4_SECTIONS_DIRECT", "1", ""},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second

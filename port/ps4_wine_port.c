@@ -44,7 +44,8 @@ int amd64_set_fsbase( void *base ) { return sysarch( AMD64_SET_FSBASE, &base ); 
 static pthread_mutex_t threads_lock = PTHREAD_MUTEX_INITIALIZER;
 /* (stack: its Unix stack's bounds, for the dump's handler: asking the kernel there stood with a
  * desktop whose address space stood, v00.64) */
-static struct { int tid; pthread_t thread; void *teb; uint64_t stack_lo, stack_hi; } threads[MAX_THREADS];
+static struct { int tid; pthread_t thread; void *teb; uint64_t stack_lo, stack_hi; char name[20]; } threads[MAX_THREADS];
+static __thread char thread_name[20];  /* (its name, given before or after its registration) */
 static pthread_key_t thread_key;
 static pthread_once_t thread_key_once = PTHREAD_ONCE_INIT;
 
@@ -80,6 +81,7 @@ void ps4_thread_register( void )
         __atomic_store_n( &threads[free_slot].teb, ps4_thread_teb, __ATOMIC_RELEASE );
         threads[free_slot].stack_lo = lo;
         threads[free_slot].stack_hi = hi;
+        memcpy( threads[free_slot].name, thread_name, sizeof(thread_name) );
         __atomic_store_n( &threads[free_slot].tid, tid, __ATOMIC_RELEASE );
     }
     pthread_mutex_unlock( &threads_lock );
@@ -95,8 +97,23 @@ void ps4_thread_unregister( void )
         if (threads[i].tid == tid)
         {
             threads[i].tid = 0;
+            threads[i].name[0] = 0;
             __atomic_store_n( &threads[i].teb, NULL, __ATOMIC_RELEASE );
         }
+    pthread_mutex_unlock( &threads_lock );
+}
+
+/* the calling thread's name in its place in the table, for the dumps (port/ps4_kstate.c's
+ * ps4_thread_name gives it; one given before the thread registers is kept for its registration) */
+void ps4_thread_table_name( const char *name )
+{
+    const int tid = pthread_getthreadid_np();
+    int i;
+
+    snprintf( thread_name, sizeof(thread_name), "%s", name );
+    pthread_mutex_lock( &threads_lock );
+    for (i = 0; i < MAX_THREADS; i++)
+        if (threads[i].tid == tid) memcpy( threads[i].name, thread_name, sizeof(thread_name) );
     pthread_mutex_unlock( &threads_lock );
 }
 
@@ -398,20 +415,25 @@ static void dump_threads( const char *reason, int notice )
     for (i = 0; i < MAX_THREADS; i++)
     {
         pthread_t thread;
+        char name[sizeof(threads[0].name)], who[48];
         int tid;
 
         pthread_mutex_lock( &threads_lock );
         tid = threads[i].tid;
         thread = threads[i].thread;
+        memcpy( name, threads[i].name, sizeof(name) );
         pthread_mutex_unlock( &threads_lock );
         if (!tid) continue;
+        name[sizeof(name) - 1] = 0;
+        if (name[0]) snprintf( who, sizeof(who), "%d '%s'", tid, name );
+        else snprintf( who, sizeof(who), "%d", tid );
         dump_done = 0;
-        if (pthread_kill( thread, SIGXCPU )) { fprintf( f, "-- thread %d: gone\n", tid ); continue; }
+        if (pthread_kill( thread, SIGXCPU )) { fprintf( f, "-- thread %s: gone\n", who ); continue; }
         for (waited = 0; waited < 500 && !__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ); waited++) usleep( 1000 );
-        if (!dump_done) { fprintf( f, "-- thread %d: no answer\n", tid ); continue; }
-        if (in_eboot( dump_rip )) fprintf( f, "-- thread %d: rip elf 0x%llx\n   stack:", tid,
+        if (!dump_done) { fprintf( f, "-- thread %s: no answer\n", who ); continue; }
+        if (in_eboot( dump_rip )) fprintf( f, "-- thread %s: rip elf 0x%llx\n   stack:", who,
                                            (unsigned long long)dump_rip );
-        else fprintf( f, "-- thread %d: rip 0x%llx (outside the eboot)\n   stack:", tid, (unsigned long long)dump_rip );
+        else fprintf( f, "-- thread %s: rip 0x%llx (outside the eboot)\n   stack:", who, (unsigned long long)dump_rip );
         for (j = 0; j < dump_count; j++) fprintf( f, " 0x%llx", (unsigned long long)dump_frames[j] );
         fprintf( f, "\n" );
     }
@@ -475,6 +497,18 @@ void ps4_dump_threads_quiet( const char *reason )
         l.len = 0;
         ps4_line_str( &l, "-- thread " );
         ps4_line_num( &l, tid );
+        {
+            char name[sizeof(threads[0].name)];
+
+            memcpy( name, threads[i].name, sizeof(name) );
+            name[sizeof(name) - 1] = 0;
+            if (name[0])
+            {
+                ps4_line_str( &l, " '" );
+                ps4_line_str( &l, name );
+                ps4_line_str( &l, "'" );
+            }
+        }
         __atomic_store_n( &dump_done, 0, __ATOMIC_RELEASE );
         if (raw_syscall3( 433 /* SYS_thr_kill */, tid, SIGXCPU, 0 ) == -1)
             ps4_line_str( &l, ": gone" );
@@ -730,7 +764,8 @@ struct spawn_request
 };
 
 /* vfork (or fork) and exec, the child running only this code: no stack, nothing but system calls
- * on the request (FreeBSD 9 on the PS4 clobbers rcx, r8-r11 in a syscall; rbx survives) */
+ * on the request (FreeBSD 9 on the PS4 clobbers rcx, r8-r11 in a syscall; rbx survives). The child
+ * never ends before its exec but when the exec fails (see "More than 7 processes" for why) */
 static long fork_exec( long syscall_number, struct spawn_request *req, long *child_pid )
 {
     long ret, flag;
@@ -783,59 +818,22 @@ static long fork_exec( long syscall_number, struct spawn_request *req, long *chi
     return 0;
 }
 
-/* --- More than 7 processes: a first look ----------------------------------------------------------
+/* --- More than 7 processes ----------------------------------------------------------------------
  * The PS4 runs 7 local processes for an app (sceSystemServiceAddLocalProcess refuses the 8th, nested
  * or not, whatever their memory: PS5_MihawkOS measured the same on the PS5). Processes forked by the
  * app are not counted, but closing the app from the PS4 menu tore the app down under them (a kernel
  * panic, v00.30-00.42). On the PS5 the payload loader starts processes outside every app: the child
- * leaves its budget (budget_set 571 with 0), so it is no app's. Whether a process of this app may do
- * that on the PS4 is what this asks, with a child that does only that and ends at once: vfork (the
- * parent waits, the memory shared: the child's answers land here), only system calls in the child. */
-void ps4_budget_probe( void )
-{
-    static long result[4];  /* budget_set's result and failure, then budget_getid's */
-    sigset_t all, old;
-    long ret, flag;
-
-    memset( result, 0, sizeof(result) );
-    sigfillset( &all );
-    pthread_sigmask( SIG_SETMASK, &all, &old );
-    __asm__ volatile( "syscall\n\t"
-                      "jnc 1f\n\t"
-                      "movq $-1,%%rdx\n\t"          /* failed: rax = errno */
-                      "jmp 9f\n"
-                      "1:\ttestq %%rdx,%%rdx\n\t"   /* rdx: 0 in the parent, 1 in the child */
-                      "jz 9f\n\t"
-                      /* the child: budget_set( 0 ), budget_getid(), exit( 0 ) */
-                      "xorl %%edi,%%edi\n\t"
-                      "movl $571,%%eax\n\t"
-                      "syscall\n\t"
-                      "movq %%rax,0(%%rbx)\n\t"
-                      "sbbq %%rax,%%rax\n\t"
-                      "movq %%rax,8(%%rbx)\n\t"
-                      "movl $609,%%eax\n\t"
-                      "syscall\n\t"
-                      "movq %%rax,16(%%rbx)\n\t"
-                      "sbbq %%rax,%%rax\n\t"
-                      "movq %%rax,24(%%rbx)\n\t"
-                      "xorl %%edi,%%edi\n\t"
-                      "movl $1,%%eax\n\t"
-                      "syscall\n"
-                      "9:"
-                      : "=a" (ret), "=d" (flag)
-                      : "a" (66 /* SYS_vfork */), "b" (result)
-                      : "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory", "cc" );
-    pthread_sigmask( SIG_SETMASK, &old, NULL );
-    if (flag < 0)
-    {
-        fprintf( stderr, "wineps4: budget probe: vfork refused (errno %ld)\n", ret );
-        return;
-    }
-    fprintf( stderr, "wineps4: budget probe: the app's budget %ld; a child of the app %s (budget_set: %s %ld), "
-             "its budget then %s%ld\n", raw_syscall3( 609 /* budget_getid */, 0, 0, 0 ),
-             result[1] ? "may not leave it" : "left it", result[1] ? "errno" : "result", result[0],
-             result[3] ? "unknown, errno " : "", result[2] );
-}
+ * leaves its budget (budget_set 571 with 0), so it is no app's; v00.50's test found a child of this
+ * app may do it on the PS4 too (ps4_spawn_outside, below).
+ *
+ * A vfork child must exec, never end on its own: it ends on its parent's address space, which the PS4
+ * takes as the end of the desktop's own. That test's child (v00.50 to v00.69: budget_set, then exit)
+ * freed the app's GPU address space 0.5 s into every session (the kernel's log: "dmem_handle_vmspace_
+ * exited" with ptype 2 and the desktop's map, then "gbase_free_vm_space_2 has mapped memory vmid:1",
+ * which a game's last process prints as the game closes; the app's own end then found "no vm space").
+ * The desktop's screen and every program's GPU memory went on in a space the kernel had freed: most
+ * likely why the app stood as a program's process ended (v00.68, v00.69). A failed exec still ends the
+ * child that way; the app's own path never fails to exec. */
 
 /* Starts path (the app) as a new process: vfork, which the PS4 may not have (then fork). envp,
  * argv and their strings must be malloc'd (see struct spawn_request). */
@@ -885,7 +883,7 @@ pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 )
  * program's socket to the wineserver held open by another process would keep the server from
  * seeing that program end; one by one: a system call the kernel doesn't have, closefrom, would be
  * a SIGSYS), out of the app's budget (budget_set 571 with 0: the PS4 lets a child of the app do it,
- * v00.50's probe; the PS5's payload loader does the same) if asked, then the exec. Its pid, or -1. */
+ * v00.50's test; the PS5's payload loader does the same) if asked, then the exec. Its pid, or -1. */
 static long outside_exec( struct spawn_request *req, long *child_pid )
 {
     long ret, flag;

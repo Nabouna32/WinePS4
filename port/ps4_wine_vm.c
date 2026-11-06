@@ -753,7 +753,11 @@ static int vm_madvise( void *addr, size_t len, int advice )
  * it (WINEPS4_SECTION_PROBE: the page's offset and the token), and sections go there once one has
  * read it and written back.
  *
- *  WINEPS4_SECTIONS_DIRECT=0      sections in shared memory as before (Settings > Diagnostics) */
+ * v00.69's test on the PS4: every local process's map of the desktop's page was refused
+ * (sceKernelMapDirectMemory 0x8002000d), so sections stay shared memory unless it is asked for:
+ *
+ *  WINEPS4_SECTIONS_DIRECT=1      the test, and sections in direct memory if it passes (Settings >
+ *                                 Diagnostics) */
 
 #define SECTION_MAX   ((size_t)256 << 20)  /* the biggest section in direct memory */
 #define SECTION_FLOOR ((size_t)640 << 20)  /* what sections leave of the app's largest free run of direct
@@ -796,9 +800,10 @@ void ps4_sections_init( void )
     off_t phys = 0;
     int ret;
 
-    if (env && !strcmp( env, "0" ))
+    if (!env || strcmp( env, "1" ))
     {
-        fprintf( stderr, "wineps4: sections in shared memory (Settings > Diagnostics)\n" );
+        fprintf( stderr, "wineps4: sections in shared memory (v00.69's test: the PS4 refused the desktop's direct "
+                 "memory to the programs)\n" );
         return;
     }
     if ((ret = sceKernelAllocateDirectMemory( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, HOST_PAGE, 0, &phys )))
