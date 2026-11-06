@@ -28,7 +28,9 @@ struct WinFrame {
     bool active = false, maximized = false, can_minimize = false, can_maximize = false;
     std::string title;
 };
-// Full-screen windows (no title bar, the whole screen) go over the taskbar, the others under it
+// The active window, when it is full-screen (no title bar, the whole screen), goes over the taskbar
+// with what is over it (its menus, tooltips), as Windows has it; the others under it. A window raised
+// over a full-screen one is over it (a windowed game started from Steam's Big Picture).
 enum class WinLayer { Normal, FullScreen };
 // Draws the layer's visible windows bottom to top: under() before each one (its shadow), over()
 // after it (the title bar and border over Windows' own)
@@ -52,8 +54,8 @@ WinRect winwin_button_rect(const WinFrame &f, int button);
 // shadow px around one, is over it; out gets the screen rects copied. false: nothing copied, the
 // whole scene must be drawn (winwin_draw).
 bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<WinRect> &out);
-// Whether a program's full-screen window is shown (Steam's Big Picture, a game): it covers the
-// desktop and its taskbar, which need not be drawn under it
+// Whether the active window is a program's full-screen one (Steam's Big Picture, a game): it covers
+// the desktop and its taskbar, which need not be drawn under it
 bool winwin_full_screen();
 // The button of a title bar of ours at (x, y) (with its window, and whether that is maximized), or -1
 int winwin_button_at(float x, float y, uint64_t *hwnd, bool *maximized = nullptr);
@@ -69,6 +71,9 @@ struct WinTask {
 };
 // The windows a taskbar button is for (shown, not menus or dialogs), oldest first
 std::vector<WinTask> winwin_tasks();
+// Alt+Tab's order: the same windows, the active one first, then down the stack, minimized ones last
+// (the latest first)
+std::vector<uint64_t> winwin_switch_order();
 
 // What takes text in a program's window now, from its display driver: a caret shown or moved there
 // (Windows' edit boxes), or the field Chromium's text services focus (Steam's web pages). The desktop

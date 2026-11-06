@@ -226,22 +226,20 @@ void *listen_thread(void *arg) {
 }
 
 // A window that covers the whole screen without a title bar: a game or a video's full screen, over
-// the taskbar as Windows has it
+// the taskbar while it is the active one, as Windows has it
 bool is_full_screen(const WinWindow &w) {
     return !w.caption_bottom && w.x <= 0 && w.y <= 0 && w.x + w.w >= PS4_DISPLAY_WIDTH && w.y + w.h >= PS4_DISPLAY_HEIGHT;
 }
 
-// The windows bottom to top (minimized ones aren't drawn): topmost ones over the others, full-screen
-// ones over all of them
+// The windows bottom to top (minimized ones aren't drawn): topmost ones over the others, else as they
+// were shown or raised, full-screen ones too (v00.67 kept those over all: a windowed game started from
+// Steam's Big Picture stayed under it)
 std::vector<std::pair<uint64_t, const WinWindow *>> stacked() {
     std::vector<std::pair<uint64_t, const WinWindow *>> list;
     for (const auto &[hwnd, w] : windows)
         if ((w.flags & PS4_WINDOW_VISIBLE) && !(w.flags & PS4_WINDOW_MINIMIZED) && w.w > 0 && w.h > 0 && !w.pixels.empty())
             list.emplace_back(hwnd, &w);
     std::sort(list.begin(), list.end(), [](const auto &a, const auto &b) {
-        const bool fa = is_full_screen(*a.second), fb = is_full_screen(*b.second);
-        if (fa != fb)
-            return fb;
         const bool ta = a.second->flags & PS4_WINDOW_TOPMOST, tb = b.second->flags & PS4_WINDOW_TOPMOST;
         return ta != tb ? tb : a.second->order < b.second->order;
     });
@@ -254,6 +252,15 @@ uint64_t active_window(const std::vector<std::pair<uint64_t, const WinWindow *>>
         if (!(it->second->flags & PS4_WINDOW_POPUP))
             return it->first;
     return 0;
+}
+
+// Where the full-screen layer starts in the stack: at the active window when it is full-screen (it and
+// what is over it, its menus and tooltips, go over the taskbar); list.size() when it isn't
+size_t full_screen_from(const std::vector<std::pair<uint64_t, const WinWindow *>> &list) {
+    for (size_t i = list.size(); i-- > 0;)
+        if (!(list[i].second->flags & PS4_WINDOW_POPUP))
+            return is_full_screen(*list[i].second) ? i : list.size();
+    return list.size();
 }
 
 WinFrame frame_of(uint64_t hwnd, const WinWindow &w, uint64_t active) {
@@ -310,10 +317,12 @@ bool winwin_changed() { return changed.exchange(false); }
 
 bool winwin_full_screen() {
     std::lock_guard guard(lock);
-    for (const auto &[hwnd, w] : stacked())
-        if (is_full_screen(*w) && w->bw >= PS4_DISPLAY_WIDTH && w->bh >= PS4_DISPLAY_HEIGHT)
-            return true;  // (its pixels cover all of the screen, not only its rect)
-    return false;
+    const auto list = stacked();
+    const size_t from = full_screen_from(list);
+    if (from == list.size())
+        return false;
+    const WinWindow &w = *list[from].second;
+    return w.bw >= PS4_DISPLAY_WIDTH && w.bh >= PS4_DISPLAY_HEIGHT;  // (its pixels cover all of the screen, not only its rect)
 }
 
 bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<WinRect> &out) {
@@ -324,6 +333,7 @@ bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<Win
     const int cw = c.width(), ch = c.height();
     const auto list = stacked();
     const uint64_t active = active_window(list);
+    const size_t from = full_screen_from(list);
     struct Patch {
         const WinWindow *w;
         int x0, y0, x1, y1;  // on the screen
@@ -334,7 +344,7 @@ bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<Win
         if (w->dx1 <= w->dx0)
             continue;
         const WinFrame f = frame_of(list[i].first, *w, active);
-        const bool full = is_full_screen(*w), rounded = w->caption_bottom && !f.maximized;
+        const bool full = i >= from, rounded = w->caption_bottom && !f.maximized;  // (full: over the taskbar)
         // its own part: what winwin_draw copies and draw_program_over leaves as it is
         const int left = std::max(0, w->x + f.border), right = std::min(cw, w->x + std::min(w->w, w->bw) - f.border);
         const int top = std::max({0, w->y, w->caption_bottom});
@@ -381,11 +391,14 @@ void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4u
     const int cw = c.width(), ch = c.height();
     const auto list = stacked();
     const uint64_t active = active_window(list);
+    const size_t from = full_screen_from(list);
     if (layer == WinLayer::Normal)
         layout_changed = false;  // (the scene has it all now: what changes from here on, winwin_patch may copy)
-    for (const auto &[hwnd, w] : list) {
-        if (is_full_screen(*w) != (layer == WinLayer::FullScreen))
+    for (size_t i = 0; i < list.size(); i++) {
+        if ((i >= from) != (layer == WinLayer::FullScreen))
             continue;
+        const uint64_t hwnd = list[i].first;
+        const WinWindow *w = list[i].second;
         const WinFrame f = frame_of(hwnd, *w, active);
         auto own = windows.find(hwnd);
         own->second.dx0 = own->second.dx1 = 0;
@@ -415,12 +428,13 @@ void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4u
 uint64_t winwin_at(float x, float y, bool *full_screen) {
     std::lock_guard guard(lock);
     const auto list = stacked();
-    for (auto it = list.rbegin(); it != list.rend(); ++it) {
-        const WinWindow &w = *it->second;
+    const size_t from = full_screen_from(list);
+    for (size_t i = list.size(); i-- > 0;) {
+        const WinWindow &w = *list[i].second;
         if (x >= w.x && x < w.x + w.w && y >= w.y && y < w.y + w.h) {
             if (full_screen)
-                *full_screen = is_full_screen(w);
-            return it->first;
+                *full_screen = i >= from;  // (in the full-screen layer: no taskbar over it)
+            return list[i].first;
         }
     }
     return 0;
@@ -494,6 +508,23 @@ std::vector<WinTask> winwin_tasks() {
             tasks.push_back(WinTask{hwnd, w.pid, w.title.empty() ? std::string("Window") : w.title, hwnd == active,
                                     (w.flags & PS4_WINDOW_MINIMIZED) != 0});
     return tasks;  // (a map: oldest window first, as handles grow)
+}
+
+std::vector<uint64_t> winwin_switch_order() {
+    std::lock_guard guard(lock);
+    std::vector<uint64_t> order;
+    const auto list = stacked();
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+        if (!(it->second->flags & PS4_WINDOW_POPUP))
+            order.push_back(it->first);
+    std::vector<std::pair<uint64_t, uint64_t>> minimized;  // (its order, the window)
+    for (const auto &[hwnd, w] : windows)
+        if ((w.flags & PS4_WINDOW_VISIBLE) && (w.flags & PS4_WINDOW_MINIMIZED) && !(w.flags & PS4_WINDOW_POPUP) && w.w > 0 && w.h > 0)
+            minimized.emplace_back(w.order, hwnd);
+    std::sort(minimized.rbegin(), minimized.rend());
+    for (const auto &m : minimized)
+        order.push_back(m.second);
+    return order;
 }
 
 void winwin_mouse(float x, float y, uint32_t flags, int wheel) {

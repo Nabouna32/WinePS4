@@ -654,3 +654,52 @@ v00.67:
   more.
 - A program with 192 MiB of flexible mappings or more tells what they are once a minute, by name,
   memory type, protection and kind ("wineps4: memory: steamwebhelper.exe's flexible mappings ...").
+
+## The keyboard for games, the web helper's crash, windows over Big Picture (v00.68, 2026-11-06)
+
+v00.67 (logs/v00.67, Steam's logs in steam/): Iron Snout ran. DXVK 3.1.1 made its Direct3D 11 device
+on RADV (feature level 11_1; "radv/ps4: direct memory aliasing on (0)": the placed maps worked), its
+1760x990 swapchain flipped 60 times a second and the desktop drew 60 frames a second. The user: not in
+full screen, no input from the keyboard, Big Picture reopened when the game opened.
+- The keyboard: libSceIme's keyboard read every press, and the keyboard log said where they went: "0
+  to programs (the top one: Iron Snout) ... 2 not sent (PS4 + Keyboard mode)". Settings' default
+  keyboard mode (desktop.ini: keyboard=ps4) gave a USB keyboard's keys to the desktop's windows and the
+  PS4's keyboard dialog only; programs got text through the dialog.
+- Big Picture: Steam's web helper (process 734) crashed 3.4 s after the game started: "Unhandled page
+  fault on read access to 0000000000001000 at address 000000FBF39C3833 (thread 0320)", just as that
+  thread's sound stream stopped (AvRevertMmThreadCharacteristics: Chromium's WASAPI thread ending). A
+  read at 0x1000 is PartitionAlloc freeing a pointer of the first 2 MiB (super page 0's metadata page),
+  as v00.57's read at FFFFFFFFFFE01000. Wine's debugger came up: winedbg.exe (739) and its console's
+  conhost.exe (740), two of the 7 processes and 58 + 67 MiB of flexible memory (the console stayed to
+  the end), its trace in that console window, not in wine.log. The web helper ended 6.6 s after its
+  fault; Steam started it again (741, at 495 s) and its Big Picture window came over the game. At
+  524.96 the memory guard ended it (93 MiB free) and Steam didn't start it again.
+- Full screen is the game's own setting: AppData\Local\IronSnout\ironSteam.ini has fullScreen=
+  "0.000000" (GameMaker, data.win; it chose a 1760x990 window). The display driver gives one mode
+  (1920x1080, 60 Hz); win32u adds lower virtual modes and takes a change of mode without scaling.
+- The desktop kept full-screen windows over all the others (stacked()): a windowed game started from
+  Big Picture would have stayed under it.
+- The memory breakdown: steamwebhelper.exe's flexible mappings were 223 MiB in 631 read-write ones
+  named after their caller, map_file_into_view's ps4_vm_mmap (0x6005a2b5): MAP_SHARED mappings of an
+  fd, wineserver's sections in shared memory (ps4_anon_shm), Chromium's shared memory; 34 MiB in 35
+  read-only ones; "executable" 37 MiB is the eboot's text. Sections in direct memory would leave the
+  flexible pool to the rest.
+- kern.proc's forms here: pid_td fails (ENOENT); pid, all and proc answer (records of 1096 bytes).
+
+v00.68:
+- A USB keyboard types into the program with the focus, as on a PC; the keyboard mode setting is gone
+  (Settings > Bluetooth & devices says how it works). The desktop's own windows, menus and dialogs take
+  its keys when they are in front (not when a program's full-screen window covers them), the PS4's
+  keyboard dialog while it is up. Alt+Tab brings the next program window to the front (Alt+Shift+Tab
+  the one before; the Tab isn't sent, as Windows keeps it). The PS4's keyboard doesn't open by itself
+  for a text field while a USB keyboard is connected. The keyboard log counts Alt+Tab's switches.
+- Program windows stack as they were shown or raised, full-screen ones too. The active window, when it
+  is full-screen, goes over the taskbar with what is over it (its menus, tooltips); a window raised
+  over a full-screen one is over it, and the taskbar over both.
+- Wine cff9836 (kernelbase's UnhandledExceptionFilter): a crash's trace in wine.log, "wine: <the
+  fault> (thread T), in module+0xoffset: the program ends (Settings > Diagnostics > Crash trace)",
+  its registers and up to 24 calls (x64 by unwind data, x86 by frame pointers), each as
+  module+0xoffset (the module file's name from wineserver, else its exports' name, else its base).
+  The program ends at once (EXCEPTION_EXECUTE_HANDLER): no winedbg, no console. Settings > Diagnostics
+  > Crash trace (WINEPS4_CRASH_TRACE=0: Wine's debugger as before). kernelbase.dll built in the host's
+  WoW64 tree (x64 and x86) and copied into install/wine-wow64.

@@ -79,11 +79,10 @@ Color BUTTON, BUTTON_HOT, BUTTON_BORDER, CARD, CARD_HOT, CARD_BORDER, TRACK, ICO
 const Color CLOSE_RED = rgb(0xc42b1c);
 bool light_theme = false;
 
-// Settings > Bluetooth & devices: the mouse's speed (1-20, as Windows' slider), whether a USB
-// keyboard types straight into programs (else the PS4's keyboard opens for text, Triangle), and
-// whether the PS4's keyboard opens by itself for a text field clicked
+// Settings > Bluetooth & devices: the mouse's speed (1-20, as Windows' slider) and whether the PS4's
+// keyboard opens by itself for a text field clicked (a USB keyboard types straight into programs, as
+// on a PC)
 int pointer_speed = 10;
-bool direct_keyboard = false;
 bool auto_keyboard = true;
 
 void apply_theme(bool light) {
@@ -350,7 +349,6 @@ void save_desktop() {
         std::fprintf(f, "theme=%s\n", light_theme ? "light" : "dark");
         std::fprintf(f, "background=%s\n", background_spec(background).c_str());
         std::fprintf(f, "pointer=%d\n", pointer_speed);
-        std::fprintf(f, "keyboard=%s\n", direct_keyboard ? "direct" : "ps4");
         std::fprintf(f, "keyboard_by_itself=%d\n", auto_keyboard ? 1 : 0);
         std::fclose(f);
     }
@@ -405,8 +403,6 @@ void load_desktop() {
                 b.kind = BgKind::Color, b.color = static_cast<uint32_t>(std::strtoul(l.c_str() + 17, nullptr, 16));
             else if (l.rfind("pointer=", 0) == 0)
                 pointer_speed = std::clamp(std::atoi(l.c_str() + 8), 1, 20);
-            else if (l == "keyboard=direct")
-                direct_keyboard = true;
             else if (l == "keyboard_by_itself=0")
                 auto_keyboard = false;
         }
@@ -1130,12 +1126,13 @@ const Toggle TOGGLES[] = {
     {"Performance log", "Every 10 s in wine.log: each process's share of the CPU, the desktop's drawing time, free memory", "WINEPS4_PERF_LOG", "", "0"},
     {"Freeze report", "When the desktop stands still for 6 s: where each thread of the app is (the kernel's view too), in hang.log", "WINEPS4_FREEZE_REPORT", "", "0"},
     {"Memory guard", "When the memory programs share is nearly gone, restarts a launcher's web window (Steam's) instead of the app standing still", "WINEPS4_MEMORY_GUARD", "", "0"},
+    {"Crash trace", "A program that crashes ends at once with where (its module and calls) in wine.log; off: Wine's debugger comes up, two more of the PS4's 7 processes", "WINEPS4_CRASH_TRACE", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
 // while they come (how many, never which: passwords are typed with it)
 struct KeyRoutes {
-    int desktop = 0, program = 0, held_back = 0, not_sent = 0;
+    int desktop = 0, program = 0, held_back = 0, switched = 0;
     std::string to;  // the desktop's window that took them
     double since = 0;
 } key_routes;
@@ -1313,7 +1310,7 @@ bool input_held_back = false;  // after the keyboard closes: until the buttons t
 // The PS4's keyboard for a text field clicked in a program (Settings: auto_keyboard): a caret its display
 // driver shows near the click (Windows' text boxes), or Chromium's text services focusing a field (Steam's
 // sign-in), within a few seconds of the click; what's typed goes to the program (TextFor::Wine). Not while
-// a USB keyboard types straight into programs.
+// a USB keyboard is connected (it types straight into programs).
 // A field that had the focus before the click (Steam's sign-in focuses its first one) gives no news when
 // clicked: one still focused 1.2 s after a click, with no news of the process meanwhile, was clicked again.
 struct ProgramClick {
@@ -1328,7 +1325,7 @@ std::map<int, uint32_t> program_field;  // what Chromium's text services focus, 
 
 void program_text_events(double t) {
     const auto open_for = [&](int pid, bool password) {
-        if (!auto_keyboard || keyboard_active() || (direct_keyboard && hwkeyboard_connected()) || pid != program_click.pid ||
+        if (!auto_keyboard || keyboard_active() || hwkeyboard_connected() || pid != program_click.pid ||
             t - program_click.when > 3)
             return;
         program_click.when = -100;  // (once a click)
@@ -4742,15 +4739,15 @@ void log_key_routes(double now) {
     KeyRoutes &r = key_routes;
     if (!on || now - r.since < 1)
         return;
-    if (r.desktop || r.program || r.held_back || r.not_sent) {
+    if (r.desktop || r.program || r.held_back || r.switched) {
         std::string top = "none";
         for (const WinTask &t : program_tasks)
             if (t.active)
                 top = t.title.empty() ? "untitled" : t.title;
         std::fprintf(stderr,
                      "shell: keyboard: %d presses to the desktop's %s, %d to programs (the top one: %s), %d held back "
-                     "(the PS4's keyboard up), %d not sent (PS4 + Keyboard mode)\n",
-                     r.desktop, r.to.empty() ? "-" : r.to.c_str(), r.program, top.c_str(), r.held_back, r.not_sent);
+                     "(the PS4's keyboard up), %d windows switched (Alt+Tab)\n",
+                     r.desktop, r.to.empty() ? "-" : r.to.c_str(), r.program, top.c_str(), r.held_back, r.switched);
     }
     r = KeyRoutes{};
     r.since = now;
@@ -4985,8 +4982,6 @@ std::string settings_hit(const Window &w, float px, float py) {
         for (int i = 0; i < 2; i++) {
             if (speed_button(w, i).contains(px, py))
                 return "speed" + std::to_string(i);
-            if (segment(keyboard_card(w), i, 2, 170).contains(px, py))
-                return "kbmode" + std::to_string(i);
         }
         if (autokb_card(w).contains(px, py))
             return "autokb";
@@ -5219,11 +5214,6 @@ void settings_click(Window &w, const std::string &part) {
     } else if (part.rfind("speed", 0) == 0) {
         pointer_speed = std::clamp(pointer_speed + (number_after(part, "speed") ? 1 : -1), 1, 20);
         input_set_pointer_speed(pointer_speed);
-        save_desktop();
-    } else if (part.rfind("kbmode", 0) == 0) {
-        direct_keyboard = number_after(part, "kbmode") == 1;
-        if (direct_keyboard)
-            hwkeyboard_open();
         save_desktop();
     } else if (part == "autokb") {
         auto_keyboard = !auto_keyboard;
@@ -6160,7 +6150,7 @@ void draw_system_page(Canvas &c, const Window &w) {
     }
 }
 
-// Bluetooth & devices: the mouse's speed, the keyboard's mode, the controller
+// Bluetooth & devices: the mouse's speed, the keyboard, the controller
 void draw_devices_page(Canvas &c, const Window &w) {
     const std::string id = "win:" + std::to_string(w.id) + ":";
     const Input &in = last_input;
@@ -6187,19 +6177,17 @@ void draw_devices_page(Canvas &c, const Window &w) {
     r = keyboard_card(w);
     panel(c, r.x, r.y, r.w, r.h, 6, CARD, CARD_BORDER);
     draw_icon(c, Icon::Keyboard, r.x + 34, r.y + 40, 30);
-    c.text(r.x + 64, r.y + 38, "Keyboard", 16, TEXT);
-    const char *const modes[] = {"PS4 + Keyboard", "Keyboard"};
-    draw_segments(c, r, modes, 2, 170, direct_keyboard ? 1 : 0, id + "kbmode");
+    c.text(r.x + 64, r.y + 38, hwkeyboard_connected() ? "A keyboard is connected" : "Keyboard", 16, TEXT);
     c.text_wrapped(r.x + 64, r.y + 70,
-                   direct_keyboard ? "A USB keyboard plugged into the PS4 types straight into programs; ENG shows on the taskbar while it does."
-                                   : "Triangle over a program opens the PS4's keyboard, which a USB keyboard plugged in types into too.",
+                   "A USB keyboard plugged into the PS4 types straight into the program in front, as on a PC (ENG on the "
+                   "taskbar); Alt+Tab switches programs. Without one, Triangle over a program opens the PS4's keyboard.",
                    14, TEXT3, r.w - 88, 20);
 
     r = autokb_card(w);
     panel(c, r.x, r.y, r.w, r.h, 6, hover == id + "autokb" ? CARD_HOT : CARD, CARD_BORDER);
     c.text(r.x + 22, r.y + 33, "Open the PS4's keyboard for a text field clicked", 16, TEXT);
     c.text(r.x + 22, r.y + 58,
-           "In programs (Steam's sign-in, Windows' text boxes) and Notepad; not while a USB keyboard types straight into programs.",
+           "In programs (Steam's sign-in, Windows' text boxes) and Notepad; not while a USB keyboard is connected.",
            14, TEXT3, Weight::Regular, r.w - 140);
     draw_switch(c, r, auto_keyboard);
 
@@ -6479,7 +6467,7 @@ void draw_taskbar(Canvas &c) {
     // the tray: what controls the desktop, then the time
     const Input &in = last_input;
     int tx = W - 170;
-    if (direct_keyboard && hwkeyboard_connected()) {  // a USB keyboard types straight into programs
+    if (hwkeyboard_connected()) {  // a USB keyboard types straight into programs
         draw_icon(c, Icon::Keyboard, tx, H - TASKBAR_H / 2.f, 24);
         c.text(tx + 16, H - TASKBAR_H / 2 + 5, "ENG", 13, TEXT2, Weight::Bold);
         tx -= 40;
@@ -6886,7 +6874,7 @@ extern "C" void ps4_shell_run(const char *) {
     winwin_start();
     load_desktop();
     desktop_started = now_seconds();
-    hwkeyboard_open();  // (the desktop's own windows take its keys in both of Settings' modes)
+    hwkeyboard_open();  // (a USB keyboard: the desktop's windows and programs take its keys)
     const Image pointer = make_pointer();
     const Image resize_ew = make_resize_pointer(1, 0), resize_ns = make_resize_pointer(0, 1);
     const Image resize_nwse = make_resize_pointer(1, 1), resize_nesw = make_resize_pointer(1, -1);
@@ -6987,19 +6975,28 @@ extern "C" void ps4_shell_run(const char *) {
             std::any_of(windows.begin(), windows.end(), [](const Window &w) { return w.kind == Kind::TaskManager && !w.minimized; }))
             dirty = true;
 
-        // a USB keyboard: the desktop's own window in front (Files, Notepad, ...), its menus and dialogs
-        // take its keys; else, in Settings' Keyboard mode, the program with the focus does (in PS4 +
-        // Keyboard mode programs get text from the PS4's keyboard, Triangle). Its Windows key opens
-        // Start (Windows+E Files, Windows+D the desktop), Ctrl+Shift+Esc Task Manager.
+        // a USB keyboard, as on a PC: the desktop's own window in front (Files, Notepad, ...), its menus
+        // and dialogs take its keys, else the program with the focus does (also when the desktop's window
+        // was in front before a program's full-screen one covered it). Its Windows key opens Start
+        // (Windows+E Files, Windows+D the desktop), Ctrl+Shift+Esc Task Manager, Alt+Tab brings the next
+        // program's window to the front (Alt+Shift+Tab the one before; the Tab isn't sent, as Windows
+        // keeps it).
         {
             static bool win_held = false, win_used = false;
+            static std::vector<uint64_t> switch_order;  // Alt+Tab's windows while Alt is held, the active one first
+            static size_t switch_at = 0;
+            const bool program_covers = winwin_full_screen();
             for (const KeyEvent &k : hwkeyboard_poll(dt)) {
                 if (k.vkey == VK_LCONTROL || k.vkey == VK_RCONTROL || k.vkey == VK_CONTROL) key_ctrl = k.down;
                 if (k.vkey == VK_LSHIFT || k.vkey == VK_RSHIFT || k.vkey == VK_SHIFT) key_shift = k.down;
-                if (k.vkey == VK_LMENU || k.vkey == VK_RMENU || k.vkey == VK_MENU) key_alt = k.down;
+                if (k.vkey == VK_LMENU || k.vkey == VK_RMENU || k.vkey == VK_MENU) {
+                    key_alt = k.down;
+                    if (!k.down)
+                        switch_order.clear();
+                }
                 if (k.vkey == VK_CAPITAL && k.down) caps_lock = !caps_lock;
-                const bool to_desktop = (desktop_on_top && focused()) || menu.open || dialog.open || popup != Popup::None ||
-                                        program_tasks.empty();
+                const bool to_desktop = (desktop_on_top && focused() && !program_covers) || menu.open || dialog.open ||
+                                        popup != Popup::None || program_tasks.empty();
                 if (k.vkey == 0x5b || k.vkey == 0x5c) {  // VK_LWIN, VK_RWIN: Start when let go alone
                     if (k.down)
                         win_held = true, win_used = false;
@@ -7025,6 +7022,26 @@ extern "C" void ps4_shell_run(const char *) {
                         open_window(Kind::TaskManager), dirty = true;
                     continue;
                 }
+                if (k.vkey == VK_TAB && key_alt && !key_ctrl && !keyboard_active()) {
+                    if (k.down && live) {
+                        if (switch_order.empty()) {
+                            switch_order = winwin_switch_order();
+                            // (from a desktop's window in front, the first goes to the top program window)
+                            switch_at = desktop_on_top && focused() && !program_covers && !switch_order.empty()
+                                            ? switch_order.size() - 1 : 0;
+                        }
+                        if (!switch_order.empty()) {
+                            const size_t n = switch_order.size();
+                            switch_at = (switch_at + (key_shift ? n - 1 : 1)) % n;
+                            winwin_command(switch_order[switch_at], PS4_SC_ACTIVATE);
+                            desktop_on_top = false;
+                            popup = Popup::None;
+                            key_routes.switched++;
+                            dirty = true;
+                        }
+                    }
+                    continue;
+                }
                 if (keyboard_active() || !live) {
                     if (k.down)
                         key_routes.held_back++;
@@ -7035,12 +7052,10 @@ extern "C" void ps4_shell_run(const char *) {
                         key_routes.desktop++, key_routes.to = key_target();
                     desktop_key(k);
                     dirty = true;
-                } else if (direct_keyboard) {
+                } else {
                     if (k.down)
                         key_routes.program++;
                     winwin_key(k.vkey, k.down, k.scan, k.extended);
-                } else if (k.down) {
-                    key_routes.not_sent++;
                 }
             }
             log_key_routes(t);
@@ -7197,7 +7212,7 @@ extern "C" void ps4_shell_run(const char *) {
         if (note_type_window && t - note_type_when > 0.45) {
             Window *w = find_window(note_type_window);
             note_type_window = 0;
-            if (w && w->text && auto_keyboard && !keyboard_active() && !(direct_keyboard && hwkeyboard_connected()))
+            if (w && w->text && auto_keyboard && !keyboard_active() && !hwkeyboard_connected())
                 editor_command(*w, "note-type");
             dirty = true;
         }
