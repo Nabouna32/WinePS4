@@ -563,6 +563,7 @@ extern int ps4_local_kill_all( void );
 extern void ps4_local_kill( int pid );
 extern int ps4_local_child( int argc, char **argv );
 extern int ps4_local_child_setup( int outside, int *argc_out, char ***argv_out );
+extern void ps4_sections_init( void );  /* (port/ps4_wine_vm.c) */
 extern int ps4_outside_child( int pid );
 extern long ps4_budget_id( void );
 
@@ -1514,6 +1515,7 @@ int main( int argc, char **argv )
      * without it Wine hands them to start.exe */
     setenv( "WINEARCH", "wow64", 0 );
     load_env_file();
+    ps4_sections_init();  /* (programs' sections in direct memory: the page they test, before any starts) */
     /* (Wine's stubs Chromium and Steam call all the time: 4000 of v00.60's 6000 lines of wine.log said
      * nothing but that; Settings > Diagnostics > Wine debug messages gives them all back) */
     setenv( "WINEDEBUG", "fixme-manipulation,fixme-dwmapi,fixme-appbar,fixme-media,fixme-bcrypt", 0 );

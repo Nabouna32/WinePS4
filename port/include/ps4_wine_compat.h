@@ -509,6 +509,9 @@ int ps4_vm_munmap( void *addr, size_t len );
 int ps4_vm_mprotect( void *addr, size_t len, int prot );
 int ps4_vm_madvise( void *addr, size_t len, int advice );
 void *ps4_vm_address_limit( void );
+/* a view of a section in the desktop's direct memory (ps4_wine_vm.c: sections) */
+int ps4_vm_map_section( void *addr, size_t len, int prot, unsigned long long offset );
+int ps4_vm_copy_section( void *addr, size_t len, unsigned long long offset );
 #define PS4_HOST_PAGE_SIZE 0x4000  /* the PS4's page: where Wine's 4 KiB pages share one */
 #define mmap ps4_vm_mmap
 #define munmap ps4_vm_munmap

@@ -37,6 +37,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 int32_t sceKernelReserveVirtualRange( void **addr, size_t len, int32_t flags, size_t alignment );
@@ -219,7 +220,6 @@ static void give_direct( uint32_t first, unsigned int n )
     while (n--) free_pages[free_count++] = first + n;
 }
 
-/* Gives the pages' memory back and unmaps the range, ours or the kernel's. */
 /* what this process has backed, for Task Manager (port/ps4_spawn_desk.c; read without the lock: a
  * figure for the eye) */
 unsigned long long ps4_vm_backed_bytes( void )
@@ -227,10 +227,10 @@ unsigned long long ps4_vm_backed_bytes( void )
     return (backed_direct + backed_flexible) * HOST_PAGE;
 }
 
-static int release_range( uintptr_t start, uintptr_t end )
+/* Gives the pages' memory back: the range is no longer ours (the kernel's, or unmapped next). */
+static void forget_range( uintptr_t start, uintptr_t end )
 {
     uintptr_t addr = start;
-    int ret = 0;
 
     while (addr < end)
     {
@@ -252,6 +252,15 @@ static int release_range( uintptr_t start, uintptr_t end )
             page_set( addr, PAGE_UNTRACKED );
         }
     }
+}
+
+/* Gives the pages' memory back and unmaps the range, ours or the kernel's. */
+static int release_range( uintptr_t start, uintptr_t end )
+{
+    uintptr_t addr;
+    int ret = 0;
+
+    forget_range( start, end );
     /* (in pieces of 4 GiB at most, as reserve_high and reserve_fixed reserve them) */
     for (addr = start; addr < end; addr += (uintptr_t)4 << 30)
     {
@@ -723,6 +732,257 @@ static int vm_mprotect( void *addr, size_t len, int prot )
 static int vm_madvise( void *addr, size_t len, int advice )
 {
     return 0;
+}
+
+/* --- Sections in the desktop's direct memory ---------------------------------------------------
+ *
+ * Wine's anonymous sections (CreateFileMapping without a file: Chromium's shared memory, 223 MiB of
+ * Steam's web helper in v00.67) were shared memory objects, which the PS4 takes from the flexible
+ * memory the app's local processes share: about 1 GiB, and when it is gone a page fault waits for
+ * good (v00.63 to v00.66). Now wineserver, in the desktop, puts an unnamed one that a program among
+ * the 7 makes in the app's direct memory (4.6 GiB, over 1 GiB of it free then): it allocates and
+ * zeroes it (ps4_section_alloc), each program maps it at its views (ps4_vm_map_section, from ntdll's
+ * virtual_map_section), and it goes back to the app 2 s after the section's fd has ended (server/
+ * fd.c). Named sections (another process opens them, maybe one outside the 7), SEC_RESERVE ones
+ * (committed as they are used), the sections of processes outside the 7, which never map direct
+ * memory (v00.42: the PS4 came down when the app was suspended), and every one while the app's
+ * direct memory is short stay shared memory.
+ *
+ * Whether a process may map direct memory that another one allocated is the kernel's to say: the
+ * desktop writes a token into a page of it, each local process maps that page as it starts and reads
+ * it (WINEPS4_SECTION_PROBE: the page's offset and the token), and sections go there once one has
+ * read it and written back.
+ *
+ *  WINEPS4_SECTIONS_DIRECT=0      sections in shared memory as before (Settings > Diagnostics) */
+
+#define SECTION_MAX   ((size_t)256 << 20)  /* the biggest section in direct memory */
+#define SECTION_FLOOR ((size_t)640 << 20)  /* what sections leave of the app's largest free run of direct
+                                               memory: the app's own (direct_reserve) and a new local
+                                               process's (port/ps4_spawn_desk.c's LOW_DIRECT_MEMORY) */
+#define PROBE_SEEN    0x5345454eu          /* "SEEN": a local process read the token (its pid above it) */
+
+extern int ps4_pid_local( int pid );  /* (port/ps4_spawn_desk.c) */
+int32_t sceKernelEnableDmemAliasing( void );
+int32_t sceKernelReleaseDirectMemory( off_t start, size_t len );
+
+static volatile uint64_t *section_probe;  /* the desktop: the token, then what a local process wrote back */
+static int sections_mappable;             /* a local process: it read the token */
+static unsigned long long section_count, section_bytes;  /* the desktop: the sections in direct memory now */
+
+/* *p, or ~0 if reading it faults */
+static uint64_t guarded_read( volatile uint64_t *p )
+{
+    struct sigaction sa, old_segv, old_bus;
+    volatile uint64_t value = ~0ull;
+
+    memset( &sa, 0, sizeof(sa) );
+    sa.sa_handler = exec_fault;
+    sa.sa_flags = 0x10;  /* FreeBSD's SA_NODEFER: the handler leaves with longjmp */
+    sigaction( SIGSEGV, &sa, &old_segv );
+    sigaction( 10 /* FreeBSD's SIGBUS */, &sa, &old_bus );
+    if (!setjmp( exec_jump )) value = *p;
+    sigaction( SIGSEGV, &old_segv, NULL );
+    sigaction( 10, &old_bus, NULL );
+    return value;
+}
+
+/* The desktop, before it starts a program: the page the local processes test */
+void ps4_sections_init( void )
+{
+    const char *env = getenv( "WINEPS4_SECTIONS_DIRECT" );
+    struct timespec now;
+    char value[48];
+    void *page = NULL;
+    off_t phys = 0;
+    int ret;
+
+    if (env && !strcmp( env, "0" ))
+    {
+        fprintf( stderr, "wineps4: sections in shared memory (Settings > Diagnostics)\n" );
+        return;
+    }
+    if ((ret = sceKernelAllocateDirectMemory( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, HOST_PAGE, 0, &phys )))
+    {
+        fprintf( stderr, "wineps4: sections in shared memory (no direct memory for the test: %#x)\n", (unsigned int)ret );
+        return;
+    }
+    if ((ret = sceKernelMapDirectMemory( &page, HOST_PAGE, PROT_READ | PROT_WRITE, 0, phys, HOST_PAGE )))
+    {
+        fprintf( stderr, "wineps4: sections in shared memory (the test's page not mapped: %#x)\n", (unsigned int)ret );
+        sceKernelReleaseDirectMemory( phys, HOST_PAGE );
+        return;
+    }
+    clock_gettime( CLOCK_MONOTONIC, &now );
+    section_probe = page;
+    section_probe[0] = ((uint64_t)now.tv_nsec << 32 ^ (uint64_t)now.tv_sec ^ (uint64_t)getpid() << 16) | 1;
+    section_probe[1] = 0;
+    snprintf( value, sizeof(value), "%llx:%llx", (unsigned long long)phys, (unsigned long long)section_probe[0] );
+    setenv( "WINEPS4_SECTION_PROBE", value, 1 );
+}
+
+/* A local process as it starts (port/ps4_spawn_desk.c): does the desktop's direct memory map here?
+ * It reads the token, and the first to read it writes back, which lets wineserver put sections there. */
+void ps4_section_probe( void )
+{
+    const char *env = getenv( "WINEPS4_SECTION_PROBE" );
+    unsigned long long phys, token;
+    volatile uint64_t *page;
+    void *base = NULL;
+    int ret, alias;
+
+    if (!env || sscanf( env, "%llx:%llx", &phys, &token ) != 2) return;
+    alias = sceKernelEnableDmemAliasing();  /* (the memory is mapped in the desktop already) */
+    if ((ret = sceKernelMapDirectMemory( &base, HOST_PAGE, PROT_READ | PROT_WRITE, 0, (off_t)phys, HOST_PAGE )))
+    {
+        fprintf( stderr, "wineps4: sections: the desktop's direct memory does not map here (%#x, aliasing %d): "
+                 "they stay in shared memory\n", (unsigned int)ret, alias );
+        return;
+    }
+    page = base;
+    if (guarded_read( &page[0] ) != token)
+    {
+        fprintf( stderr, "wineps4: sections: the desktop's direct memory maps here but reads otherwise (aliasing %d): "
+                 "they stay in shared memory\n", alias );
+        sceKernelMunmap( base, HOST_PAGE );
+        return;
+    }
+    sections_mappable = 1;
+    if ((page[1] & 0xffffffff) != PROBE_SEEN)
+    {
+        page[1] = (uint64_t)getpid() << 32 | PROBE_SEEN;
+        fprintf( stderr, "wineps4: sections: the desktop's direct memory maps here (aliasing %d): programs' "
+                 "sections go there\n", alias );
+    }
+    sceKernelMunmap( base, HOST_PAGE );
+}
+
+/* wineserver (server/mapping.c): a new anonymous section of process pid in direct memory: 0, with
+ * *offset and *alloc_size; -1: shared memory (not tested yet, a process outside the 7, too big, short) */
+int ps4_section_alloc( unsigned long long size, int pid, unsigned long long *offset, unsigned long long *alloc_size )
+{
+    static int told_first, told_short, told_failed;
+    const size_t len = (size + HOST_PAGE - 1) & ~(size_t)(HOST_PAGE - 1);
+    size_t largest = 0;
+    off_t start = 0, phys = 0;
+    void *base = NULL;
+    int ret;
+
+    if (!section_probe || (section_probe[1] & 0xffffffff) != PROBE_SEEN) return -1;
+    if (len > SECTION_MAX || !ps4_pid_local( pid )) return -1;
+    if (sceKernelAvailableDirectMemorySize( 0, sceKernelGetDirectMemorySize(), HOST_PAGE, &start, &largest ) ||
+        largest < len + SECTION_FLOOR)
+    {
+        if (!told_short)
+            fprintf( stderr, "wineps4: sections: the app's direct memory is down to %zu MiB: new ones in shared memory\n",
+                     largest >> 20 );
+        told_short = 1;
+        return -1;
+    }
+    if (told_short) fprintf( stderr, "wineps4: sections: in direct memory again (%zu MiB free)\n", largest >> 20 );
+    told_short = 0;
+    if ((ret = sceKernelAllocateDirectMemory( 0, sceKernelGetDirectMemorySize(), len, HOST_PAGE, 0, &phys )))
+    {
+        if (!told_failed++)
+            fprintf( stderr, "wineps4: sections: no direct memory for %zu KiB (%#x): shared memory\n", len >> 10,
+                     (unsigned int)ret );
+        return -1;
+    }
+    /* direct memory comes as its last user left it: zeroed here, before any program sees it */
+    if ((ret = sceKernelMapDirectMemory( &base, len, PROT_READ | PROT_WRITE, 0, phys, HOST_PAGE )))
+    {
+        if (!told_failed++)
+            fprintf( stderr, "wineps4: sections: %zu KiB of direct memory not mapped here to be zeroed (%#x): shared "
+                     "memory\n", len >> 10, (unsigned int)ret );
+        sceKernelReleaseDirectMemory( phys, len );
+        return -1;
+    }
+    memset( base, 0, len );
+    sceKernelMunmap( base, len );
+    if (!told_first++)
+        fprintf( stderr, "wineps4: sections: the first in direct memory (%zu KiB, process %d)\n", len >> 10, pid );
+    section_count++;
+    section_bytes += len;
+    *offset = (unsigned long long)phys;
+    *alloc_size = len;
+    return 0;
+}
+
+/* wineserver: a section's direct memory back to the app (server/fd.c: 2 s after the section's end) */
+void ps4_section_release( unsigned long long offset, unsigned long long size )
+{
+    static int told;
+    int ret;
+
+    if ((ret = sceKernelReleaseDirectMemory( (off_t)offset, size )) && !told++)
+        fprintf( stderr, "wineps4: sections: direct memory at %#llx (%llu KiB) not given back (%#x)\n", offset,
+                 size >> 10, (unsigned int)ret );
+    section_count--;
+    section_bytes -= size;
+}
+
+/* the Performance log's figures: the sections in direct memory now, and their bytes (read without a
+ * lock: figures for the eye) */
+unsigned long long ps4_sections_direct( unsigned long long *bytes )
+{
+    *bytes = section_bytes;
+    return section_count;
+}
+
+static int section_refused( void )
+{
+    static int told;
+
+    if (!told++)
+        fprintf( stderr, "wineps4: a section in the desktop's direct memory not mapped: %s\n",
+                 ps4_outside_process ? "a process outside the PS4's 7 maps no direct memory"
+                                     : "this process could not map it as it started" );
+    errno = EACCES;
+    return -1;
+}
+
+/* A program's view of a section in the desktop's direct memory (ntdll's virtual_map_section): the
+ * view's pages, reserved until now, become a mapping of that memory at offset, which munmap and
+ * mprotect then pass to the kernel as they do a file's */
+int ps4_vm_map_section( void *addr, size_t len, int prot, unsigned long long offset )
+{
+    const uintptr_t start = (uintptr_t)addr & ~(uintptr_t)(HOST_PAGE - 1);
+    const size_t size = ((uintptr_t)addr + len - start + HOST_PAGE - 1) & ~(size_t)(HOST_PAGE - 1);
+    void *base = (void *)start;
+    int ret;
+
+    if (!sections_mappable) return section_refused();
+    vm_enter();
+    ret = sceKernelMapDirectMemory( &base, size, prot & (PROT_READ | PROT_WRITE), SCE_FIXED, (off_t)offset, HOST_PAGE );
+    if (!ret && base == (void *)start) forget_range( start, start + size );
+    else if (!ret) sceKernelMunmap( base, size );
+    vm_leave();
+    LOG( "section %p+%#zx prot %d = direct memory %#llx (%#x)\n", (void *)start, size, prot, offset, (unsigned int)ret );
+    if (!ret && base == (void *)start) return 0;
+    fprintf( stderr, "wineps4 vm: a section's view %p+%#zx not mapped from direct memory %#llx: %#x\n", (void *)start,
+             size, offset, (unsigned int)ret );
+    errno = ENOMEM;
+    return -1;
+}
+
+/* A copy-on-write view of such a section: its own pages with a copy of the section's (direct memory
+ * isn't copied on write) */
+int ps4_vm_copy_section( void *addr, size_t len, unsigned long long offset )
+{
+    const size_t size = (len + HOST_PAGE - 1) & ~(size_t)(HOST_PAGE - 1);
+    void *source = NULL;
+    int ret;
+
+    if (!sections_mappable) return section_refused();
+    if ((ret = sceKernelMapDirectMemory( &source, size, PROT_READ, 0, (off_t)offset, HOST_PAGE )))
+    {
+        fprintf( stderr, "wineps4 vm: a section's direct memory %#llx not mapped for a copy: %#x\n", offset,
+                 (unsigned int)ret );
+        errno = ENOMEM;
+        return -1;
+    }
+    if (!(ret = vm_mprotect( addr, len, PROT_READ | PROT_WRITE ))) memcpy( addr, source, len );
+    sceKernelMunmap( source, size );
+    return ret;
 }
 
 /* --- The calls, each marked while it runs ----------------------------------------------------------- */

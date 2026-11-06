@@ -39,6 +39,7 @@ struct spawn_header
 };
 
 extern pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 );
+extern void ps4_section_probe( void );  /* (port/ps4_wine_vm.c) */
 extern void ps4_child_started( int pid, const char *image );
 extern void ps4_thread_name( const char *name );  /* (port/ps4_kstate.c) */
 extern void ps4_touch_stack( size_t size );
@@ -619,6 +620,19 @@ void ps4_local_kill( int pid )
     kill( pid, SIGKILL );
 }
 
+/* Is pid one of the app's local processes (among the PS4's 7, not outside)? wineserver's sections in
+ * direct memory are theirs only (port/ps4_wine_vm.c) */
+int ps4_pid_local( int pid )
+{
+    int i, local = 0;
+
+    pthread_mutex_lock( &locals_lock );
+    for (i = 0; i < local_count; i++)
+        if (locals[i].pid == pid) local = locals[i].local_id >= 0;
+    pthread_mutex_unlock( &locals_lock );
+    return local;
+}
+
 /* The memory guard (Settings > Diagnostics > Memory guard; WINEPS4_MEMORY_GUARD=0: off). The local
  * processes all take the app's flexible memory, about 1 GiB between them, and the PS4 doesn't refuse
  * a page when it is gone: the thread that touched it waits in the kernel for good, and the app's
@@ -945,6 +959,7 @@ int ps4_local_child_setup( int outside, int *argc_out, char ***argv_out )
     if (!write_all( sock, &msg, sizeof(msg) )) return 0;
     fcntl( sock, F_SETFD, FD_CLOEXEC );
     ps4_control_fd = sock;
+    if (!outside) ps4_section_probe();  /* (may wineserver's sections be in direct memory?) */
     snprintf( program_name, sizeof(program_name), "%s", image_name( header.argc > 1 ? list[1] : list[0] ) );
     pthread_attr_init( &attr );
     pthread_attr_setstacksize( &attr, 64 << 10 );

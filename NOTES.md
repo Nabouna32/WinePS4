@@ -703,3 +703,41 @@ v00.68:
   The program ends at once (EXCEPTION_EXECUTE_HANDLER): no winedbg, no console. Settings > Diagnostics
   > Crash trace (WINEPS4_CRASH_TRACE=0: Wine's debugger as before). kernelbase.dll built in the host's
   WoW64 tree (x64 and x86) and copied into install/wine-wow64.
+
+## Programs' shared memory in direct memory (v00.69, 2026-11-06)
+
+Made while v00.68 was being tested (no log of it yet). v00.67's census: 223 MiB of the web helper's
+flexible mappings were Wine's sections (wineserver's shared memory objects, ps4_anon_shm: Chromium's
+shared memory), which come out of the flexible memory the local processes share (about 1 GiB), while
+the app's direct memory had 1.1 to 1.4 GiB free.
+
+v00.69:
+- Wine 8c96b86 (server/mapping.c, fd.c, protocol.def; ntdll's virtual.c): an unnamed section that a
+  local process makes (not SEC_RESERVE, 256 MiB at most) gets its memory from the app's direct memory,
+  allocated and zeroed by wineserver in the desktop (port/ps4_wine_vm.c ps4_section_alloc). Its fd is
+  a shared memory object of no size, for wineserver's bookkeeping, and holds that memory: it goes back
+  to the app 2 s after the fd ends (a server timeout: the last view's munmap comes after its
+  unmap_view). get_mapping_info's reply says where (direct_offset, direct_size; protocol 931), and
+  virtual_map_section maps a view from there (ps4_vm_map_section: sceKernelMapDirectMemory over the
+  view's reserved pages, which the VM layer then leaves to the kernel); a copy-on-write view gets a
+  copy in pages of its own; a view off a 16 KiB boundary is refused. Named sections (another process
+  opens them, maybe one outside the 7), SEC_RESERVE ones, those of processes outside the 7 (they map no
+  direct memory: v00.42) and every one while the app's largest free run of direct memory is under 640
+  MiB plus its size stay shared memory.
+- Whether a process may map direct memory another one allocated wasn't known. The desktop writes a
+  token into a page of direct memory (WINEPS4_SECTION_PROBE: its offset and the token); each local
+  process turns its direct memory aliasing on, maps that page as it starts (after READY) and reads it,
+  and the first that reads the token writes back. wineserver puts sections in direct memory only
+  after that. wine.log says which: "sections: the desktop's direct memory maps here", or "does not map
+  here (the kernel's error)", or "maps here but reads otherwise"; then "sections: the first in direct
+  memory", "the app's direct memory is down to N MiB" (and "in direct memory again"), and any view a
+  process could not map.
+- The Performance log's direct memory figure says what sections hold of it ("; sections in it N MiB
+  (count)").
+- Settings > Diagnostics > Direct shared memory (WINEPS4_SECTIONS_DIRECT=0: shared memory as before;
+  read as WinePS4 starts). The Diagnostics page is in two columns: with 12 switches one under the
+  other, Crash trace (v00.68) was under the taskbar and Memory guard half under it.
+- To read in its log: the test's line; the census's flexible holders (steamwebhelper.exe should lose
+  most of its 223 MiB of flexible mappings); the memory guard's warnings; any view not mapped. If the
+  PS4 comes down as the app is suspended with sections mapped in several processes, the switch turns
+  it off.

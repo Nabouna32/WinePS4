@@ -57,6 +57,7 @@ int32_t sceKernelAvailableDirectMemorySize(off_t start, off_t end, size_t align,
 int32_t sceKernelAvailableFlexibleMemorySize(size_t *size);
 int32_t sceKernelIsNeoMode(void);
 int ps4_memory_census(uint64_t *flexible, uint64_t *shared);  // (port/ps4_kstate.c)
+unsigned long long ps4_sections_direct(unsigned long long *bytes);  // (port/ps4_wine_vm.c)
 }
 
 using namespace ps4ui;
@@ -1127,6 +1128,7 @@ const Toggle TOGGLES[] = {
     {"Freeze report", "When the desktop stands still for 6 s: where each thread of the app is (the kernel's view too), in hang.log", "WINEPS4_FREEZE_REPORT", "", "0"},
     {"Memory guard", "When the memory programs share is nearly gone, restarts a launcher's web window (Steam's) instead of the app standing still", "WINEPS4_MEMORY_GUARD", "", "0"},
     {"Crash trace", "A program that crashes ends at once with where (its module and calls) in wine.log; off: Wine's debugger comes up, two more of the PS4's 7 processes", "WINEPS4_CRASH_TRACE", "", "0"},
+    {"Direct shared memory", "Programs' shared memory (Chromium's: Steam's web helper) in the PS4's direct memory, not the 1 GiB all programs share; applies when WinePS4 starts again", "WINEPS4_SECTIONS_DIRECT", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second
@@ -1478,7 +1480,7 @@ Window *open_window(Kind kind, const std::string &path = std::string()) {
         w.title = "Terminal";
         break;
     case Kind::Settings:
-        w.w = 1100, w.h = 1000, w.x = 410, w.y = 30;  // (Diagnostics' 10 switches)
+        w.w = 1100, w.h = 1000, w.x = 410, w.y = 30;  // (Diagnostics' switches, in two columns)
         w.bg_tab = background.kind == BgKind::Color;
         w.title = "Settings";
         break;
@@ -1733,6 +1735,11 @@ void perf_tick(double t) {
                       "%.0f ms; direct memory %llu MiB free", perf.frames, perf.quick, perf.frames ? perf.drawing * 1000 / perf.frames : 0.0,
                       perf.longest * 1000, memory_free >> 20);
         line += text;
+        unsigned long long section_bytes = 0;
+        if (const unsigned long long sections = ps4_sections_direct(&section_bytes)) {
+            std::snprintf(text, sizeof text, "; sections in it %llu MiB (%llu)", section_bytes >> 20, sections);
+            line += text;
+        }
         const unsigned long long pool = ps4_outside_pool();
         if (pool != ~0ull) {
             std::snprintf(text, sizeof text, ", the pool outside the 7 %llu MiB", pool >> 20);
@@ -3371,7 +3378,13 @@ Rect swatch_rect(const Window &w, int i) {
     return Rect{a.x + (i % 8) * (SWATCH + 16), a.y + 244 + (i / 8) * (SWATCH + 16), SWATCH, SWATCH};
 }
 Rect custom_color_rect(const Window &w) { const Rect a = settings_area(w); return Rect{a.x, a.y + 244 + 2 * (SWATCH + 16) + 10, 240, 40}; }
-Rect toggle_rect(const Window &w, int i) { const Rect a = settings_area(w); return Rect{a.x, a.y + 60 + i * 80, a.w, 72}; }
+// Diagnostics' switches in two columns (one under the other, the 12th was under the taskbar)
+constexpr int TOGGLE_ROWS = (static_cast<int>(std::size(TOGGLES)) + 1) / 2, TOGGLE_PITCH = 112;
+Rect toggle_rect(const Window &w, int i) {
+    const Rect a = settings_area(w);
+    const int cw = (a.w - 16) / 2;
+    return Rect{a.x + i / TOGGLE_ROWS * (cw + 16), a.y + 60 + i % TOGGLE_ROWS * TOGGLE_PITCH, cw, TOGGLE_PITCH - 8};
+}
 // a page's cards, one under the other (System, Bluetooth & devices)
 Rect card_at(const Window &w, int top, int h) { const Rect a = settings_area(w); return Rect{a.x, a.y + top, a.w, h}; }
 Rect mouse_card(const Window &w) { return card_at(w, 56, 92); }
@@ -6082,11 +6095,11 @@ void draw_settings(Canvas &c, Window &w) {
         for (int i = 0; i < static_cast<int>(std::size(TOGGLES)); i++) {
             const Rect r = toggle_rect(w, i);
             panel(c, r.x, r.y, r.w, r.h, 6, hover == id + "toggle" + std::to_string(i) ? CARD_HOT : CARD, CARD_BORDER);
-            c.text(r.x + 22, r.y + 33, TOGGLES[i].title, 16, TEXT);
-            c.text(r.x + 22, r.y + 58, TOGGLES[i].detail, 14, TEXT3, Weight::Regular, r.w - 140);
-            draw_switch(c, r, toggle_on(TOGGLES[i]));
+            c.text(r.x + 22, r.y + 32, TOGGLES[i].title, 16, TEXT, Weight::Regular, r.w - 150);
+            c.text_wrapped(r.x + 22, r.y + 56, TOGGLES[i].detail, 13, TEXT3, r.w - 44, 18);
+            draw_switch(c, Rect{r.x, r.y, r.w, 52}, toggle_on(TOGGLES[i]));
         }
-        c.text_wrapped(a.x, a.y + 60 + static_cast<int>(std::size(TOGGLES)) * 80 + 10,
+        c.text_wrapped(a.x, a.y + 60 + TOGGLE_ROWS * TOGGLE_PITCH + 14,
                        "The switches go to /data/WinePS4/env.txt and apply the next time a program starts. "
                        "Logs: /data/WinePS4/wine.log, crash.log, hang.log.",
                        14, TEXT3, a.w, 22);

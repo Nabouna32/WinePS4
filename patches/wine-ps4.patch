@@ -1,7 +1,7 @@
 From b317c792bf7d22f3c20fada9876a07c027672815 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:24:27 +0300
-Subject: [PATCH 01/45] WinePS4: first PS4 edits (signal context, GS, 16 KiB
+Subject: [PATCH 01/46] WinePS4: first PS4 edits (signal context, GS, 16 KiB
  pages, paths, in-process wineserver)
 
 ---
@@ -242,7 +242,7 @@ index 432a591..122208b 100644
 From 6ba7e01f45ee9ec4e8997385c566144ab1550e53 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 17:35:43 +0300
-Subject: [PATCH 02/45] WinePS4: wineserver main fixes
+Subject: [PATCH 02/46] WinePS4: wineserver main fixes
 
 ---
  server/main.c | 7 +++----
@@ -286,7 +286,7 @@ index 33b127b..4b4c083 100644
 From 9f77cbb583f218c0e08a86119fe26e074386bcd0 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 20:29:13 +0300
-Subject: [PATCH 03/45] ntdll: set up the prefix (dosdevices) before starting
+Subject: [PATCH 03/46] ntdll: set up the prefix (dosdevices) before starting
  the in-process server
 
 ---
@@ -314,7 +314,7 @@ index 3507172..e9660ef 100644
 From dab06a9774f2a58d35ca99ab826feaeaa02c0141 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:00:06 +0300
-Subject: [PATCH 04/45] server: send the first thread its request pipe in the
+Subject: [PATCH 04/46] server: send the first thread its request pipe in the
  in-process start
 
 ---
@@ -355,7 +355,7 @@ index 4b4c083..da7531c 100644
 From d72d17ca4a8575b39569846b4aec9335a6bbb195 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 21:33:31 +0300
-Subject: [PATCH 05/45] ntdll: take the host address space limit from the PS4
+Subject: [PATCH 05/46] ntdll: take the host address space limit from the PS4
  memory layer
 
 ---
@@ -383,7 +383,7 @@ index 296db73..c5621ae 100644
 From cee3501f63b42ab1574817e9cd1bf7f0975b38fd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 22:06:18 +0300
-Subject: [PATCH 06/45] ntdll, server: keep the syscall dispatcher pointer at
+Subject: [PATCH 06/46] ntdll, server: keep the syscall dispatcher pointer at
  7ffe1000 with 16 KiB host pages (one host page for the USD)
 
 ---
@@ -466,7 +466,7 @@ index 905d528..0f787a1 100644
 From 6b25b0966fbee097654e862ad4b51998b6313e52 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sat, 31 Oct 2026 23:43:18 +0300
-Subject: [PATCH 07/45] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
+Subject: [PATCH 07/46] WinePS4: 32-bit programs (WoW64): cs 0x33, fs 0x13 with
  its base switched by sysarch at the Unix side boundaries; wow64cpu skips
  reloading an unchanged fs
 
@@ -677,7 +677,7 @@ index 4a49989..f4fb64c 100644
 From 92ac010d735ddb5e01e2f400909ffcbc95c8feee Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:05:56 +0300
-Subject: [PATCH 08/45] WinePS4: signal handlers installed with the kernel
+Subject: [PATCH 08/46] WinePS4: signal handlers installed with the kernel
  sigaction (libthr wrapper needs the C library FS, which 32-bit code does not
  have)
 
@@ -721,7 +721,7 @@ index dd223f7..d9600d2 100644
 From 937f9d44650ce53f4a239bbefe13be64e8b111bd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:19:07 +0300
-Subject: [PATCH 09/45] WinePS4: signals of threads that are not Wine's go to
+Subject: [PATCH 09/46] WinePS4: signals of threads that are not Wine's go to
  the handler before Wine's
 
 ---
@@ -859,7 +859,7 @@ index d9600d2..515989c 100644
 From 389a695ad345828b757c71dcc95e87743c4a6220 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 01:29:00 +0300
-Subject: [PATCH 10/45] WinePS4: wineserver does not kill the app when a
+Subject: [PATCH 10/46] WinePS4: wineserver does not kill the app when a
  program ends
 
 ---
@@ -893,7 +893,7 @@ index a06aa83..81e8555 100644
 From ce49d9cec3f007b70014ba6aace28d86b7b759d6 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:21:33 +0300
-Subject: [PATCH 11/45] WinePS4: a process per program: wineserver listens
+Subject: [PATCH 11/46] WinePS4: a process per program: wineserver listens
  (absolute socket path), ntdll connects, new processes exec /app0/wineps4.bin,
  thr_kill2 across processes
 
@@ -1048,7 +1048,7 @@ index 122208b..44fcfa7 100644
 From cc36d27af8fac614b7694b55514cd924bbb9c85f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 02:51:49 +0300
-Subject: [PATCH 12/45] WinePS4: the app wineserver never closes its socket
+Subject: [PATCH 12/46] WinePS4: the app wineserver never closes its socket
  (callers logged); no wineboot at program start
 
 ---
@@ -1094,7 +1094,7 @@ index 44fcfa7..e66524f 100644
 From 2651912be3a1aad91a90a2833e1312a0ec3eb967 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 03:11:50 +0300
-Subject: [PATCH 13/45] programs fill the shared data page themselves (wineboot
+Subject: [PATCH 13/46] programs fill the shared data page themselves (wineboot
  is skipped)
 
 ---
@@ -1124,7 +1124,7 @@ index f40d41f..41f5884 100644
 From 90e29674410e9ad3ffc58dffb83a893ff33a1a5f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:24:13 +0300
-Subject: [PATCH 14/45] wineps4.drv display driver + the desktop input pipe in
+Subject: [PATCH 14/46] wineps4.drv display driver + the desktop input pipe in
  the server
 
 ---
@@ -2056,7 +2056,7 @@ index 3e8ab2e..3048ccf 100644
 From 6b5c634711a7fbcdc1e41eb6abd45444b9921f57 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 04:34:30 +0300
-Subject: [PATCH 15/45] wineps4.drv: work area above the 60 px taskbar
+Subject: [PATCH 15/46] wineps4.drv: work area above the 60 px taskbar
 
 ---
  dlls/wineps4.drv/display.c | 2 +-
@@ -2082,7 +2082,7 @@ index 93fdcfb..e947d31 100755
 From af0965aa6bc9f2a34ff5586844a0660da1f53b2a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:12:22 +0300
-Subject: [PATCH 16/45] programs start programs with one fork (an orphan cannot
+Subject: [PATCH 16/46] programs start programs with one fork (an orphan cannot
  exec on the PS4); exec failures logged
 
 ---
@@ -2152,7 +2152,7 @@ index 4c2e7eb..67836bb 100644
 From e522bb1370611936c26405c3b984e0e2e9009f29 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:37:29 +0300
-Subject: [PATCH 17/45] spawn steps and failed children logged
+Subject: [PATCH 17/46] spawn steps and failed children logged
 
 ---
  dlls/ntdll/unix/process.c | 26 ++++++++++++++++++++++++++
@@ -2230,7 +2230,7 @@ index 67836bb..3007370 100644
 From ea3cbbf972e23f2ee73cabc6cfe3f2795c620466 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 05:45:16 +0300
-Subject: [PATCH 18/45] programs start processes from an app thread with an
+Subject: [PATCH 18/46] programs start processes from an app thread with an
  ordinary stack (ps4_spawn)
 
 ---
@@ -2326,7 +2326,7 @@ index 3007370..1bd8aee 100644
 From 491ce5e30e62e7650c69a8ab3ee8d50cb070cc3a Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 06:06:53 +0300
-Subject: [PATCH 19/45] the new process environment strings in malloc memory
+Subject: [PATCH 19/46] the new process environment strings in malloc memory
 
 ---
  dlls/ntdll/unix/process.c | 11 +++++++----
@@ -2368,7 +2368,7 @@ index 1bd8aee..88d28c6 100644
 From 892873489067b68defd34126bf97af98365560ab Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 09:28:47 +0300
-Subject: [PATCH 20/45] WinePS4: wineboot runs once per app start (the desktop
+Subject: [PATCH 20/46] WinePS4: wineboot runs once per app start (the desktop
  starts it with WINEPS4_BOOT); programs wait for its event
 
 ---
@@ -2415,7 +2415,7 @@ index 88d28c6..9b07ec0 100644
 From b13ad1ef3a4578b1ff346c0643100095216d0473 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:13:44 +0300
-Subject: [PATCH 21/45] PS4: programs never run wineboot (the desktop does,
+Subject: [PATCH 21/46] PS4: programs never run wineboot (the desktop does,
  once); spawned processes logged
 
 ---
@@ -2449,7 +2449,7 @@ index e0d4c6d..9a22128 100644
 From 947f88752bee92f5fc6d1713481c88db741cf0d8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:14:01 +0300
-Subject: [PATCH 22/45] PS4: processes started from programs are logged
+Subject: [PATCH 22/46] PS4: processes started from programs are logged
 
 ---
  dlls/ntdll/unix/process.c | 1 +
@@ -2474,7 +2474,7 @@ index 9b07ec0..8460cd3 100644
 From 8d9d4ac998d9294c83655eed440a04ae1893e3df Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 17:36:46 +0300
-Subject: [PATCH 23/45] PS4: the desktop can have the server kill every program
+Subject: [PATCH 23/46] PS4: the desktop can have the server kill every program
  process; unwinding skips addresses outside the app
 
 ---
@@ -2600,7 +2600,7 @@ index 9408763..ccca2bd 100755
 From 4fca7680a58381e89d92907a71ea7cdcc408d85d Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 19:45:19 +0300
-Subject: [PATCH 24/45] PS4: a new process keeps the shared syscall dispatcher
+Subject: [PATCH 24/46] PS4: a new process keeps the shared syscall dispatcher
  pointer instead of writing back its own 0
 
 ---
@@ -2655,7 +2655,7 @@ index 6d01de4..ccb9716 100644
 From b1111f49eb0fc917c258af3125209a48761e7cc8 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Sun, 1 Nov 2026 20:00:09 +0300
-Subject: [PATCH 25/45] PS4: CreateProcess has the desktop start the process
+Subject: [PATCH 25/46] PS4: CreateProcess has the desktop start the process
  (it collects every one)
 
 ---
@@ -2692,7 +2692,7 @@ index 8460cd3..84b5a3a 100644
 From fde1c22fc589c56b5b2ece770adb9a36904c353c Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 00:22:33 +0300
-Subject: [PATCH 26/45] PS4: the desktop stays when its last program ends
+Subject: [PATCH 26/46] PS4: the desktop stays when its last program ends
  (explorer.exe runs with the app)
 
 ---
@@ -2732,7 +2732,7 @@ index a36253e..6fb58db 100644
 From a078eaa8946d422fc5fc5238759cdcb6d527358b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 01:20:23 +0300
-Subject: [PATCH 27/45] PS4: crypt32 reads its root certificates from WinePS4
+Subject: [PATCH 27/46] PS4: crypt32 reads its root certificates from WinePS4
  (the package, or the data folder)
 
 ---
@@ -2763,7 +2763,7 @@ index 345051c..22113be 100644
 From a4ee9e980578a46ec12489bd0386904b790637db Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 02:29:46 +0300
-Subject: [PATCH 28/45] PS4: windows report their title bar, client area and
+Subject: [PATCH 28/46] PS4: windows report their title bar, client area and
  state; the desktop sends window commands (title bar buttons, taskbar)
 
 ---
@@ -2975,7 +2975,7 @@ index ccca2bd..cf8302b 100755
 From 76fa2947684d2ed3e8d51497e4f13173da3eae96 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 02:32:19 +0300
-Subject: [PATCH 29/45] PS4: a process the desktop starts is named by its image
+Subject: [PATCH 29/46] PS4: a process the desktop starts is named by its image
  path, not the command line's first word
 
 ---
@@ -3027,7 +3027,7 @@ index 84b5a3a..fa78872 100644
 From b22b25456d9d9d9c046f487ce3dff35f86248b7b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 03:15:35 +0300
-Subject: [PATCH 30/45] PS4: a window gets a taskbar button by Windows' rule
+Subject: [PATCH 30/46] PS4: a window gets a taskbar button by Windows' rule
  (not owned, not a tool window, or WS_EX_APPWINDOW)
 
 ---
@@ -3057,7 +3057,7 @@ index 5413f34..6da5fbe 100755
 From 5c3b61688fcf27b7b59bbc1fc07529fad2b4d4ec Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 04:45:01 +0300
-Subject: [PATCH 31/45] PS4: a Chromium browser's first process gets the
+Subject: [PATCH 31/46] PS4: a Chromium browser's first process gets the
  switches that keep it in one process (the PS4 runs 7 for the app)
 
 ---
@@ -3157,7 +3157,7 @@ index fa78872..6827f0e 100644
 From 97928f88d49902c3e15ff5a818ce77d1f423a329 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 05:46:17 +0300
-Subject: [PATCH 32/45] PS4: wineserver parks idle files for the app's budget
+Subject: [PATCH 32/46] PS4: wineserver parks idle files for the app's budget
  of open files (about 250 for all its processes): closed, opened again by name
  at the same file pointer when next used; files lent to programs are not kept
  in their fd cache
@@ -3665,7 +3665,7 @@ index 77ea355..87e214b 100644
 From 74314df563b182f74f63b1fe82406aaa58cd2b59 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 05:46:17 +0300
-Subject: [PATCH 33/45] PS4: helper programs that would only take one of the 7
+Subject: [PATCH 33/46] PS4: helper programs that would only take one of the 7
  processes are refused (Steam's start-up probes, install scripts and overlay)
 
 ---
@@ -3728,7 +3728,7 @@ index 6827f0e..ad54f06 100644
 From aa7b20b57a6d6b0a7fec11d53688eb88d58e9c46 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 22:24:50 +0300
-Subject: [PATCH 34/45] PS4: nsiproxy's interfaces from the PS4's kernel: the
+Subject: [PATCH 34/46] PS4: nsiproxy's interfaces from the PS4's kernel: the
  hardware address from SIOCGIFCONF's link level entries, FreeBSD's ioctl
  numbers for the flags and the MTU (port/ps4_ifaddrs.c)
 
@@ -3811,7 +3811,7 @@ index c7d1f73..4b8e608 100644
 From 0428e4678e314586f41027b377c0b331e57ce9fb Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Wed, 4 Nov 2026 22:51:13 +0300
-Subject: [PATCH 35/45] PS4: dnsapi's Unix half (the DNS servers from the PS4's
+Subject: [PATCH 35/46] PS4: dnsapi's Unix half (the DNS servers from the PS4's
  network settings, addresses through its resolver) and nsiproxy's IPv4 route
  table (FreeBSD's routing sysctl, else the interfaces' networks), so
  GetAdaptersAddresses succeeds
@@ -4154,7 +4154,7 @@ index 002d2b4..8623de1 100644
 From e83d22beb82d7f74c3b2a9031d4fcc1cbd44653b Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 00:02:53 +0300
-Subject: [PATCH 36/45] PS4: bcrypt's Unix half on OpenSSL's libcrypto (RSA and
+Subject: [PATCH 36/46] PS4: bcrypt's Unix half on OpenSSL's libcrypto (RSA and
  ECC public keys, signature checks, AES CBC/ECB/CFB8/GCM): crypt32 verifies
  ECDSA certificate chains through it
 
@@ -5097,7 +5097,7 @@ index 0000000..7792869
 From f4a85ec1d83c56b3295f0b8687f970cc289715e5 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 02:18:26 +0300
-Subject: [PATCH 37/45] PS4: the PS4's keyboard for a text field clicked: msctf
+Subject: [PATCH 37/46] PS4: the PS4's keyboard for a text field clicked: msctf
  tells the display driver which field Chromium's text services focus (a text
  store, a password context); the driver sends that and the carets win32u shows
  to the desktop
@@ -5330,7 +5330,7 @@ index 6da5fbe..43df3fd 100755
 From 97f01243e4f923fdbad56ae169fa4f957b84e7c3 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 02:25:56 +0300
-Subject: [PATCH 38/45] PS4: GlobalMemoryStatusEx's RAM and free memory from
+Subject: [PATCH 38/46] PS4: GlobalMemoryStatusEx's RAM and free memory from
  the app's direct and flexible memory (port/ps4_wine_vm.c): neither the Linux
  nor the BSD branch is built, so programs saw none free
 
@@ -5364,7 +5364,7 @@ index 350bcea..8c4300c 100644
 From deef81707f7cd9f45a5ca2e5cbe4091d2973afd3 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 03:17:55 +0300
-Subject: [PATCH 39/45] PS4: sections in anonymous shared memory (not files of
+Subject: [PATCH 39/46] PS4: sections in anonymous shared memory (not files of
  the app's budget), IPv4 options on IPv6 sockets as FreeBSD takes them (IP_TOS
  as IPV6_TCLASS), a log of refused socket options, Chromium's GPU shader
  caches off the disk
@@ -5496,7 +5496,7 @@ index 85ea73a..44a8965 100644
 From 7a1686bc4a9bca19787e7a38a81a3b9e12f85fe5 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 03:37:49 +0300
-Subject: [PATCH 40/45] PS4: Vulkan in wineps4.drv: headless surfaces from
+Subject: [PATCH 40/46] PS4: Vulkan in wineps4.drv: headless surfaces from
  ps4-kit's window system, each presented frame sent to the desktop as the
  window's pixels (R8G8B8A8 flagged); D3DKMT gets no Vulkan instance (it would
  open the GPU in every process that asks)
@@ -5823,7 +5823,7 @@ index 0000000..cb6ef6f
 From 8f81fe8f900ec5afd5ca0f5a7c4013318c353c29 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Thu, 5 Nov 2026 23:20:58 +0300
-Subject: [PATCH 41/45] PS4: Steam's error reporter and hardware updater left
+Subject: [PATCH 41/46] PS4: Steam's error reporter and hardware updater left
  out, Chromium as on a low-end device; the desktop's input to the server never
  blocks (a server that stopped reading froze the whole app): dropped and
  reported
@@ -5940,7 +5940,7 @@ index cf8302b..bb5b2aa 100755
 From 35e7b97d1bdf7568ae2094eb31a5ca587d60c696 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Fri, 6 Nov 2026 00:24:23 +0300
-Subject: [PATCH 42/45] PS4: shared sections of an image copied into shared
+Subject: [PATCH 42/46] PS4: shared sections of an image copied into shared
  memory through a mapping (the kernel takes no pwrite on it, Iron Snout failed
  as for another platform), a private copy where one shares a 16 KiB page;
  wineps4.drv is also the audio driver (mmdevapi streams to the desktop mixer);
@@ -7968,7 +7968,7 @@ index 44a8965..a0f678f 100644
 From ef060f4bb66a4f8960e0bffc308e1ecb61771fcd Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Fri, 6 Nov 2026 02:31:17 +0300
-Subject: [PATCH 43/45] PS4: a 32-bit process's placed memory map reserves its
+Subject: [PATCH 43/46] PS4: a 32-bit process's placed memory map reserves its
  address range instead of committing it (committed pages are backed with
  direct memory at once, which the driver's mapping then covers)
 
@@ -8004,7 +8004,7 @@ index 3c9bc02..c1da066 100644
 From f30fc4a7037c3f69dc2010e2c3f588be37e99a67 Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Fri, 6 Nov 2026 04:06:56 +0300
-Subject: [PATCH 44/45] PS4: 32-bit programs large address aware by default, as
+Subject: [PATCH 44/46] PS4: 32-bit programs large address aware by default, as
  Proton has them (WINEPS4_LARGE_ADDRESS_AWARE=0: the 2 GiB their header asks
  for); wineserver says where its thread is (waiting for its programs, a
  request and the process that made it, a file's event, its timers) for the
@@ -8137,7 +8137,7 @@ index 8f0f622..e82a9f2 100644
 From cff9836c6c4376d73c439f1c9d771d417626f12f Mon Sep 17 00:00:00 2001
 From: iHaiDeeZ <ihaideezi@gmail.com>
 Date: Fri, 6 Nov 2026 08:04:14 +0300
-Subject: [PATCH 45/45] PS4: a crash's trace in wine.log (the module and offset
+Subject: [PATCH 45/46] PS4: a crash's trace in wine.log (the module and offset
  of the fault, the registers, the calls by unwind data on x64 and frame
  pointers on x86) and the program ends at once, instead of Wine's debugger,
  whose winedbg.exe and console took two of the PS4's 7 processes and much of
@@ -8308,6 +8308,371 @@ index d3f2243..b2c75c4 100644
          if ((GetErrorMode() & SEM_NOGPFAULTERRORBOX) ||
              !start_debugger_atomic( epointers ) || !NtCurrentTeb()->Peb->BeingDebugged)
              return nested ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_EXECUTE_HANDLER;
+-- 
+2.53.0
+
+
+From 8c96b8673b1862759b87d72d2a47897f7a928c8b Mon Sep 17 00:00:00 2001
+From: iHaiDeeZ <ihaideezi@gmail.com>
+Date: Fri, 6 Nov 2026 10:50:14 +0300
+Subject: [PATCH 46/46] PS4: an unnamed section of a program among the 7 in the
+ desktop's direct memory, out of the flexible memory the app's processes
+ share: wineserver allocates and zeroes it and gives it back 2 s after its fd
+ ends, get_mapping_info says where (protocol 931), ntdll maps a view from
+ there (a copy-on-write view gets a copy); only once a local process has read
+ the desktop's test page (WINEPS4_SECTIONS_DIRECT=0: shared memory as before)
+
+---
+ dlls/ntdll/unix/virtual.c      | 40 ++++++++++++++++++++++---
+ include/wine/server_protocol.h |  4 ++-
+ server/fd.c                    | 54 ++++++++++++++++++++++++++++++++++
+ server/file.h                  |  4 +++
+ server/mapping.c               | 31 +++++++++++++++++++
+ server/protocol.def            |  2 ++
+ server/request_handlers.h      |  4 ++-
+ server/request_trace.h         |  2 ++
+ 8 files changed, 135 insertions(+), 6 deletions(-)
+
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index c173515..0bc223d 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -2411,6 +2411,26 @@ static NTSTATUS map_file_into_view( struct file_view *view, int fd, size_t start
+ 
+ 
+ #ifdef __PS4_WINE__
++/* PS4: a view of an anonymous section whose memory the desktop keeps in its direct memory (port/
++ * ps4_wine_vm.c): mapped from there; a copy-on-write view gets a copy of it */
++static NTSTATUS ps4_map_direct_into_view( struct file_view *view, size_t size, off_t offset, unsigned int vprot,
++                                          file_pos_t direct_offset, mem_size_t direct_size )
++{
++    int ret;
++
++    if (offset + size > direct_size) return STATUS_INVALID_VIEW_SIZE;
++    if (((UINT_PTR)view->base | offset) & host_page_mask) return STATUS_MAPPED_ALIGNMENT;  /* (mapped in host pages) */
++    if (!(vprot & VPROT_WRITE) && (vprot & VPROT_WRITECOPY))
++        ret = ps4_vm_copy_section( view->base, size, direct_offset + offset );
++    else
++        ret = ps4_vm_map_section( view->base, size, (vprot & VPROT_WRITE) ? PROT_READ | PROT_WRITE : PROT_READ,
++                                  direct_offset + offset );
++    if (!ret) return STATUS_SUCCESS;
++    ERR( "section view %p-%p not mapped from direct memory %s: %s\n", view->base, (char *)view->base + size,
++         wine_dbgstr_longlong( direct_offset + offset ), strerror( errno ) );
++    return errno == EACCES ? STATUS_ACCESS_DENIED : STATUS_NO_MEMORY;
++}
++
+ /* PS4: host pages are 16 KiB. A shared section that does not fill host pages of its own cannot be
+  * mapped shared, so it gets a private copy like .data: its data is not shared between processes
+  * (a 'one instance' counter in it reads 0 in every process). Skips its room in the shared file. */
+@@ -3288,7 +3308,7 @@ done:
+ static unsigned int get_mapping_info( HANDLE handle, ACCESS_MASK access, unsigned int *sec_flags,
+                                       mem_size_t *full_size, HANDLE *shared_file,
+                                       struct pe_image_info **info, UNICODE_STRING *nt_name,
+-                                      ANSI_STRING *exp_name )
++                                      ANSI_STRING *exp_name, file_pos_t *direct_offset, mem_size_t *direct_size )
+ {
+     struct pe_image_info *image_info;
+     SIZE_T namelen, total, size = 1024;
+@@ -3309,6 +3329,8 @@ static unsigned int get_mapping_info( HANDLE handle, ACCESS_MASK access, unsigne
+             namelen      = reply->name_len;
+             total        = reply->total;
+             *shared_file = wine_server_ptr_handle( reply->shared_file );
++            if (direct_offset) *direct_offset = reply->direct_offset;
++            if (direct_size) *direct_size = reply->direct_size;
+         }
+         SERVER_END_REQ;
+         if (!status && total <= size) break;
+@@ -3504,6 +3526,8 @@ static unsigned int virtual_map_section( HANDLE handle, PVOID *addr_ptr, ULONG_P
+     HANDLE shared_file;
+     LARGE_INTEGER offset;
+     sigset_t sigset;
++    file_pos_t direct_offset;
++    mem_size_t direct_size;
+ 
+     switch(protect)
+     {
+@@ -3528,7 +3552,7 @@ static unsigned int virtual_map_section( HANDLE handle, PVOID *addr_ptr, ULONG_P
+     }
+ 
+     res = get_mapping_info( handle, access, &sec_flags, &full_size, &shared_file,
+-                            &image_info, &nt_name, &exp_name );
++                            &image_info, &nt_name, &exp_name, &direct_offset, &direct_size );
+     if (res) return res;
+ 
+     offset.QuadPart = offset_ptr ? offset_ptr->QuadPart : 0;
+@@ -3578,6 +3602,10 @@ static unsigned int virtual_map_section( HANDLE handle, PVOID *addr_ptr, ULONG_P
+     vprot |= sec_flags;
+     if (!(sec_flags & SEC_RESERVE)) vprot |= VPROT_COMMITTED;
+ 
++#ifdef __PS4_WINE__
++    needs_close = 0;
++    if (!direct_size)  /* (a section in the desktop's direct memory has no file to map) */
++#endif
+     if ((res = server_get_unix_fd( handle, 0, &unix_handle, &needs_close, NULL, NULL ))) return res;
+ 
+     server_enter_uninterrupted_section( &virtual_mutex, &sigset );
+@@ -3586,6 +3614,10 @@ static unsigned int virtual_map_section( HANDLE handle, PVOID *addr_ptr, ULONG_P
+     if (res) goto done;
+ 
+     TRACE( "handle=%p size=%lx offset=%s\n", handle, size, wine_dbgstr_longlong(offset.QuadPart) );
++#ifdef __PS4_WINE__
++    if (direct_size) res = ps4_map_direct_into_view( view, size, offset.QuadPart, vprot, direct_offset, direct_size );
++    else
++#endif
+     res = map_file_into_view( view, unix_handle, 0, size, offset.QuadPart, vprot, needs_close );
+     if (res == STATUS_SUCCESS)
+     {
+@@ -3803,7 +3835,7 @@ NTSTATUS virtual_map_builtin_module( HANDLE mapping, void **module, SIZE_T *size
+     ANSI_STRING exp_name;
+ 
+     if ((status = get_mapping_info( mapping, SECTION_MAP_READ, &sec_flags, &full_size, &shared_file,
+-                                    &image_info, &nt_name, &exp_name )))
++                                    &image_info, &nt_name, &exp_name, NULL, NULL )))
+         return status;
+ 
+     if (!image_info) return STATUS_INVALID_PARAMETER;
+@@ -3850,7 +3882,7 @@ NTSTATUS virtual_map_module( HANDLE mapping, void **module, SIZE_T *size, SECTIO
+     ANSI_STRING exp_name;
+ 
+     if ((status = get_mapping_info( mapping, SECTION_MAP_READ, &sec_flags, &full_size, &shared_file,
+-                                    &image_info, &nt_name, &exp_name )))
++                                    &image_info, &nt_name, &exp_name, NULL, NULL )))
+         return status;
+ 
+     if (!image_info) return STATUS_INVALID_PARAMETER;
+diff --git a/include/wine/server_protocol.h b/include/wine/server_protocol.h
+index dc1ceeb..7833c08 100644
+--- a/include/wine/server_protocol.h
++++ b/include/wine/server_protocol.h
+@@ -2212,6 +2212,8 @@ struct get_mapping_info_reply
+     obj_handle_t shared_file;
+     data_size_t  name_len;
+     data_size_t  total;
++    file_pos_t   direct_offset;
++    mem_size_t   direct_size;
+     /* VARARG(image,pe_image_info); */
+     /* VARARG(name,unicode_str,name_len); */
+     /* VARARG(exp_name,string); */
+@@ -7093,6 +7095,6 @@ union generic_reply
+     struct d3dkmt_mutex_release_reply d3dkmt_mutex_release_reply;
+ };
+ 
+-#define SERVER_PROTOCOL_VERSION 930
++#define SERVER_PROTOCOL_VERSION 931
+ 
+ #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
+diff --git a/server/fd.c b/server/fd.c
+index 52488ba..f5929b7 100644
+--- a/server/fd.c
++++ b/server/fd.c
+@@ -172,6 +172,8 @@ struct fd
+     struct thread       *pin_thread;  /* lent to this thread (get_handle_fd) until its next request */
+     unsigned int         pin_requests;/* (that thread's requests when it was lent) */
+     struct list          park_entry;  /* entry in park_lru */
++    file_pos_t           direct_offset; /* where an anonymous section's memory is in the desktop's direct memory */
++    mem_size_t           direct_size;   /* its size (0: the section's memory is its file) */
+ #endif
+ };
+ 
+@@ -182,6 +184,7 @@ static void fd_destroy( struct object *obj );
+ static void park_untrack( struct fd *fd );  /* (the PS4's file budget, below) */
+ static void park_touch( struct fd *fd );
+ static int unpark_fd( struct fd *fd );
++static void release_direct_memory( struct fd *fd );  /* (sections in direct memory, below) */
+ #endif
+ 
+ static const struct object_ops fd_ops =
+@@ -1636,6 +1639,7 @@ static void fd_destroy( struct object *obj )
+ #ifdef __PS4_WINE__
+     park_untrack( fd );
+     if (fd->pin_thread) release_object( fd->pin_thread );
++    release_direct_memory( fd );
+ #endif
+     remove_fd_locks( fd );
+     list_remove( &fd->inode_entry );
+@@ -1774,6 +1778,8 @@ static void park_init( struct fd *fd )
+     fd->last_used = 0;
+     fd->pin_thread = NULL;
+     fd->pin_requests = 0;
++    fd->direct_offset = 0;
++    fd->direct_size = 0;
+     list_init( &fd->park_entry );
+ }
+ 
+@@ -1920,6 +1926,54 @@ static int unpark_fd( struct fd *fd )
+     park_track( fd, fd->unix_flags );
+     return 1;
+ }
++
++/* --- Sections in the desktop's direct memory ------------------------------------------------------
++ * An anonymous section's memory may be the desktop's direct memory (mapping.c, port/ps4_wine_vm.c):
++ * its fd holds it, and it goes back to the app 2 s after the fd ends (the section's last handle and
++ * view gone), when the program that unmapped the last view has its munmap done too (unmap_view comes
++ * first). */
++extern void ps4_section_release( unsigned long long offset, unsigned long long size );  /* port/ps4_wine_vm.c */
++
++struct direct_memory
++{
++    file_pos_t offset;
++    mem_size_t size;
++};
++
++void set_fd_direct_memory( struct fd *fd, file_pos_t offset, mem_size_t size )
++{
++    fd->direct_offset = offset;
++    fd->direct_size = size;
++}
++
++mem_size_t get_fd_direct_memory( struct fd *fd, file_pos_t *offset )
++{
++    *offset = fd->direct_offset;
++    return fd->direct_size;
++}
++
++static void direct_memory_timeout( void *private )
++{
++    struct direct_memory *memory = private;
++
++    ps4_section_release( memory->offset, memory->size );
++    free( memory );
++}
++
++static void release_direct_memory( struct fd *fd )
++{
++    struct direct_memory *memory;
++
++    if (!fd->direct_size) return;
++    if ((memory = malloc( sizeof(*memory) )))
++    {
++        memory->offset = fd->direct_offset;
++        memory->size = fd->direct_size;
++        add_timeout_user( -2 * TICKS_PER_SEC, direct_memory_timeout, memory );
++    }
++    else ps4_section_release( fd->direct_offset, fd->direct_size );
++    fd->direct_size = 0;
++}
+ #endif
+ 
+ /* allocate an fd object, without setting the unix fd yet */
+diff --git a/server/file.h b/server/file.h
+index e1485e4..ecb6ce6 100644
+--- a/server/file.h
++++ b/server/file.h
+@@ -104,6 +104,10 @@ extern void set_fd_events( struct fd *fd, int events );
+ extern obj_handle_t lock_fd( struct fd *fd, file_pos_t offset, file_pos_t count, int shared, int wait );
+ extern void unlock_fd( struct fd *fd, file_pos_t offset, file_pos_t count );
+ extern void allow_fd_caching( struct fd *fd );
++#ifdef __PS4_WINE__
++extern void set_fd_direct_memory( struct fd *fd, file_pos_t offset, mem_size_t size );
++extern mem_size_t get_fd_direct_memory( struct fd *fd, file_pos_t *offset );
++#endif
+ extern void set_fd_signaled( struct fd *fd, int signaled );
+ extern char *dup_fd_name( struct fd *root, const char *name ) __WINE_DEALLOC(free) __WINE_MALLOC;
+ extern void get_nt_name( struct fd *fd, struct unicode_str *name );
+diff --git a/server/mapping.c b/server/mapping.c
+index a0f678f..ec74e41 100644
+--- a/server/mapping.c
++++ b/server/mapping.c
+@@ -331,6 +331,9 @@ int grow_file( int unix_fd, file_pos_t new_size )
+ #ifdef __PS4_WINE__
+ extern void ps4_park_all( void );  /* fd.c: the files wineserver holds closed for the app's budget */
+ extern int ps4_anon_shm( unsigned long long size );  /* port/ps4_wine_port.c: not a file of that budget */
++extern int ps4_section_alloc( unsigned long long size, int pid, unsigned long long *offset,
++                              unsigned long long *alloc_size );  /* port/ps4_wine_vm.c */
++extern void ps4_section_release( unsigned long long offset, unsigned long long size );
+ #endif
+ 
+ /* simplified version of mkstemps() */
+@@ -1087,6 +1090,9 @@ static struct mapping *create_mapping( struct object *root, const struct unicode
+     struct fd *fd;
+     int unix_fd;
+     struct stat st;
++#ifdef __PS4_WINE__
++    unsigned long long direct_offset, direct_size;
++#endif
+ 
+     if (!(mapping = create_named_object( root, &mapping_ops, name, attr, sd )))
+         return NULL;
+@@ -1163,6 +1169,27 @@ static struct mapping *create_mapping( struct object *root, const struct unicode
+         }
+         if ((flags & SEC_RESERVE) && !(mapping->committed = create_ranges())) goto error;
+         mapping->size = round_size( mapping->size, page_mask );
++#ifdef __PS4_WINE__
++        /* PS4: an unnamed section of a program among the 7 in the desktop's direct memory, out of the
++         * flexible memory the app's processes share (port/ps4_wine_vm.c); its fd a shared memory object
++         * of no size, which gives that memory back as it ends (fd.c) */
++        if (!(flags & SEC_RESERVE) && (!name || !name->len) && current &&
++            !ps4_section_alloc( mapping->size, current->process->unix_pid, &direct_offset, &direct_size ))
++        {
++            if ((unix_fd = ps4_anon_shm( 0 )) != -1)
++            {
++                if (!(mapping->fd = create_anonymous_fd( &mapping_fd_ops, unix_fd, &mapping->obj,
++                                                         FILE_SYNCHRONOUS_IO_NONALERT )))
++                {
++                    ps4_section_release( direct_offset, direct_size );
++                    goto error;
++                }
++                set_fd_direct_memory( mapping->fd, direct_offset, direct_size );
++                return mapping;
++            }
++            ps4_section_release( direct_offset, direct_size );
++        }
++#endif
+         if ((unix_fd = create_temp_file( mapping->size )) == -1) goto error;
+         if (!(mapping->fd = create_anonymous_fd( &mapping_fd_ops, unix_fd, &mapping->obj,
+                                                  FILE_SYNCHRONOUS_IO_NONALERT ))) goto error;
+@@ -1592,6 +1619,10 @@ DECL_HANDLER(get_mapping_info)
+ 
+     reply->size    = mapping->size;
+     reply->flags   = mapping->flags;
++#ifdef __PS4_WINE__
++    if (mapping->fd && !(mapping->flags & SEC_IMAGE))
++        reply->direct_size = get_fd_direct_memory( mapping->fd, &reply->direct_offset );
++#endif
+ 
+     if (mapping->flags & SEC_IMAGE)
+     {
+diff --git a/server/protocol.def b/server/protocol.def
+index 0ac6429..539c806 100644
+--- a/server/protocol.def
++++ b/server/protocol.def
+@@ -1823,6 +1823,8 @@ enum server_fd_type
+     obj_handle_t shared_file;   /* shared mapping file handle */
+     data_size_t  name_len;      /* length of file name  */
+     data_size_t  total;         /* total required buffer size in bytes */
++    file_pos_t   direct_offset; /* PS4: where its memory is in the desktop's direct memory */
++    mem_size_t   direct_size;   /* PS4: the size of that memory (0: its memory is its file) */
+     VARARG(image,pe_image_info);/* image info for SEC_IMAGE mappings */
+     VARARG(name,unicode_str,name_len);  /* filename for SEC_IMAGE mappings */
+     VARARG(exp_name,string);    /* exported name for SEC_IMAGE mappings */
+diff --git a/server/request_handlers.h b/server/request_handlers.h
+index 42eb7da..ccf3ddf 100644
+--- a/server/request_handlers.h
++++ b/server/request_handlers.h
+@@ -1094,7 +1094,9 @@ C_ASSERT( offsetof(struct get_mapping_info_reply, flags) == 16 );
+ C_ASSERT( offsetof(struct get_mapping_info_reply, shared_file) == 20 );
+ C_ASSERT( offsetof(struct get_mapping_info_reply, name_len) == 24 );
+ C_ASSERT( offsetof(struct get_mapping_info_reply, total) == 28 );
+-C_ASSERT( sizeof(struct get_mapping_info_reply) == 32 );
++C_ASSERT( offsetof(struct get_mapping_info_reply, direct_offset) == 32 );
++C_ASSERT( offsetof(struct get_mapping_info_reply, direct_size) == 40 );
++C_ASSERT( sizeof(struct get_mapping_info_reply) == 48 );
+ C_ASSERT( offsetof(struct get_image_map_address_request, handle) == 12 );
+ C_ASSERT( sizeof(struct get_image_map_address_request) == 16 );
+ C_ASSERT( offsetof(struct get_image_map_address_reply, addr) == 8 );
+diff --git a/server/request_trace.h b/server/request_trace.h
+index ec36688..50660f2 100644
+--- a/server/request_trace.h
++++ b/server/request_trace.h
+@@ -885,6 +885,8 @@ static void dump_get_mapping_info_reply( const struct get_mapping_info_reply *re
+     fprintf( stderr, ", shared_file=%04x", req->shared_file );
+     fprintf( stderr, ", name_len=%u", req->name_len );
+     fprintf( stderr, ", total=%u", req->total );
++    dump_uint64( ", direct_offset=", &req->direct_offset );
++    dump_uint64( ", direct_size=", &req->direct_size );
+     dump_varargs_pe_image_info( ", image=", cur_size );
+     dump_varargs_unicode_str( ", name=", min( cur_size, req->name_len ));
+     dump_varargs_string( ", exp_name=", cur_size );
 -- 
 2.53.0
 
