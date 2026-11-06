@@ -18,8 +18,31 @@
 #include "../port/include/ps4_display.h"
 #include "shell.h"
 
+extern "C" {
+// who holds the windows' lock and where it was taken (port/ps4_wine_port.c: the freeze report's)
+extern volatile int ps4_windows_lock_holder;
+extern void *volatile ps4_windows_lock_caller;
+int pthread_getthreadid_np(void);
+}
+
 namespace shell {
 namespace {
+
+// The windows' lock, its holder written where the freeze report reads it: v00.63's desktop stood
+// waiting for it, the holder unknown. (Taken from the desktop's loop and each program's display
+// connection.)
+struct WindowsLock {
+    std::mutex m;
+    __attribute__((noinline)) void lock() {
+        m.lock();
+        ps4_windows_lock_caller = __builtin_return_address(0);
+        ps4_windows_lock_holder = pthread_getthreadid_np();
+    }
+    void unlock() {
+        ps4_windows_lock_holder = 0;
+        m.unlock();
+    }
+};
 
 // MOUSEEVENTF_* and KEYEVENTF_* (winuser.h)
 constexpr uint32_t KEYEVENTF_EXTENDEDKEY = 0x0001, KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_UNICODE = 0x0004;
@@ -38,7 +61,7 @@ struct WinWindow {
     int dx0 = 0, dy0 = 0, dx1 = 0, dy1 = 0;  // the pixels changed since the scene had them (none: dx1 <= dx0)
 };
 
-std::mutex lock;
+WindowsLock lock;
 std::map<uint64_t, WinWindow> windows;
 std::set<int> connected;  // the processes whose display driver is connected
 uint64_t next_order = 1;
@@ -283,6 +306,14 @@ void winwin_start() {
 
 bool winwin_changed() { return changed.exchange(false); }
 
+bool winwin_full_screen() {
+    std::lock_guard guard(lock);
+    for (const auto &[hwnd, w] : stacked())
+        if (is_full_screen(*w) && w->bw >= PS4_DISPLAY_WIDTH && w->bh >= PS4_DISPLAY_HEIGHT)
+            return true;  // (its pixels cover all of the screen, not only its rect)
+    return false;
+}
+
 bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<WinRect> &out) {
     std::lock_guard guard(lock);
     out.clear();
@@ -314,14 +345,18 @@ bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<Win
             continue;  // (all of it off the screen or past what is shown)
         if (p.x0 < left || p.x1 > right || p.y0 < top || p.y1 > bottom)
             return false;  // (in its title bar, frame or corners, or under the taskbar)
-        // nothing above it there: the windows after it, with the shadows of those with a title bar
-        for (size_t j = i + 1; j < list.size(); j++) {
+        // nothing above it there: the windows after it, with the shadows of those with a title bar (a
+        // full-screen one over it all: its change is not seen, nothing to copy)
+        bool covered = false;
+        for (size_t j = i + 1; j < list.size() && !covered; j++) {
             const WinWindow *o = list[j].second;
             const int m = o->caption_bottom && !(o->flags & PS4_WINDOW_MAXIMIZED) ? shadow : 0;
-            if (p.x0 < o->x + o->w + m && o->x - m < p.x1 && p.y0 < o->y + o->h + m && o->y - m < p.y1)
+            covered = is_full_screen(*o) && o->bw >= PS4_DISPLAY_WIDTH && o->bh >= PS4_DISPLAY_HEIGHT;
+            if (!covered && p.x0 < o->x + o->w + m && o->x - m < p.x1 && p.y0 < o->y + o->h + m && o->y - m < p.y1)
                 return false;
         }
-        patches.push_back(p);
+        if (!covered)
+            patches.push_back(p);
     }
     uint32_t *const dst = c.data();
     for (const Patch &p : patches) {
@@ -338,7 +373,7 @@ bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<Win
 }
 
 void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4ui::Canvas &, const WinFrame &)> &under,
-                 const std::function<void(ps4ui::Canvas &, const WinFrame &)> &over) {
+                 const std::function<void(ps4ui::Canvas &, const WinFrame &)> &over, bool hidden) {
     std::lock_guard guard(lock);
     uint32_t *const dst = c.data();
     const int cw = c.width(), ch = c.height();
@@ -352,6 +387,8 @@ void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4u
         const WinFrame f = frame_of(hwnd, *w, active);
         auto own = windows.find(hwnd);
         own->second.dx0 = own->second.dx1 = 0;
+        if (hidden)
+            continue;
         under(c, f);
         // Windows' pixels, but for its title bar (ours goes there) and outside rounded corners
         const bool rounded = w->caption_bottom && !f.maximized;

@@ -32,8 +32,9 @@ struct WinFrame {
 enum class WinLayer { Normal, FullScreen };
 // Draws the layer's visible windows bottom to top: under() before each one (its shadow), over()
 // after it (the title bar and border over Windows' own)
+// (hidden: nothing drawn, the layer only counted as in the scene, under a full-screen window)
 void winwin_draw(ps4ui::Canvas &c, WinLayer layer, const std::function<void(ps4ui::Canvas &, const WinFrame &)> &under,
-                 const std::function<void(ps4ui::Canvas &, const WinFrame &)> &over);
+                 const std::function<void(ps4ui::Canvas &, const WinFrame &)> &over, bool hidden = false);
 // The window under (x, y), 0 if none; *full_screen: it covers the screen (the taskbar too)
 uint64_t winwin_at(float x, float y, bool *full_screen = nullptr);
 
@@ -51,6 +52,9 @@ WinRect winwin_button_rect(const WinFrame &f, int button);
 // shadow px around one, is over it; out gets the screen rects copied. false: nothing copied, the
 // whole scene must be drawn (winwin_draw).
 bool winwin_patch(ps4ui::Canvas &c, int taskbar_top, int shadow, std::vector<WinRect> &out);
+// Whether a program's full-screen window is shown (Steam's Big Picture, a game): it covers the
+// desktop and its taskbar, which need not be drawn under it
+bool winwin_full_screen();
 // The button of a title bar of ours at (x, y) (with its window, and whether that is maximized), or -1
 int winwin_button_at(float x, float y, uint64_t *hwnd, bool *maximized = nullptr);
 // A command for a window, as its title bar's buttons send it: SC_* or PS4_SC_ACTIVATE

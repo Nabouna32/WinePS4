@@ -24,6 +24,8 @@
 
 #include <machine/sysarch.h>
 
+#include "ps4_line.h"
+
 __thread void *ps4_thread_teb;
 
 /* --- GS / FS base ------------------------------------------------------------------------------ */
@@ -293,6 +295,14 @@ static uint64_t text_end;  /* end of the eboot's code mapping */
 static volatile int dump_done;
 static uint64_t dump_rip, dump_frames[DUMP_FRAMES];
 static int dump_count;
+static int dump_heap, dump_stdio;  /* how deep the thread was in the heap and in stdio (-1: not known) */
+extern int ps4_heap_depth( void );   /* ps4-kit's, thread-local */
+extern int ps4_stdio_depth( void );
+
+/* the desktop's windows' lock (shell/winwindows.cpp): who holds it, and where it was taken (the
+ * freeze report's: v00.63's desktop stood waiting for it) */
+volatile int ps4_windows_lock_holder;
+void *volatile ps4_windows_lock_caller;
 
 static int in_eboot( uint64_t addr )
 {
@@ -325,11 +335,18 @@ static void dump_handler( int sig, siginfo_t *info, void *context )
     int n = 0;
 
     dump_rip = uc->uc_mcontext.mc_rip;
+    dump_heap = dump_stdio = -1;
     __asm__( "movw %%cs,%0" : "=r" (cs) );
     if (uc->uc_mcontext.mc_cs != cs)
         end = (uint64_t *)((rsp | 0x3fff) + 1);  /* 32-bit code: its 16 KiB page only */
-    else if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
-        end = map_end;
+    else
+    {
+        /* (64-bit code: %fs is the C library's, its thread-local counts are this thread's) */
+        dump_heap = ps4_heap_depth();
+        dump_stdio = ps4_stdio_depth();
+        if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
+            end = map_end;
+    }
     for (p = (uint64_t *)rsp; p < end && n < DUMP_FRAMES; p++)
         if (is_return_address( *p )) dump_frames[n++] = *p;
     dump_count = n;
@@ -384,13 +401,16 @@ static int install_dump_handler( void )
 }
 
 /* The desktop's freeze report (port/ps4_main.c): its threads into hang.log, with nothing that may wait
- * for what a stuck thread holds. v00.62's report stopped at its first step, fopen (malloc: the heap's
- * lock, held, it seems, by the desktop's loop, stuck as well): no stdio and no malloc here, the table
- * read without its lock, the signal sent by the kernel's thr_kill, the file opened by a system call. */
+ * for what a stuck thread holds: no stdio and no malloc (v00.62's stopped in fopen), no printf at all
+ * (snprintf takes ps4-kit's stdio lock through vfprintf: v00.63's stopped after four threads), the
+ * table read without its lock, the signal sent by the kernel's thr_kill, the waits the kernel's
+ * nanosleep, the file opened by a system call. The holder of the windows' lock first; then each
+ * thread, with how deep it was in the heap and in stdio (waiting there or holding the lock). */
 void ps4_dump_threads_quiet( const char *reason )
 {
-    char line[1024];
-    int i, j, len, waited;
+    const struct { long sec, nsec; } tick = { 0, 1000000 };
+    struct ps4_line l;
+    int i, j, waited, holder;
     long fd;
 
     if (!install_dump_handler()) return;
@@ -398,34 +418,56 @@ void ps4_dump_threads_quiet( const char *reason )
      * converts them) */
     if ((fd = raw_syscall3( 5 /* SYS_open */, (long)"/data/WinePS4/hang.log", 0x0001 | 0x0008 | 0x0200, 0666 )) == -1)
         return;
-    len = snprintf( line, sizeof(line), "==== %s (eboot addresses as linked: llvm-symbolizer --obj=<elf>)\n", reason );
-    raw_syscall3( 4 /* SYS_write */, fd, (long)line, len );
+    l.len = 0;
+    ps4_line_str( &l, "==== " );
+    for (j = 0; reason[j] && reason[j] != '\n' && l.len < (int)sizeof(l.text) - 1; j++) l.text[l.len++] = reason[j];
+    ps4_line_str( &l, " (eboot addresses as linked: llvm-symbolizer --obj=<elf>)\n-- the windows' lock: " );
+    if ((holder = ps4_windows_lock_holder))
+    {
+        ps4_line_str( &l, "held by thread " );
+        ps4_line_num( &l, holder );
+        ps4_line_str( &l, ", taken at " );
+        ps4_line_hex( &l, (unsigned long long)(uintptr_t)ps4_windows_lock_caller );
+    }
+    else ps4_line_str( &l, "free" );
+    ps4_line_str( &l, "\n" );
+    raw_syscall3( 4 /* SYS_write */, fd, (long)l.text, l.len );
     for (i = 0; i < MAX_THREADS; i++)
     {
         const int tid = __atomic_load_n( &threads[i].tid, __ATOMIC_ACQUIRE );
 
         if (!tid) continue;
+        l.len = 0;
+        ps4_line_str( &l, "-- thread " );
+        ps4_line_num( &l, tid );
         __atomic_store_n( &dump_done, 0, __ATOMIC_RELEASE );
         if (raw_syscall3( 433 /* SYS_thr_kill */, tid, SIGXCPU, 0 ) == -1)
-            len = snprintf( line, sizeof(line), "-- thread %d: gone\n", tid );
+            ps4_line_str( &l, ": gone" );
         else
         {
             /* (a line a thread, written at once: the user may close the app before the last) */
-            for (waited = 0; waited < 200 && !__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ); waited++) usleep( 1000 );
+            for (waited = 0; waited < 50 && !__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ); waited++)
+                raw_syscall3( 240 /* SYS_nanosleep */, (long)&tick, 0, 0 );
             if (!__atomic_load_n( &dump_done, __ATOMIC_ACQUIRE ))
-                len = snprintf( line, sizeof(line), "-- thread %d: no answer\n", tid );
+                ps4_line_str( &l, ": no answer" );
             else
             {
-                len = in_eboot( dump_rip ) ? snprintf( line, sizeof(line), "-- thread %d: rip elf 0x%llx\n   stack:", tid,
-                                                       (unsigned long long)dump_rip )
-                                           : snprintf( line, sizeof(line), "-- thread %d: rip 0x%llx (outside the eboot)\n   stack:",
-                                                       tid, (unsigned long long)dump_rip );
-                for (j = 0; j < dump_count && len < (int)sizeof(line) - 24; j++)
-                    len += snprintf( line + len, sizeof(line) - len, " 0x%llx", (unsigned long long)dump_frames[j] );
-                line[len++] = '\n';
+                ps4_line_str( &l, in_eboot( dump_rip ) ? ": rip elf " : ": rip " );
+                ps4_line_hex( &l, dump_rip );
+                if (!in_eboot( dump_rip )) ps4_line_str( &l, " (outside the eboot)" );
+                if (dump_heap > 0) ps4_line_str( &l, ", in the heap" );
+                if (dump_stdio > 0) ps4_line_str( &l, ", in stdio" );
+                if (tid == holder) ps4_line_str( &l, ", holds the windows' lock" );
+                ps4_line_str( &l, "\n   stack:" );
+                for (j = 0; j < dump_count; j++)
+                {
+                    ps4_line_str( &l, " " );
+                    ps4_line_hex( &l, dump_frames[j] );
+                }
             }
         }
-        raw_syscall3( 4 /* SYS_write */, fd, (long)line, len );
+        ps4_line_str( &l, "\n" );
+        raw_syscall3( 4 /* SYS_write */, fd, (long)l.text, l.len );
     }
     raw_syscall3( 6 /* SYS_close */, fd, 0, 0 );
 }

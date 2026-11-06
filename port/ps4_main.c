@@ -42,6 +42,7 @@
 #include "ps4_kit.h"
 #include "../shell/shell.h"
 #include "include/ps4_display.h"
+#include "include/ps4_line.h"
 
 #define DESKTOP_LOCK_FILE "/data/WinePS4/.desktop-lock"  /* locked by the desktop while it runs */
 #define DESKTOP_PID_FILE  "/data/WinePS4/.desktop-pid"   /* the desktop's pid, written as it starts */
@@ -1103,21 +1104,61 @@ static void make_user_folders( void )
 
 /* Settings > Diagnostics > Freeze report (WINEPS4_FREEZE_REPORT=0: off). v00.61 froze 100 s into
  * Steam with nothing in wine.log to say where. The desktop's loop and the thread that writes the log
- * each move a count; when one stands still for 10 s (the log thread with output waiting in its pipe),
+ * each move a count; when one stands still for 6 s (the log thread with output waiting in its pipe),
  * where each of the desktop's threads is goes into hang.log (wineserver's thread among them), and
  * wine.log says so, written straight: the pipe may be what stands. Once a stand, three at most.
- * (wineserver alone may rightly wait long, with only Windows' own programs: its stand is told where
- * it matters, when it stops taking the desktop's input, server/ps4_input.inc.) */
-#define FREEZE_SECONDS 10
+ * Nothing here takes a lock or prints with printf (ps4-kit's stdio lock: v00.63's report stopped
+ * part way). (wineserver alone may rightly wait long, with only Windows' own programs: its stand is
+ * told where it matters, when it stops taking the desktop's input, server/ps4_input.inc.) */
+#define FREEZE_SECONDS 6
 #define PS4_FIONREAD 0x4004667fUL  /* FreeBSD's (the C library's headers have Linux's) */
 extern unsigned int ps4_request_seq;  /* wineserver's requests so far (server/fd.c) */
 extern void ps4_dump_threads_quiet( const char *reason );
+extern volatile int ps4_windows_lock_holder;  /* (port/ps4_wine_port.c, set by shell/winwindows.cpp) */
+extern volatile int ps4_server_where, ps4_server_req, ps4_server_req_pid;  /* (server/fd.c) */
+extern const char *ps4_request_name( int req );  /* (server/trace.c) */
+extern unsigned long long ps4_vm_direct_free( void );
+int sceKernelAvailableFlexibleMemorySize( size_t *size );
+
+/* where wineserver's thread is now: told by the server itself, as its thread may not answer the
+ * dump's signal (v00.63's dump got no further than the thread before it) */
+static void server_where( struct ps4_line *text )
+{
+    const int where = ps4_server_where;
+
+    if (where == 1)
+    {
+        ps4_line_str( text, " (now in its request " );
+        ps4_line_str( text, ps4_request_name( ps4_server_req ) );
+        ps4_line_str( text, " from process " );
+        ps4_line_num( text, ps4_server_req_pid );
+        ps4_line_str( text, ")" );
+    }
+    else ps4_line_str( text, where == 0 ? " (now waiting for its programs)" : where == 2 ? " (now on a file's event)"
+                                                                                    : " (now running its timers)" );
+}
+
+/* a line into wine.log with its time, built and written without printf or a lock */
+static void freeze_log( struct ps4_line *line )
+{
+    struct ps4_line out;
+
+    out.len = 0;
+    ps4_line_str( &out, "[" );
+    ps4_line_seconds( &out, app_seconds(), 4 );
+    ps4_line_str( &out, "] " );
+    line->text[line->len] = 0;
+    ps4_line_str( &out, line->text );
+    ps4_line_str( &out, "\n" );
+    if (log_fd >= 0) write( log_fd, out.text, out.len );
+}
 
 static void *freeze_watch( void *arg )
 {
     unsigned int desktop = desktop_beats, output = output_beats, requests[FREEZE_SECONDS] = { 0 };
     int desktop_still = 0, output_still = 0, reports = 0, standing = 0, tick = 0;
-    char text[640], heap[120];
+    struct ps4_line text;
+    size_t flexible = 0;
     sigset_t set;
 
     sigfillset( &set );
@@ -1142,15 +1183,46 @@ static void *freeze_watch( void *arg )
         if (standing || reports == 3) continue;
         standing = 1;
         reports++;
-        ps4rt_heap_report( heap, sizeof(heap) );  /* (lock-free) */
-        snprintf( text, sizeof(text), "wineps4: a freeze: the desktop's loop still for %d s, the log thread for %d s "
-                  "(%s, %d bytes waiting for it), wineserver %u requests in the last %d s, the desktop's %s: its "
-                  "threads go into /data/WinePS4/hang.log\n", desktop_still, output_still,
-                  output_state == 1 ? "writing wine.log" : output_state == 2 ? "giving the desktop its text" : "reading",
-                  pending, ps4_request_seq - requests[tick % FREEZE_SECONDS], FREEZE_SECONDS - 1, heap );
-        ps4_log_line( text );
-        ps4_dump_threads_quiet( text );
-        ps4_log_line( "wineps4: the freeze's thread stacks are in hang.log\n" );
+        text.len = 0;
+        ps4_line_str( &text, "wineps4: a freeze: the desktop's loop still for " );
+        ps4_line_num( &text, desktop_still );
+        ps4_line_str( &text, " s, the log thread for " );
+        ps4_line_num( &text, output_still );
+        ps4_line_str( &text, output_state == 1 ? " s (writing wine.log, " : output_state == 2 ? " s (giving the desktop its text, "
+                                                                                      : " s (reading, " );
+        ps4_line_num( &text, pending );
+        ps4_line_str( &text, " bytes waiting for it), wineserver " );
+        ps4_line_num( &text, ps4_request_seq - requests[tick % FREEZE_SECONDS] );
+        ps4_line_str( &text, " requests in the last " );
+        ps4_line_num( &text, FREEZE_SECONDS - 1 );
+        ps4_line_str( &text, " s" );
+        server_where( &text );
+        ps4_line_str( &text, ", the desktop's heap " );
+        ps4_line_num( &text, (long long)ps4_heap_in_use_mib( NULL ) );  /* (lock-free) */
+        ps4_line_str( &text, " MiB in use; the windows' lock " );
+        if (ps4_windows_lock_holder)
+        {
+            ps4_line_str( &text, "held by thread " );
+            ps4_line_num( &text, ps4_windows_lock_holder );
+        }
+        else ps4_line_str( &text, "free" );
+        ps4_line_str( &text, ": its threads go into /data/WinePS4/hang.log" );
+        freeze_log( &text );
+        text.text[text.len] = 0;
+        ps4_dump_threads_quiet( text.text );
+        /* the app's memory after the report, as asking the kernel may itself be what stands */
+        text.len = 0;
+        ps4_line_str( &text, "wineps4: the freeze's thread stacks are in hang.log; the app's memory: direct " );
+        ps4_line_num( &text, (long long)(ps4_vm_direct_free() >> 20) );
+        ps4_line_str( &text, " MiB free in one run, flexible " );
+        ps4_line_num( &text, sceKernelAvailableFlexibleMemorySize( &flexible ) ? -1 : (long long)(flexible >> 20) );
+        if (ps4_outside_pool() != ~0ull)
+        {
+            ps4_line_str( &text, " MiB, the pool outside the 7 " );
+            ps4_line_num( &text, (long long)(ps4_outside_pool() >> 20) );
+        }
+        ps4_line_str( &text, " MiB" );
+        freeze_log( &text );
     }
     return NULL;
 }

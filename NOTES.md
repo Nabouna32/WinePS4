@@ -508,3 +508,41 @@ v00.63:
   steam.exe (it hands it to the Steam that runs, or starts Steam and then the game), any other to
   start.exe. A .lnk's icon location is used when it names one. Shortcuts are read once and again when
   they change (the desktop read every .lnk from the disk on every frame it drew).
+
+## The freeze as a game starts, Steam in Big Picture (v00.64, 2026-11-06)
+
+v00.63 (logs/v00.63): Iron Snout started from Steam (process 631, and x86launcher.exe, which ended at
+81.48), and from about 82 s everything stood: Steam's processes wrote nothing more (their own hang
+reports in hang.log, still running after 20 and 50 s, every thread in a system call), wineserver took
+no request for 9 s, and the desktop's loop stood with its thread waiting for the windows' lock
+(winwin_text_events). Steam's lines stopped first: wineserver stood first, the desktop after it. The
+report fired at 93 s and its dump stopped after four of the desktop's threads: the fifth never
+answered (v00.63 waited for it), or the dump stood itself (snprintf takes ps4-kit's stdio lock). Who
+held the windows' lock, and where wineserver stood, is not known yet: v00.64 is made to tell.
+
+v00.64:
+- The freeze report after 6 s still. Its text and the dump are built without printf
+  (port/include/ps4_line.h); each thread has 50 ms to answer ("no answer" else) and its line is
+  written at once. It says who holds the windows' lock (the thread, and where it took it:
+  WindowsLock in shell/winwindows.cpp) and, per thread, whether it is inside the heap or stdio
+  (ps4-kit's per-thread depth counters, read by the signal handler on the thread itself).
+- wineserver says where its thread is (Wine server/fd.c, request.c, trace.c): waiting for its
+  programs, in a request (its name and the process that made it), on a file's event, running its
+  timers. Its thread may stand where no signal reaches it; the report reads these instead. After the
+  dump, the app's memory (direct, flexible, the pool outside the 7): asking the kernel may stand too.
+- Steam in Big Picture: Settings > Apps, "Steam in Big Picture" (on by default;
+  WINEPS4_STEAM_BIGPICTURE=0 off), applies when Steam next starts: steam.exe gets -gamepadui.
+- Nothing of the desktop is drawn under a program's full-screen window (Big Picture, a game): no
+  wallpaper, icons, desktop windows or taskbar, and what changes under it makes no frame (its damage is
+  dropped). The desktop's own memory stays as it was; its drawing and the frames it copies go.
+- 32-bit programs get 4 GiB (large address aware) as under Proton (PROTON_FORCE_LARGE_ADDRESS_AWARE,
+  on by default there): Wine's ntdll, virtual_set_large_address_space (WINEPS4_LARGE_ADDRESS_AWARE=0
+  gives a program the 2 GiB its header asks for).
+
+What else of Proton fits the PS4 (not done): fast waits (Proton's fsync/ntsync: Windows' events and
+mutexes waited on in shared memory, not through wineserver; FreeBSD's _umtx_op on shared memory could
+do it), games' display modes (a game's resolution change scaled to the screen, FSR as Proton's
+fullscreen hack has it), the controller as an XInput pad (Big Picture and games), wine-mono and
+wine-gecko (.NET programs and launchers, HTML in programs), Media Foundation through GStreamer (games'
+videos), vkd3d-proton (Direct3D 12: needs more of RADV on the PS4's GPU). Proton's steam.exe bridge
+(lsteamclient) is not needed: Windows' own Steam runs here.
