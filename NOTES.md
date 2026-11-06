@@ -546,3 +546,38 @@ fullscreen hack has it), the controller as an XInput pad (Big Picture and games)
 wine-gecko (.NET programs and launchers, HTML in programs), Media Foundation through GStreamer (games'
 videos), vkd3d-proton (Direct3D 12: needs more of RADV on the PS4's GPU). Proton's steam.exe bridge
 (lsteamclient) is not needed: Windows' own Steam runs here.
+
+## The freeze again, from the kernel's side (v00.65, 2026-11-06)
+
+v00.64 (logs/v00.64; user: "in big mode, it froze, not sure if the controller was supported"): Steam
+in Big Picture ran 50 s (its sounds played), then Iron Snout started from it (process 653, 534.14),
+x86launcher.exe came and went (654, 534.71 to 535.37) and from about 538 s everything stood: the same
+order as v00.63's. Iron Snout's last line was its win32u at 535.25, before its window (no display
+HELLO); v00.62's got to DXVK 6 s after that point, so this is earlier than Direct3D. The report at
+544.46: wineserver 0 requests in 5 s, "now on a file's event" (outside any request), the windows'
+lock free, the heap 51 MiB. Its dump: the log thread (read), the audio listener (poll) and the
+display listener (accept) answered; two threads never did (most likely the desktop's loop and
+wineserver's, by the table's order); then the dump itself stood before the next thread, and the
+memory line after it was never written. Threads that don't answer a signal wait in the kernel. The
+user closed the app before 20 s, and the Hang report is off by default: no program wrote anything.
+klog (GoldHEN's, read after) held nothing of it. The controller: programs see none. winebus is not
+built (its root device's Service is taken out at start), and the pad only moves the desktop's pointer.
+
+v00.65:
+- port/ps4_kstate.c: where the kernel has each thread of the app, without a signal: __sysctl
+  kern.proc.pid with threads (FreeBSD 9's kinfo_proc, 1088 bytes, read at its offsets: state, wait
+  message, kernel lock name, seconds asleep, run time, thread name). A line a thread into hang.log, a
+  line a process into wine.log ("wineps4: kernel: the desktop (pid N, M threads): 30 umtxn, 9 select,
+  ..."). The desktop asks at a freeze on a thread of its own (the signals' dump and it don't wait for
+  each other), for itself and every program it started (their pids and names in the heartbeat page).
+- /data/WinePS4/.heartbeat: a shared page with the desktop's loop count, wineserver's request count,
+  the app's processes and their names. Every local and outside process looks at it each second from
+  its stats thread; the first to see the loop still for 10 s, when the desktop's own report didn't
+  get through, asks for every process of the app (asking wires the asker's buffer, which takes its
+  address space's lock: a desktop whose address space stands can't ask for itself). Off with the
+  Freeze report.
+- The dump's signal handler takes its stack's bounds from the thread table (pthread_attr_get_np at
+  registration) instead of asking the kernel, which may be what stands.
+- The desktop's threads are named (desktop, log, wineserver, freeze watch, kernel report, display,
+  display client, audio, audio mixer, spawn monitor, spawn broker, reaper, files; stats in programs),
+  so the kernel's view says which is which.

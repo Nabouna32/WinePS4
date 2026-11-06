@@ -175,7 +175,7 @@ target_compile_options(wine_shell PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++20> 
 
 # --- The app -------------------------------------------------------------------------------------
 add_executable(wineps4 ${PORT}/ps4_main.c ${PORT}/ps4_wine_port.c ${PORT}/ps4_wine_vm.c ${PORT}/ps4_wine_dirs.c ${PORT}/unused_reals.c ${PORT}/ps4_spawn_desk.c
-    ${PORT}/ps4_unixlibs.c ${PORT}/ps4_net.c ${PORT}/ps4_ifaddrs.c ${PORT}/ps4_audio_desk.c
+    ${PORT}/ps4_unixlibs.c ${PORT}/ps4_net.c ${PORT}/ps4_ifaddrs.c ${PORT}/ps4_audio_desk.c ${PORT}/ps4_kstate.c
     $<TARGET_OBJECTS:wine_ntdll_unix> ${SERVER_ONE} ${win32u_ONE} ${wineps4drv_ONE} ${MODULE_UNIXLIB_OBJECTS} $<TARGET_OBJECTS:wine_shell>)
 add_dependencies(wineps4 wine_server_one win32u_one wineps4drv_one ${MODULE_UNIXLIB_TARGETS})
 target_include_directories(wineps4 BEFORE PRIVATE ${PORT}/include ${WINE_SRC}/include ${WINEPS4_FREETYPE}/include)

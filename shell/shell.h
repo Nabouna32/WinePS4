@@ -37,6 +37,7 @@ void ps4_audio_start( void );
  * desktop's joins the report's thread stacks (port/ps4_wine_port.c) */
 void ps4_desktop_beat( void );
 void ps4_thread_register( void );
+void ps4_thread_name( const char *name );  /* (port/ps4_kstate.c: the kernel's view of the threads) */
 /* a line straight into wine.log (with its time), never waiting for the programs' pipe */
 void ps4_log_line( const char *text );
 /* the memory the processes outside the PS4's 7 share, free, as one of them last said (~0: none said) */

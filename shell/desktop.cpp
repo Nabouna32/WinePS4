@@ -1126,7 +1126,7 @@ const Toggle TOGGLES[] = {
     {"Vulkan log", "Programs' swapchains and frames a second (Vulkan, Direct3D through DXVK) in wine.log", "WINEPS4_VULKAN_LOG", "", "0"},
     {"Audio log", "Programs' sound streams in wine.log: their formats, and when one ran dry (the program wrote it late)", "WINEPS4_AUDIO_LOG", "", "0"},
     {"Performance log", "Every 10 s in wine.log: each process's share of the CPU, the desktop's drawing time, free memory", "WINEPS4_PERF_LOG", "", "0"},
-    {"Freeze report", "When the desktop stands still for 10 s: where each of its threads is, in hang.log", "WINEPS4_FREEZE_REPORT", "", "0"},
+    {"Freeze report", "When the desktop stands still for 6 s: where each thread of the app is (the kernel's view too), in hang.log", "WINEPS4_FREEZE_REPORT", "", "0"},
 };
 
 // Settings > Diagnostics > Keyboard log: where the USB keyboard's presses went, a line a second

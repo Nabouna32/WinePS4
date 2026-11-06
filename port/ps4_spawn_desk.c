@@ -37,7 +37,8 @@ struct spawn_header
 };
 
 extern pid_t ps4_spawn( const char *path, char **argv, char **envp, int fd0, int fd1 );
-extern void ps4_child_started( int pid );
+extern void ps4_child_started( int pid, const char *image );
+extern void ps4_thread_name( const char *name );  /* (port/ps4_kstate.c) */
 
 /* held while the desktop forks: no child gets a descriptor received for another one */
 pthread_mutex_t ps4_spawn_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -229,6 +230,7 @@ static void *local_monitor( void *arg )
     int n, i;
 
     ps4_thread_register();  /* (the freeze report's) */
+    ps4_thread_name( "spawn monitor" );
     for (;;)
     {
         fds[0].fd = wake[0];
@@ -536,7 +538,7 @@ int ps4_local_spawn( char *const argv[], char *const envp[], int fd0, int fd1, i
     if (sock != -1) goto failed;  /* (more than this table holds) */
     if (id < 0)  /* (after the lock: see start_outside) */
         fprintf( stderr, "wineps4: %s runs outside the PS4's 7 (process %d, %d outside now)\n", image, pid, outside_now );
-    ps4_child_started( pid );
+    ps4_child_started( pid, image );
     if (wake[1] != -1) write( wake[1], "", 1 );
     ret = pid;
     goto done;
@@ -620,9 +622,11 @@ static void *desktop_watch( void *arg )
 }
 
 extern unsigned long long ps4_vm_backed_bytes( void );
+extern void ps4_heartbeat_check( void );
 
 /* the process's figures for the desktop's Task Manager, every second (one write each: they don't
- * mix with the exit code's) */
+ * mix with the exit code's); and whether the desktop still beats (port/ps4_kstate.c: before the
+ * write, which a desktop that stands stops reading) */
 static void *stats_thread( void *arg )
 {
     const int sock = (int)(long)arg;
@@ -630,11 +634,13 @@ static void *stats_thread( void *arg )
 
     sigfillset( &all );
     pthread_sigmask( SIG_BLOCK, &all, NULL );  /* (Wine's signals are its own threads') */
+    ps4_thread_name( "stats" );
     for (;;)
     {
         struct { struct local_msg msg; struct local_stats stats; } m = { { MSG_STATS, 0 } };
         struct rusage usage;
 
+        ps4_heartbeat_check();
         if (!getrusage( RUSAGE_SELF, &usage ))
             m.stats.cpu_us = (uint64_t)(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1000000 +
                              usage.ru_utime.tv_usec + usage.ru_stime.tv_usec;
@@ -904,7 +910,7 @@ static int serve( int conn )
             }
     ret = ps4_spawn( list[0], list + 1, list + header.argc + 1, fd0, fd1 );
     if (ret == -1) ret = -errno;
-    else ps4_child_started( ret );
+    else ps4_child_started( ret, header.argc > 2 ? list[2] : list[0] );
 
 done:
     for (i = 0; i < ngot; i++) close( got[i] );
@@ -918,6 +924,7 @@ static void *broker_thread( void *arg )
     const int listener = (int)(long)arg;
 
     ps4_thread_register();  /* (the freeze report's) */
+    ps4_thread_name( "spawn broker" );
     for (;;)
     {
         int conn = accept( listener, NULL, NULL ), answer;

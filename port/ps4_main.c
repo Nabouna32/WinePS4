@@ -180,6 +180,15 @@ extern void ps4_thread_register( void );
 extern void ps4_start_hang_watch( void );
 extern void ps4_kit_set_min_thread_stack( size_t bytes );
 extern void ps4_process_exit_now( int status ) __attribute__((noreturn));
+/* the kernel's view of the app's threads, and the desktop's heartbeat for the programs (port/ps4_kstate.c) */
+extern void ps4_heartbeat_open( void );
+extern void ps4_heartbeat_beat( unsigned int beats );
+extern void ps4_heartbeat_requests( unsigned int requests );
+extern void ps4_heartbeat_child( int pid, const char *image );
+extern void ps4_kstate_prepare( void );
+extern void ps4_kstate_report( const char *reason );
+extern void (*ps4_kstate_log)( const char *line );
+extern void ps4_thread_name( const char *name );
 
 /* ntdll starts every thread on a 1 MiB stack of its own (kernel_stack_size, pthread_attr_setstack):
  * ps4-kit's 2 MiB minimum would grow it past its end */
@@ -220,6 +229,7 @@ static void *output_thread( void *arg )
     int fd = (int)(long)arg, line_start = 1;
 
     ps4_thread_register();  /* (its stack in the freeze report) */
+    ps4_thread_name( "log" );
     while ((n = read( fd, buffer, sizeof(buffer) )) > 0)
     {
         output_state = 1;
@@ -265,7 +275,7 @@ void ps4_log_line( const char *text )
 /* the desktop's loop, each time round (the freeze report) */
 void ps4_desktop_beat( void )
 {
-    __atomic_add_fetch( &desktop_beats, 1, __ATOMIC_RELAXED );
+    ps4_heartbeat_beat( __atomic_add_fetch( &desktop_beats, 1, __ATOMIC_RELAXED ) );  /* (and the programs') */
 }
 
 static void open_log( void )
@@ -559,10 +569,12 @@ static int local_child;  /* this program process is a local process (the PS4 sta
 static pthread_mutex_t children_lock = PTHREAD_MUTEX_INITIALIZER;
 static int children[MAX_CHILDREN], child_count;
 
-void ps4_child_started( int pid )
+/* (image: its program, for the kernel's view of the app's threads) */
+void ps4_child_started( int pid, const char *image )
 {
     pthread_mutex_lock( &children_lock );
     if (child_count < MAX_CHILDREN) children[child_count++] = pid;
+    ps4_heartbeat_child( pid, image ? image : "" );
     pthread_mutex_unlock( &children_lock );
 }
 
@@ -577,6 +589,7 @@ static void child_ended( int pid )
             children[i] = children[--child_count];
             break;
         }
+    ps4_heartbeat_child( pid, NULL );
     pthread_mutex_unlock( &children_lock );
 }
 
@@ -643,7 +656,7 @@ static int launch( char *const args[], const char *extra_env )
         execve( argv[0], argv, envp );
         _exit( 127 );  /* (the kernel's exit: not ps4-kit's, which would close the app) */
     }
-    else if (pid > 0) ps4_child_started( pid );
+    else if (pid > 0) ps4_child_started( pid, args[0] );
     pthread_mutex_unlock( &ps4_spawn_lock );
     if (envp != environ) free( envp );
     if (local < 0 && local != -ENOSYS) errno = -local;
@@ -1153,21 +1166,54 @@ static void freeze_log( struct ps4_line *line )
     if (log_fd >= 0) write( log_fd, out.text, out.len );
 }
 
+/* the kernel report's lines for wine.log (port/ps4_kstate.c) */
+static void kstate_log( const char *line )
+{
+    struct ps4_line l;
+
+    l.len = 0;
+    ps4_line_str( &l, line );
+    freeze_log( &l );
+}
+
+/* The kernel's view of the app's threads at a freeze (port/ps4_kstate.c), on a thread of its own: it
+ * and the signals' dump don't wait for each other (v00.64's dump stood part way, and nothing after
+ * it was told). */
+static int kstate_wake[2] = { -1, -1 };
+static char kstate_reason[256];
+
+static void *kstate_thread( void *arg )
+{
+    sigset_t set;
+    char c;
+
+    sigfillset( &set );
+    pthread_sigmask( SIG_BLOCK, &set, NULL );
+    ps4_thread_name( "kernel report" );
+    ps4_kstate_prepare();  /* (its pages touched now: the freeze may be the memory's) */
+    while (early_syscall3( 3 /* SYS_read */, kstate_wake[0], (long)&c, 1 ) == 1) ps4_kstate_report( kstate_reason );
+    return NULL;
+}
+
 static void *freeze_watch( void *arg )
 {
     unsigned int desktop = desktop_beats, output = output_beats, requests[FREEZE_SECONDS] = { 0 };
     int desktop_still = 0, output_still = 0, reports = 0, standing = 0, tick = 0;
     struct ps4_line text;
     size_t flexible = 0;
+    pthread_t thread;
     sigset_t set;
 
     sigfillset( &set );
     pthread_sigmask( SIG_BLOCK, &set, NULL );
+    ps4_thread_name( "freeze watch" );
+    if (!pipe( kstate_wake ) && !pthread_create( &thread, NULL, kstate_thread, NULL )) pthread_detach( thread );
     for (;;)
     {
         int pending = 0;
 
         sleep( 1 );
+        ps4_heartbeat_requests( ps4_request_seq );
         if (!desktop_beats) continue;  /* (the desktop's loop has not started yet: its screen, its wallpaper) */
         if (output_read_fd >= 0 && ioctl( output_read_fd, PS4_FIONREAD, &pending )) pending = 0;
         desktop_still = desktop_beats == desktop ? desktop_still + 1 : 0;
@@ -1209,6 +1255,19 @@ static void *freeze_watch( void *arg )
         ps4_line_str( &text, ": its threads go into /data/WinePS4/hang.log" );
         freeze_log( &text );
         text.text[text.len] = 0;
+        /* the kernel's view first (its own thread), then the signals' */
+        if (kstate_wake[1] >= 0)
+        {
+            struct ps4_line reason;
+
+            reason.len = 0;
+            ps4_line_str( &reason, "wineps4: a freeze: the desktop's loop still for " );
+            ps4_line_num( &reason, desktop_still );
+            ps4_line_str( &reason, " s" );
+            reason.text[reason.len] = 0;
+            memcpy( kstate_reason, reason.text, reason.len + 1 );
+            early_syscall3( 4 /* SYS_write */, kstate_wake[1], (long)"", 1 );
+        }
         ps4_dump_threads_quiet( text.text );
         /* the app's memory after the report, as asking the kernel may itself be what stands */
         text.len = 0;
@@ -1240,6 +1299,7 @@ static void start_freeze_watch( void )
 static void *reaper_thread( void *arg )
 {
     ps4_thread_register();  /* (the freeze report's) */
+    ps4_thread_name( "reaper" );
     for (;;)
     {
         int status = 0;
@@ -1285,6 +1345,7 @@ extern void ps4_budget_probe( void );
 static void *files_thread( void *arg )
 {
     ps4_thread_register();
+    ps4_thread_name( "files" );
     for (;;)
     {
         ps4_files_watch();
@@ -1431,6 +1492,8 @@ int main( int argc, char **argv )
     }
     write_desktop_pid();  /* (before any program starts: the ones it starts itself tell by it) */
     open_log();
+    ps4_heartbeat_open();  /* (before any program starts: they watch the desktop by it) */
+    ps4_kstate_log = kstate_log;
     ps4_dirs_reset();  /* (the processes' shared folder paths: none from the last session) */
     logf_( "wineps4: WinePS4 v" WINEPS4_VERSION " (Wine 11.0)\n" );
     if (desktop_lock < 0)
@@ -1456,6 +1519,7 @@ int main( int argc, char **argv )
     if (pthread_create( &thread, &attr, setup_thread, NULL )) logf_( "wineps4: could not start the setup thread\n" );
     pthread_attr_destroy( &attr );
     ps4_thread_register();  /* (the desktop's loop: the freeze report's first thread) */
+    ps4_thread_name( "desktop" );
     start_freeze_watch();
     ps4_shell_run( NULL );  /* does not return */
     return 0;

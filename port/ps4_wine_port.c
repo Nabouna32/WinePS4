@@ -42,7 +42,9 @@ int amd64_set_fsbase( void *base ) { return sysarch( AMD64_SET_FSBASE, &base ); 
  * (v00.16: the hang dump's, after the program was gone). */
 #define MAX_THREADS 1024
 static pthread_mutex_t threads_lock = PTHREAD_MUTEX_INITIALIZER;
-static struct { int tid; pthread_t thread; void *teb; } threads[MAX_THREADS];
+/* (stack: its Unix stack's bounds, for the dump's handler: asking the kernel there stood with a
+ * desktop whose address space stood, v00.64) */
+static struct { int tid; pthread_t thread; void *teb; uint64_t stack_lo, stack_hi; } threads[MAX_THREADS];
 static pthread_key_t thread_key;
 static pthread_once_t thread_key_once = PTHREAD_ONCE_INIT;
 
@@ -53,7 +55,17 @@ static void make_thread_key( void ) { pthread_key_create( &thread_key, thread_en
 void ps4_thread_register( void )
 {
     int tid = pthread_getthreadid_np(), i, free_slot = -1;
+    uint64_t lo = 0, hi = 0;
+    pthread_attr_t attr;
+    void *stack;
+    size_t size;
 
+    if (!pthread_attr_init( &attr ))
+    {
+        if (!pthread_attr_get_np( pthread_self(), &attr ) && !pthread_attr_getstack( &attr, &stack, &size ))
+            lo = (uint64_t)(uintptr_t)stack, hi = lo + size;
+        pthread_attr_destroy( &attr );
+    }
     pthread_once( &thread_key_once, make_thread_key );
     pthread_setspecific( thread_key, (void *)1 );
     pthread_mutex_lock( &threads_lock );
@@ -66,7 +78,9 @@ void ps4_thread_register( void )
     {
         threads[free_slot].thread = pthread_self();
         __atomic_store_n( &threads[free_slot].teb, ps4_thread_teb, __ATOMIC_RELEASE );
-        threads[free_slot].tid = tid;
+        threads[free_slot].stack_lo = lo;
+        threads[free_slot].stack_hi = hi;
+        __atomic_store_n( &threads[free_slot].tid, tid, __ATOMIC_RELEASE );
     }
     pthread_mutex_unlock( &threads_lock );
     if (free_slot < 0) fprintf( stderr, "wineps4: thread table full, thread %d cannot be signalled\n", tid );
@@ -128,6 +142,7 @@ int ps4_thread_kill( int tid, int sig )
 /* --- wineserver -------------------------------------------------------------------------------- */
 
 extern int ps4_wineserver_main( int client_fd );
+extern void ps4_thread_name( const char *name );  /* (port/ps4_kstate.c) */
 
 static void *wineserver_thread( void *arg )
 {
@@ -143,6 +158,7 @@ static void *wineserver_thread( void *arg )
     sigdelset( &all, SIGXCPU );  /* the hang dump's */
     pthread_sigmask( SIG_BLOCK, &all, NULL );
     ps4_thread_register();
+    ps4_thread_name( "wineserver" );
     ps4_wineserver_main( (int)(long)arg );
     fprintf( stderr, "wineps4: wineserver's main loop returned\n" );
     return NULL;
@@ -323,12 +339,27 @@ static int is_return_address( uint64_t addr )
     return 0;
 }
 
+/* the top of the calling thread's Unix stack when rsp is on it (the table's, from its registration),
+ * else 0: no system call but the kernel's thread id */
+static uint64_t registered_stack_top( uint64_t rsp )
+{
+    long tid = 0;
+    int i;
+
+    if (raw_syscall3( 432 /* SYS_thr_self */, (long)&tid, 0, 0 ) == -1) return 0;
+    for (i = 0; i < MAX_THREADS; i++)
+        if (__atomic_load_n( &threads[i].tid, __ATOMIC_ACQUIRE ) == (int)tid)
+            return rsp >= threads[i].stack_lo && rsp < threads[i].stack_hi ? threads[i].stack_hi : 0;
+    return 0;
+}
+
 /* Installed with the kernel's sigaction (ps4_raw_sigaction): it may interrupt 32-bit code, where %fs
- * isn't the C library's, so it calls nothing that needs it there (the memory query is libkernel's) */
+ * isn't the C library's, so it calls nothing that needs it there (the memory query is libkernel's,
+ * and only for a stack the thread's registration didn't tell) */
 static void dump_handler( int sig, siginfo_t *info, void *context )
 {
     ucontext_t *uc = context;
-    uint64_t rsp = uc->uc_mcontext.mc_rsp & ~7ull, *p, *end = (uint64_t *)(rsp + 0x10000);
+    uint64_t rsp = uc->uc_mcontext.mc_rsp & ~7ull, *p, *end = (uint64_t *)(rsp + 0x10000), top;
     void *start, *map_end;
     uint32_t prot;
     unsigned short cs;
@@ -344,7 +375,11 @@ static void dump_handler( int sig, siginfo_t *info, void *context )
         /* (64-bit code: %fs is the C library's, its thread-local counts are this thread's) */
         dump_heap = ps4_heap_depth();
         dump_stdio = ps4_stdio_depth();
-        if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
+        if ((top = registered_stack_top( rsp )))
+        {
+            if ((uint64_t *)top < end) end = (uint64_t *)top;
+        }
+        else if (!sceKernelQueryMemoryProtection( (void *)rsp, &start, &map_end, &prot ) && (uint64_t *)map_end < end)
             end = map_end;
     }
     for (p = (uint64_t *)rsp; p < end && n < DUMP_FRAMES; p++)
