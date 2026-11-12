@@ -1,3 +1,4 @@
 out/
 *.pkg
 tests/*.exe
+logs/
