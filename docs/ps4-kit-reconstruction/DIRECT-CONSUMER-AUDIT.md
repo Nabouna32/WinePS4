@@ -107,7 +107,41 @@ provenance and licensing before copying any implementation. Wine's
 images and forwards completed frames to a desktop callback rather than owning
 VideoOut.
 
-## 4. Host configure regression test added
+## 4. Build-script topology: the kit is not the ReXGlue SDK
+
+The current public MGR and MP3 build scripts show an important boundary that a
+generic ps4_kit_app() wrapper would miss:
+
+| Consumer | PS4 CMake source | Kit injection | Project SDK target | App target | Host-only work |
+|---|---|---|---|---|---|
+| MGR | $SRC/app | CMAKE_PROJECT_sa2_INCLUDE | rexcore from $SRC/sdk | sa2_eboot | ReXGlue host generator, XenosRecomp and shader tools |
+| MP3 | $SRC/mp3/ps4 | CMAKE_PROJECT_mp3_INCLUDE | rexcore from $SRC/sdk | mp3_eboot | ReXGlue host generator, XenosRecomp and shader tools |
+| TTT2 | $SRC/port/ps4 | no project-injection variable in the shown configure command | project runtime targets ttt2_win32, ttt2_platform, ttt2_runtime, ttt2_ffmpeg | ttt2_eboot | XenonRecomp, image tools, DXVK/vkd3d-shader and shader compilation |
+
+MGR and MP3 each build their own PS4 ReXGlue SDK target before configuring the
+application. Their scripts explicitly set REXGLUE_PLATFORM_PS4=ON,
+REXGLUE_BUILD_HOST_TOOLS=OFF, REXGLUE_USE_VULKAN=ON,
+REXGLUE_ENABLE_TRACY=OFF and REXGLUE_BUILD_TESTS=OFF for the target SDK.
+The host code generator is built separately with the host Clang 21 compiler;
+it must not inherit the PS4 target sysroot. MP3 additionally builds a separate
+host XenosRecomp shader translator. The PS4 app build then injects the kit
+CMake file and requests the eboot target.
+
+This means the replacement kit must supply the shared PS4 environment,
+toolchain/linker integration, runtime services, Mesa/RADV, native VideoOut
+WSI, diagnostics/profiling and package tooling, while leaving the projects'
+own ReXGlue SDK and host code-generation pipeline intact. Do not absorb
+ReXGlue's SDK targets into the kit or treat them as kit runtime libraries.
+
+TTT2 is a different integration shape. Its script configures port/ps4 and
+has a libs mode that builds its four runtime libraries, then links
+ttt2_eboot against stand-ins for generated game functions. This gives us a
+useful intermediate acceptance test: target runtime libraries and a complete
+application link can be tested before a user's game-specific code generation
+is available. The script also builds FFmpeg's XMA/WMA decoder subset as a
+project dependency; it is not the Wine image-decoder FFmpeg recipe.
+
+## 5. Host configure regression test added
 
 Run:
 
@@ -127,7 +161,7 @@ generated, and `PS4_KIT_NETFS=OFF` survives configuration. It is a host-only
 configure test: it does not compile the PS4 runtime, link Mesa, create an eboot
 or prove that the private NetFS behavior has been reproduced.
 
-## 5. Public fork survey (13 November 2026)
+## 6. Public fork survey (13 November 2026)
 
 The public fork search is useful, but it does **not** currently reveal another
 clean-room reconstruction of the private kit. The surveyed results include
@@ -183,7 +217,7 @@ fork-specific commits and branches when a new candidate appears. For now,
 public forks are useful mainly as historical snapshots, not as a recovered
 private kit.
 
-## 6. Next implementation gates
+## 7. Next implementation gates
 
 1. [x] Add the host injection test to `.github/workflows/ps4-kit-host-tests.yml`;
    its first GitHub Actions result still needs to be checked.
