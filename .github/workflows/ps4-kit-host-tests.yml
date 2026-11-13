@@ -39,6 +39,8 @@ jobs:
         run: bash ps4-kit/tests/test-project-injection.sh
       - name: Check both helper orders and separate WSI profiles
         run: bash ps4-kit/tests/test-wsi-profiles.sh
+      - name: Check native VideoOut WSI contract and profile separation
+        run: bash ps4-kit/tests/test-videoout-wsi-contract.sh
       - name: Check exported diagnostics data-directory function
         run: bash ps4-kit/tests/test-diag-data-dir.sh
       - name: Compile and test diagnostics thread registry and watchdog dump
