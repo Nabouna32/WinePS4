@@ -270,6 +270,8 @@ helper implementation supports both observed call orders: Wine calls
 ps4_kit_app before ps4_kit_link_mesa, while the ReXGlue/Godot/TTT2 paths call
 Mesa first.
 
-The TTT2 patch also requires the diagnostics functions listed in
-DIAGNOSTICS-SAMPLER-TRACE.md. Those are not implemented yet, so TTT2 remains a
-confirmed direct consumer but not a currently linkable target.
+The TTT2 diagnostics symbols now have a first-pass clean-room implementation
+in ps4_kit_diag_runtime.c. The current version is linkable in principle but
+still lacks full stack unwinding, per-address sample histograms, JIT dumps and
+retail-hardware signal validation. TTT2 remains blocked by the missing native
+VideoOut WSI and the remaining target runtime/allocator work.
