@@ -135,9 +135,11 @@ have been checked.
   not present; the runtime currently covers only a subset of kit functions.
 - The native VideoOut profile is not yet reconstructed in this tree. Public
   project implementations are references, not automatically safe to copy.
-- The current `ps4_kit_link_mesa()` still attaches the Wine window WSI and is
-  not yet compatible with native-VideoOut consumers such as MGR, MP3, TTT2,
-  ConkerLR and Godot. Split generic RADV linking from WSI profile selection.
+- `ps4_kit_link_mesa()` now links only the generic RADV archive closure.
+  `ps4_kit_app()` selects `window-desktop` automatically for WinePS4 and
+  `native-videoout` for other Mesa apps. The native VideoOut source is still
+  missing, so native consumers fail clearly rather than receiving the wrong
+  Wine WSI. A host test checks that the two source profiles never mix.
 - MGR's private kit revision `79fba0f` is distinct from WinePS4's
   `56b3d86`; its exact CMake/runtime API still needs a complete audit.
 - The package script has only fake-tool smoke coverage; it has not been run
