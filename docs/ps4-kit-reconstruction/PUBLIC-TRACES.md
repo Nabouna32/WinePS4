@@ -65,7 +65,22 @@ The commit message says setting `TTT2_PROFILE=1` starts ps4-kit's hot-spot profi
 
 The public GitHub code-search queries run during this audit did not expose a public `ps4-kit` source repository or a complete copy of its CMake/runtime tree.
 
-## 6. Next work items
+## 6. Public runtime primitives used by the reconstruction
+
+The WinePS4 source calls a small set of private-kit runtime helpers. Public PS4 ports expose the underlying system imports:
+
+- Crema's pinned `port/ps4_runtime.cpp` declares and uses `scePthreadSetprio()` and `scePthreadSelf()`, and its thread wrapper raises stack sizes with `pthread_attr_getstacksize()` / `pthread_attr_setstacksize()`.
+- PS4SX2's public PS5 compatibility source shows the paired `scePthreadGetprio()` / `scePthreadSetprio()` signatures; PS4 ports also use the same functions in their runtime sources.
+- DolphinPS4's public Vulkan probe and several ports use `sceSysmoduleLoadModuleInternal(uint32_t)` to load internal system modules.
+
+Immutable/public references:
+- https://github.com/iHaiDeeZ/Crema/blob/475b8d5bd3498dbd5cfefe8175f98d017a017739/port/ps4_runtime.cpp
+- https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/probe-vk/main.c
+- https://github.com/iHaiDeeZ/PS4SX2/blob/7afa5c43e7827193ac165eecd5b36d34d07761be/ps5/coreorbis/orbis-shims/orbis_eeprof.cpp
+
+The reconstruction now implements WinePS4's thread priority, minimum stack and module-loader calls over these public imports. Its `ps4_kit_heap_options` struct is a new source-level contract inferred from WinePS4's field assignments; it is not claimed to match the unpublished kit's original binary layout. The heap backend that consumes it and the diagnostics backend are still missing.
+
+## 7. Next work items
 
 - [ ] Audit every `ps4_kit_*` call and every `PS4_*` variable in WinePS4.
 - [ ] Extract the exact compiler/linker command lines from the build scripts and CMake files.
