@@ -145,12 +145,15 @@ have been checked.
 - Diagnostics now have a first-pass runtime, but thread dumps capture only
   RIP/RSP, samplers log counts/last RIP rather than address histograms, JIT code
   dumps are absent, and the PS4 signal ABI still needs hardware validation.
-- The native VideoOut source is present as a first-pass implementation, but it
-  has not been compiled with OpenOrbis/Mesa or tested on retail hardware.
+- The native VideoOut source is present as a first-pass implementation. A new
+  CI job syntax-checks it against the OpenOrbis 0.5.4 headers/sysroot and also
+  syntax-checks the diagnostics/heap C runtime; this is not a full Mesa link
+  or retail-hardware validation. The latest run is still pending.
 - `ps4_kit_link_mesa()` links only the generic RADV archive closure.
   `ps4_kit_app()` selects `window-desktop` automatically for WinePS4 and
   `native-videoout` for other Mesa apps. Host tests verify profile separation
-  and the native source's required VideoOut/GNM hooks.
+  the native source's required VideoOut/GNM hooks, and a target-triple
+  syntax-only compile using the pinned OpenOrbis sysroot.
 - MGR's private kit revision `79fba0f` is distinct from WinePS4's
   `56b3d86`; its exact CMake/runtime API still needs a complete audit.
 - The package script has only fake-tool smoke coverage; it has not been run
