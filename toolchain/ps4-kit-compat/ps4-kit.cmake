@@ -1,8 +1,8 @@
 # Clean-room subset of the private ps4-kit.cmake interface used by WinePS4.
 #
-# This file intentionally implements only the OpenOrbis linker-script and eboot
-# packaging boundary that can be reconstructed from public build scripts.
-# Mesa/RADV + the private VideoOut WSI are NOT implemented here.
+# This file implements the reconstructed OpenOrbis linker-script/eboot/package
+# boundary and links the separate Mesa/RADV archive closure plus Wine window WSI.
+# The exact private kit revision and target Mesa build are still unverified.
 #
 # Intended to be included from the WinePS4 app after project() has selected
 # the OpenOrbis toolchain. The OpenOrbis environment must already be configured.
