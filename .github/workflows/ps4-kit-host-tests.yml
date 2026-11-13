@@ -10,27 +10,34 @@ on:
   workflow_dispatch:
 
 jobs:
-  host-tests:
+  linker-and-cmake:
     runs-on: ubuntu-latest
     steps:
       - name: Check out reconstruction branch
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-
-      - name: Install host build tools
+      - name: Install CMake and Ninja
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
-
       - name: Test linker-script generator and CMake glue
         run: python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
 
-      - name: Test reconstructed package script with fake OpenOrbis tools
+  package-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out reconstruction branch
+        uses: actions/checkout@v4
+      - name: Test package script with fake OpenOrbis tools
         run: bash ps4-kit/scripts/tests/test_make_pkg.sh
 
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out reconstruction branch
+        uses: actions/checkout@v4
       - name: Test runtime wrappers with mocked PS4 imports
         run: bash ps4-kit/runtime/tests/run-host-tests.sh
