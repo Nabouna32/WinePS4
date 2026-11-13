@@ -173,8 +173,10 @@ The native profile is now implemented separately in
   the first splash-screen call, opens VideoOut lazily, creates a flip event
   queue (with polling fallback), registers aligned buffers, tracks four buffer
   banks, and defers old swapchain destruction until VideoOut allows unregister.
-- Uses the GNM winsys `ac_ps4_submit_flip` helper first, falling back to
-  `vkQueueWaitIdle` plus `sceVideoOutSubmitFlip`.
+- Records the last submitted flip argument per swapchain image and waits for
+  that exact flip to complete before reacquiring that image. Uses the GNM
+  winsys `ac_ps4_submit_flip` helper first, falling back to `vkQueueWaitIdle`
+  plus `sceVideoOutSubmitFlip`.
 - Does not use Wine's `ps4kit_window_present` callback or alter the
   window-desktop profile.
 
