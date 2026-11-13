@@ -28,17 +28,20 @@ so choosing one automatically would be unsafe.
 - `ps4-kit.cmake`: compatibility entry point used by the unchanged app and
   launcher CMake files; delegates to the clean-room interface under
   `toolchain/ps4-kit-compat/`.
-- `scripts/make-pkg.sh`: not reconstructed yet. Packaging is intentionally
-  not replaced with a placeholder that could produce a misleading or invalid
-  PKG.
+- `scripts/make-pkg.sh`: initial OpenOrbis `PkgTool.Core` / `create-gp4`
+  implementation, with the SFO attributes expected by WinePS4. Its fake-tool
+  smoke test is in `scripts/tests/`.
 
-## Known blocker
+## Known blockers
 
-The current compatibility implementation still stops at
-`ps4_kit_link_mesa()`. WinePS4 expects statically linked RADV plus the kit's
-VideoOut WSI. A public RADV archive list alone is insufficient. The next work
-is to recover the matching Mesa source/build configuration and the WSI ABI,
-then validate the complete link closure.
+- `ps4_kit_link_mesa()` still fails closed. WinePS4 expects statically linked
+  RADV plus its window-mode WSI callback ABI; a public full-screen VideoOut
+  WSI is not a drop-in replacement.
+- The private kit runtime headers/functions, exact target LLVM version, and
+  exact PAID/auth-info values still need to be recovered or independently
+  implemented.
+- The package script has not yet been run against a real OpenOrbis install;
+  its fake-tool test cannot establish that the resulting PKG is valid.
 
 No claim is made yet that the project configures, links, packages, or runs on
-hardware. The host-side smoke tests and a target build still need to be run.
+hardware.
