@@ -82,7 +82,8 @@ or prove that the private NetFS behavior has been reproduced.
 
 ## 4. Next implementation gates
 
-1. Run the new injection test and add it to the repository CI.
+1. [x] Add the host injection test to `.github/workflows/ps4-kit-integration.yml`;
+   its first GitHub Actions result still needs to be checked.
 2. Audit the full MGR and MP3 patched CMakeLists and generated link commands;
    identify which target receives runtime, RADV archives, ICD entry point,
    VideoOut WSI and system-library imports.
