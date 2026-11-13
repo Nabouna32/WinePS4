@@ -11,7 +11,11 @@
 export PS4_KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 export OPENORBIS="${OPENORBIS:-/opt/pacbrew/ps4/openorbis}"
 export PSB="${PSB:-$HOME/wineps4-build}"
-export PS4_SYSROOT="${PS4_SYSROOT:-$PSB/sysroot}"
+# Match the public PS4 Mesa build-tree contract used by related OpenOrbis ports.
+export PS4_BUILD_ROOT="${PS4_BUILD_ROOT:-$PSB}"
+export PS4_SYSROOT="${PS4_SYSROOT:-$PS4_BUILD_ROOT/sysroot}"
+export PS4_MESA_SOURCE="${PS4_MESA_SOURCE:-$PS4_BUILD_ROOT/src/mesa}"
+export PS4_MESA_BUILD="${PS4_MESA_BUILD:-$PS4_BUILD_ROOT/build/mesa}"
 export PS4_TARGET="${PS4_TARGET:-x86_64-pc-freebsd12-elf}"
 export JOBS="${JOBS:-$(nproc)}"
 
@@ -46,7 +50,7 @@ source "$OPENORBIS/ps4vars.sh"
 
 # Reassert the build-tree paths after ps4vars.sh; the kit's sysroot is an
 # overlay (libc++ and any additional target libraries), not OpenOrbis itself.
-export PS4_KIT OPENORBIS PSB PS4_SYSROOT PS4_TARGET CLANG_VER
+export PS4_KIT OPENORBIS PSB PS4_BUILD_ROOT PS4_SYSROOT PS4_MESA_SOURCE PS4_MESA_BUILD PS4_TARGET CLANG_VER
 export PS4_CC PS4_CXX PS4_LD PS4_AR PS4_RANLIB PS4_OBJCOPY JOBS
 export PS4_BASE_FLAGS="${PS4_BASE_FLAGS:-"--target=$PS4_TARGET -D_GNU_SOURCE -D__PS4__ -D__ORBIS__ -D__OPENORBIS__ -fPIC -funwind-tables --sysroot=$OPENORBIS -isystem $PS4_SYSROOT/libc-overlay -isystem $OPENORBIS/include"}"
 export PS4_CXX_FLAGS="${PS4_CXX_FLAGS:--nostdinc++ -isystem $PS4_SYSROOT/include/c++/v1}"
@@ -86,3 +90,4 @@ echo "OpenOrbis: $OPENORBIS"
 echo "LLVM: $CLANG_VER ($PS4_CC / $PS4_CXX)"
 echo "Build root: $PSB"
 echo "Target sysroot overlay: $PS4_SYSROOT"
+echo "Mesa source/build: $PS4_MESA_SOURCE / $PS4_MESA_BUILD"
