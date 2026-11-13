@@ -63,12 +63,39 @@ function(ps4_kit_app target)
     add_custom_target(${target}_eboot ALL DEPENDS "${eboot}" "${oelf}")
 endfunction ()
 
-# The private kit's Mesa function also integrates its own VideoOut window-system
-# bridge. Linking public RADV archives alone is not equivalent. Fail explicitly
-# until WinePS4's exact WSI ABI and archive closure have been verified.
+# Candidate public Mesa 26.0.8 whole-archive closure plus a separate Wine
+# window-mode WSI source. The archive manifest is validated before any link
+# flags are added; do not silently fall back to a full-screen VideoOut WSI.
+set(PS4_MESA_BUILD "$ENV{PS4_MESA_BUILD}" CACHE PATH "Mesa PS4 build directory")
+set(PS4_MESA_SOURCE "$ENV{PS4_MESA_SOURCE}" CACHE PATH "Mesa PS4 source directory")
+set(PS4_KIT_MESA_WSI_SOURCE
+    "${_PS4_KIT_ROOT}/mesa/ps4_vk_wsi_window.cpp"
+    CACHE FILEPATH "Wine window-mode Vulkan WSI implementation")
+
 function(ps4_kit_link_mesa target)
-    message(FATAL_ERROR
-        "ps4_kit_link_mesa is not implemented: public RADV archives are not a "
-        "drop-in replacement for ps4-kit's private VideoOut WSI. Build/validate "
-        "the independent Mesa + WSI layer before enabling this call.")
+    if (NOT TARGET ${target})
+        message(FATAL_ERROR "ps4_kit_link_mesa: target '${target}' does not exist")
+    endif ()
+
+    include("${_PS4_KIT_ROOT}/mesa/archives.cmake")
+    ps4_kit_resolve_mesa_archives(_ps4_mesa_archives)
+
+    if (NOT PS4_MESA_SOURCE OR NOT EXISTS "${PS4_MESA_SOURCE}/include/vulkan/vulkan.h")
+        message(FATAL_ERROR
+            "PS4_MESA_SOURCE must point to the matching Mesa source tree "
+            "(missing include/vulkan/vulkan.h)")
+    endif ()
+    if (NOT EXISTS "${PS4_KIT_MESA_WSI_SOURCE}")
+        message(FATAL_ERROR
+            "Wine window-mode Vulkan WSI is not reconstructed yet: "
+            "${PS4_KIT_MESA_WSI_SOURCE}. A full-screen VideoOut WSI is not compatible.")
+    endif ()
+
+    target_sources(${target} PRIVATE "${PS4_KIT_MESA_WSI_SOURCE}")
+    target_include_directories(${target} PRIVATE
+        "${PS4_MESA_SOURCE}/include"
+        "${_PS4_KIT_ROOT}/include")
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    target_compile_options(${target} PRIVATE -march=btver2)
+    target_link_libraries(${target} PRIVATE --whole-archive ${_ps4_mesa_archives} --no-whole-archive)
 endfunction ()
