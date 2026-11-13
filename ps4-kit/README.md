@@ -38,6 +38,8 @@ so choosing one automatically would be unsafe.
 - `scripts/make-pkg.sh`: initial OpenOrbis `PkgTool.Core` / `create-gp4`
   implementation, with the SFO attributes expected by WinePS4. Its fake-tool
   smoke test is in `scripts/tests/`.
+- `mesa/README.md`: records the public Mesa 26.0.8 / GNM build-root candidate;
+  no Mesa sources or archives are vendored yet.
 
 Host-only checks are green: [GitHub Actions run #26](https://github.com/Nabouna32/WinePS4/actions/runs/43445394613) passed linker/CMake, fake package-builder and mocked runtime tests. These checks do not validate the PS4 toolchain or generated PKG.
 
