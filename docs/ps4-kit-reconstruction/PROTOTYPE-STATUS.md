@@ -22,6 +22,13 @@ The eboot output layout is directly required by WinePS4's existing `app/package.
 
 The implementation is independent and does not copy those files.
 
+## Networking audit added
+
+- `docs/ps4-kit-reconstruction/NETWORK-API-MAP.md` now maps Wine's Winsock/NSI/DNS layers, WinePS4's `ps4_net.c` and `ps4_ifaddrs.c`, and the remaining private-kit boundaries.
+- Confirmed in the public app CMake that WinePS4 compiles `ws2_32`, `nsiproxy` and its own DNS Unix half, and links `SceNetCtl`.
+- Identified the explicit private runtime call `ps4_kit_load_module()` for Net/NetCtl and the resolver dependency that still needs an independent implementation or verified sysroot support.
+- This is a source audit only. No network code was changed and no PS4 networking test has been run.
+
 ## Not yet implemented or verified
 
 - The private kit's exact compiler and linker command contract for WinePS4's pinned kit revision `56b3d86`.
