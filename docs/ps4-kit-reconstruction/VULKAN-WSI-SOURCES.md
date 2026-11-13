@@ -203,10 +203,13 @@ The native profile is now implemented separately in
 
 - SSBU's own WSI source is MIT-licensed in that repository and is used as
   technical evidence, not copied.
-- M33's `PS4VulkanWSI.cpp` appears as an added file inside
-  `patches/ppsspp-ps4.patch`; that project is GPL-2.0. It is used only to
-  confirm the four-bank/deferred-retirement behavior, not copied.
-- SMW's WSI source is added inside its `wonder-ps4.patch`; it is also treated
-  as behavioral evidence only.
+- SSBU and SMW repositories declare MIT licences; their WSI sources are
+  inspected as behavioral references only and are not copied.
+- M33's repository-level licence is BSD-compatible, but its added
+  `PS4VulkanWSI.cpp` patch traces the WSI lineage to Resonance. Resonance is
+  GPL-2.0, so that individual implementation is treated as GPL-derived unless
+  its own provenance is clarified; it is not copied.
+- Crema declares MPL-2.0 and Resonance declares GPL-2.0. Their lineage is
+  recorded for provenance only; no code from either repository is copied.
 - The native WSI file in this branch is new MIT clean-room code based on the
   branch's own MIT window WSI and independently verified API contracts.
