@@ -30,7 +30,6 @@
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
-#include <shared_mutex>
 #include <utility>
 #include <vector>
 
@@ -92,7 +91,7 @@ std::atomic<uint64_t> g_flips{0};
 bool g_videoout_banks[kVideoOutBanks]{};
 std::vector<std::unique_ptr<Swapchain>> g_retired;
 std::unordered_map<VkSwapchainKHR, std::unique_ptr<Swapchain>> g_swapchains;
-std::shared_mutex g_timeline_lock;
+std::mutex g_timeline_lock;
 std::unordered_set<VkSemaphore> g_timelines;
 
 template <typename T>
@@ -882,7 +881,7 @@ VkResult VKAPI_CALL wsi_create_semaphore(VkDevice device, const VkSemaphoreCreat
         if (p->sType == VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO) {
             const auto *type_info = reinterpret_cast<const VkSemaphoreTypeCreateInfo *>(p);
             if (type_info->semaphoreType == VK_SEMAPHORE_TYPE_TIMELINE) {
-                std::unique_lock lock(g_timeline_lock);
+                std::lock_guard lock(g_timeline_lock);
                 g_timelines.insert(*semaphore);
             }
         }
@@ -904,7 +903,7 @@ void VKAPI_CALL wsi_destroy_semaphore(VkDevice device, VkSemaphore semaphore,
 
 bool is_timeline_semaphore(VkSemaphore semaphore)
 {
-    std::shared_lock lock(g_timeline_lock);
+    std::lock_guard lock(g_timeline_lock);
     return g_timelines.count(semaphore) != 0;
 }
 
