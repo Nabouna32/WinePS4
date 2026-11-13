@@ -102,6 +102,16 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
             self.assertEqual(help_result.returncode, 0, help_result.stdout)
             self.assertIn("sample_eboot", help_result.stdout)
 
+            # The real tree has no WSI source yet; the kit must stop explicitly
+            # rather than silently substituting a full-screen VideoOut WSI.
+            wsi_source.unlink()
+            missing_wsi = subprocess.run(
+                ["cmake", "-S", str(project), "-B", str(work / "build-missing-wsi"),
+                 f"-DOPENORBIS={openorbis}"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            self.assertNotEqual(missing_wsi.returncode, 0)
+            self.assertIn("Wine window-mode Vulkan WSI is not reconstructed yet", missing_wsi.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
