@@ -514,7 +514,12 @@ static void *sampler_thread_main(void *unused)
     for (;;) {
         unsigned int count;
         unsigned int i;
-        if (atomic_load_explicit(&g_sampler_enabled, memory_order_acquire)) {
+        if (!atomic_load_explicit(&g_sampler_enabled, memory_order_acquire)) {
+            struct timespec idle = {0, 100000000l};
+            nanosleep(&idle, NULL);
+            continue;
+        }
+        {
             pthread_t handles[PS4_KIT_DIAG_MAX_THREADS];
             unsigned char enabled[PS4_KIT_DIAG_MAX_THREADS];
             pthread_mutex_lock(&g_thread_lock);
@@ -573,7 +578,12 @@ static void *hot_profiler_thread_main(void *unused)
     for (;;) {
         unsigned int count;
         unsigned int i;
-        if (atomic_load_explicit(&g_hot_enabled, memory_order_acquire)) {
+        if (!atomic_load_explicit(&g_hot_enabled, memory_order_acquire)) {
+            struct timespec idle = {0, 100000000l};
+            nanosleep(&idle, NULL);
+            continue;
+        }
+        {
             pthread_t handles[PS4_KIT_DIAG_MAX_THREADS];
             pthread_mutex_lock(&g_thread_lock);
             count = atomic_load_explicit(&g_thread_count, memory_order_acquire);
