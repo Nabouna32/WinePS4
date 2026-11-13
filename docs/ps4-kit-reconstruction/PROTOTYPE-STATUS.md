@@ -64,6 +64,7 @@ The implementation is independent and does not copy those files.
 - The private kit's exact compiler and linker command contract for WinePS4's pinned kit revision `56b3d86`; the new environment entry point is an evidence-based approximation and has not been tested.
 - WinePS4's exact PAID/auth-info requirements; current values are configurable defaults drawn from a public PS4 port and must be confirmed for this application.
 - The exact WinePS4-compatible RADV + VideoOut WSI interface and archive dependency closure; public MIT WSI source is now identified as a candidate but not integrated or tested.
+- A later public Mesa 26.0.8 / GNM build layout is now documented and mapped to `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE` and `PS4_MESA_BUILD`; it is not proven to match private kit revision `56b3d86`.
 - The custom heap backend that consumes WinePS4's `ps4_kit_configure_heap()` policy callback; the source-level options struct exists, but the allocator is not implemented.
 - The full diagnostics/crash logging backend, profiler and stdio/runtime hooks.
 - Validation of `make-pkg.sh` against the installed OpenOrbis `PkgTool.Core` / `create-gp4`, including SFO inspection and a real PKG build.
