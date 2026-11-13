@@ -85,3 +85,49 @@ uses the 16-archive closure in `ps4-kit/mesa/archives.cmake`.
 - swapchain destruction and device/instance dispatch forwarding.
 
 This is an **initial implementation**, not yet a validated WSI. Host syntax CI, a fake-RADV dispatch-forwarding test, the Mesa build-driver syntax/help test, and the guarded GNM/patch staging tests pass in GitHub Actions run [#244](https://github.com/Nabouna32/WinePS4/actions/runs/43500846603). Target compilation against the pinned Mesa/Vulkan-Headers set, validation-layer testing, resize/recreation testing, and real PS4 window presentation remain required. The CMake guard must remain until those checks pass. No WinePS4 project source paths are modified.
+
+
+## 6. Native VideoOut WSI: separate implementation track
+
+The public native WSI lineage is now traced more precisely:
+
+- [SSBU native WSI](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/port/ps4_vk_wsi.cpp), with header [ps4_vk_wsi.h](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/port/ps4_vk_wsi.h).
+- The source header identifies its implementation ancestry as SMW's VideoOut WSI, itself from Resonance's ps4_wsi.cpp and Crema's PS4WSI.cpp.
+- [M33 technical guide](https://github.com/iHaiDeeZ/M33/blob/main/docs/TECHNICAL.md) independently describes the same architecture and names its implementation as a VideoOut WSI based on Resonance.
+- [SMW build guide](https://github.com/iHaiDeeZ/SMW/blob/main/docs/BUILDING.md) documents linear 1920x1080 images flipped GPU-side through VideoOut.
+
+The SSBU repository's own code is MIT (see its LICENSE and CREDITS: the PS4 port is credited to ShiroKlein). The source file has no separate SPDX header, so any adaptation must preserve the repository's MIT notice and retain the explicit SMW/Resonance/Crema lineage comments. This is distinct from the Mesa GNM winsys file, which has its own MIT per-file notice. Do not infer the license of a source snapshot solely from the project name; keep both attributions.
+
+### Native WSI behavior observed in SSBU
+
+- Exposes VK_EXT_headless_surface and VK_KHR_swapchain; RADV itself has no WSI.
+- Opens VideoOut on the main bus and creates a kernel event queue for flip completion.
+- Uses a fixed 1920x1080 output, 2–3 linear RGBA8 images and 2 MiB VideoOut framebuffer alignment.
+- Uses vkGetImageSubresourceLayout() for row pitch and offset, allocates host-visible/coherent/device-local image memory, maps it, and registers the aligned addresses with sceVideoOutRegisterBuffers().
+- Alternates VideoOut buffer-index ranges when a new swapchain is created, so the old set can remain on screen until the new one is registered.
+- Tracks flip completion through sceVideoOutGetFlipStatus() and the event queue before reusing a buffer.
+- Queues GPU-side flips through ac_ps4_submit_flip() behind the frame's GPU commands; the fallback waits for the queue and calls sceVideoOutSubmitFlip().
+- Hides the system splash after the first successful present.
+- Filters binary semaphores from submits but preserves timeline semaphores. The comments attribute the binary-semaphore/device-loss behavior to Crema and Resonance; treat it as a workload-specific workaround, not a generic Vulkan rule.
+
+### Risks to resolve before accepting this as the shared implementation
+
+1. The SSBU source is a useful complete reference, but it contains project-specific logging/boot tracing and fixed screen constants. The kit implementation needs a generic logging hook and an explicit output profile.
+2. Its free_swapchain() unregisters VideoOut buffers and frees Vulkan images/memory; the kit port must explicitly audit map/unmap and failure rollback for every partially created image.
+3. It assumes the graphics queue family is family 0 and that there is one in-order queue. Verify this against the exact RADV/GNM build and every target project.
+4. It reports one RGBA8 surface format and a fixed extent. Add VK_KHR_get_surface_capabilities2 / formats2 only where the consumer and driver require them; do not advertise unsupported extensions.
+5. Binary semaphore filtering is risky for multiple queues or apps with independent synchronization. Validate against the target Vulkan workloads before enabling it by default.
+6. It uses a 2 MiB framebuffer alignment. Check the final mapped address including VkSubresourceLayout::offset, not just the allocation base.
+7. Recreate/destroy must wait for all pending flips and unregister the old buffer set before releasing any backing memory.
+
+### CMake state after the profile split
+
+The clean-room CMake layer now has this contract:
+
+- ps4_kit_link_mesa(target) links the generic RADV archive closure only.
+- ps4_kit_app(target) selects window-desktop for the WinePS4 top-level project and native-videoout for other Mesa-linked apps, unless PS4_KIT_WSI_PROFILE explicitly overrides it.
+- window-desktop attaches only ps4_vk_wsi_window.cpp.
+- native-videoout expects ps4_vk_wsi_videoout.cpp. That source is not yet present; configuration fails explicitly rather than silently attaching Wine's window WSI.
+- ps4-kit/tests/test-wsi-profiles.sh and the CI workflow verify that the two profiles attach different source files.
+
+This makes the current compatibility boundary honest: Wine's profile remains isolated; MGR, MP3, TTT2, ConkerLR and Godot are identified as native-VideoOut consumers but cannot yet complete their eboot configure/link until the native WSI source and its dependencies are reconstructed.
