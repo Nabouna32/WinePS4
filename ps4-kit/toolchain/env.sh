@@ -5,7 +5,7 @@
 #   source "$HOME/ps4-kit/toolchain/env.sh"
 #
 # The public OpenOrbis/PacBrew environment is the base. Kit-specific runtime,
-# Mesa/VideoOut and packaging pieces are tracked separately until reproduced.
+# Mesa/Wine-window-WSI and packaging pieces are tracked separately until reproduced.
 
 # This path also works when $HOME/ps4-kit is a symlink into the WinePS4 checkout.
 export PS4_KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
