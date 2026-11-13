@@ -422,7 +422,8 @@ uint32_t find_host_coherent_memory_type(VkPhysicalDevice physical_device, uint32
         g_instance, "vkGetPhysicalDeviceMemoryProperties");
     if (!get_properties) return UINT32_MAX;
     get_properties(physical_device, &properties);
-    const VkMemoryPropertyFlags required = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+    const VkMemoryPropertyFlags required = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     for (uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
         if ((bits & (1u << i)) && (properties.memoryTypes[i].propertyFlags & required) == required)
