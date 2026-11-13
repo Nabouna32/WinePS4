@@ -3,8 +3,9 @@
 This directory is a clean-room reconstruction of the shared PS4 build/runtime
 base described by the developer's public ports. Its first compatibility target
 is the unchanged WinePS4 build, but the architecture is being widened to support
-the confirmed direct consumers MGR-PS4, MP3-PS4 and TTT2-PS4, plus the related
-SSBU / DolphinPS4 / Crema / Resonance build-tree lineage.
+the confirmed direct consumers MGR-PS4, MP3-PS4, TTT2-PS4, ConkerLR-PS4
+and Godot's PS4 branch, plus the related SSBU / DolphinPS4 / Crema / Resonance
+build-tree lineage.
 
 It is deliberately separate from WinePS4's `app/`, `port/`, `shell/` and
 Wine source. It does not contain Sony SDK files, proprietary libraries, game
@@ -84,10 +85,13 @@ candidate, not proof of the exact Mesa revision used by private kit commit
   system-module and Wine Vulkan callback implementations. Host tests use
   mocked Sce APIs.
 - `include/ps4_kit_heap.h` and `runtime/ps4_kit_heap_policy.c`: a pure policy
-  planner that translates Wine's desktop/program/outside-process options into
-  explicit main-heap and overflow attempts. It performs no PS4 allocations;
-  the actual mspace/kernel mapping backend remains a blocker. Run its host
-  tests with `bash ps4-kit/runtime/tests/run-heap-policy-tests.sh`.
+  planner with a provisional shared-port default (512 MiB system-flexible
+  main heap; 512 MiB direct overflow size when a consumer enables overflow),
+  plus Wine's desktop/program/outside-process overrides and Godot's eight
+  overflow heaps. The defaults are inferred from public callbacks/runtime,
+  not recovered private ABI. It performs no PS4 allocations; the actual
+  mspace/kernel mapping backend remains a blocker. Run its host tests with
+  `bash ps4-kit/runtime/tests/run-heap-policy-tests.sh`.
 - `scripts/make-pkg.sh`: initial OpenOrbis `PkgTool.Core` / `create-gp4`
   implementation, with the SFO attributes expected by WinePS4.
 - `mesa/ac_ps4_drm.c` and `mesa/patches/mesa-ps4.patch`: MIT/per-file PS4
@@ -131,6 +135,9 @@ have been checked.
   not present; the runtime currently covers only a subset of kit functions.
 - The native VideoOut profile is not yet reconstructed in this tree. Public
   project implementations are references, not automatically safe to copy.
+- The current `ps4_kit_link_mesa()` still attaches the Wine window WSI and is
+  not yet compatible with native-VideoOut consumers such as MGR, MP3, TTT2,
+  ConkerLR and Godot. Split generic RADV linking from WSI profile selection.
 - MGR's private kit revision `79fba0f` is distinct from WinePS4's
   `56b3d86`; its exact CMake/runtime API still needs a complete audit.
 - The package script has only fake-tool smoke coverage; it has not been run
