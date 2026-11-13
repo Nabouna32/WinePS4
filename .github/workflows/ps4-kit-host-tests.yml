@@ -41,7 +41,7 @@ jobs:
         run: bash ps4-kit/tests/test-wsi-profiles.sh
       - name: Check exported diagnostics data-directory function
         run: bash ps4-kit/tests/test-diag-data-dir.sh
-      - name: Test diagnostics thread registry and watchdog dump
+      - name: Compile and test diagnostics thread registry and watchdog dump
         run: bash ps4-kit/runtime/tests/run-diag-runtime-tests.sh
 
   environment:
