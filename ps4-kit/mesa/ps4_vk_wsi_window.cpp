@@ -382,6 +382,28 @@ VkResult VKAPI_CALL wsi_surface_capabilities2(VkPhysicalDevice physical_device,
     return wsi_surface_capabilities(physical_device, info->surface, &caps->surfaceCapabilities);
 }
 
+VkResult VKAPI_CALL wsi_surface_formats2(VkPhysicalDevice physical_device,
+                                             const VkPhysicalDeviceSurfaceInfo2KHR *info,
+                                             uint32_t *count, VkSurfaceFormat2KHR *formats)
+{
+    if (!info || !count) return VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t available = 0;
+    VkResult result = wsi_surface_formats(physical_device, info->surface, &available, nullptr);
+    if (result != VK_SUCCESS) return result;
+    if (!formats) {
+        *count = available;
+        return VK_SUCCESS;
+    }
+    const uint32_t capacity = *count;
+    std::vector<VkSurfaceFormatKHR> base(available);
+    result = wsi_surface_formats(physical_device, info->surface, &available, base.data());
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE) return result;
+    const uint32_t copied = std::min<uint32_t>(capacity, available);
+    for (uint32_t i = 0; i < copied; ++i) formats[i].surfaceFormat = base[i];
+    *count = copied;
+    return copied < available ? VK_INCOMPLETE : VK_SUCCESS;
+}
+
 VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
                                         uint32_t *count, VkSurfaceFormatKHR *formats)
 {
@@ -510,6 +532,7 @@ VkResult VKAPI_CALL wsi_create_swapchain(VkDevice device, const VkSwapchainCreat
                                          const VkAllocationCallbacks *, VkSwapchainKHR *handle)
 {
     if (!info || !handle || !valid_surface(info->surface)) return VK_ERROR_SURFACE_LOST_KHR;
+    if (info->flags || info->pNext) return VK_ERROR_FEATURE_NOT_PRESENT;
     if (!is_supported_format(info->imageFormat) || info->imageArrayLayers != 1 ||
         info->imageExtent.width == 0 || info->imageExtent.height == 0 ||
         info->imageExtent.width > kMaxExtent || info->imageExtent.height > kMaxExtent)
@@ -702,6 +725,7 @@ PFN_vkVoidFunction wsi_intercept(const char *name)
     WSI_FN(GetPhysicalDeviceSurfaceSupportKHR, wsi_surface_support);
     WSI_FN(GetPhysicalDeviceSurfaceCapabilitiesKHR, wsi_surface_capabilities);
     WSI_FN(GetPhysicalDeviceSurfaceCapabilities2KHR, wsi_surface_capabilities2);
+    WSI_FN(GetPhysicalDeviceSurfaceFormats2KHR, wsi_surface_formats2);
     WSI_FN(GetPhysicalDeviceSurfaceFormatsKHR, wsi_surface_formats);
     WSI_FN(GetPhysicalDeviceSurfacePresentModesKHR, wsi_present_modes);
     WSI_FN(CreateSwapchainKHR, wsi_create_swapchain);
