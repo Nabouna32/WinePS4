@@ -1,17 +1,13 @@
-// Clean-room Wine window-mode WSI for the PS4 RADV build.
+// Clean-room native VideoOut WSI for the PS4 RADV build.
 //
-// Design inputs:
-// - WinePS4's unchanged port/ps4_unixlibs.c exports the kit's
-//   ps4kit_vk_get_instance_proc_addr() as libvulkan.so.1.
-// - WinePS4's patches/wine-ps4.patch registers ps4kit_window_present() and
-//   uses the VkSurfaceKHR as the HWND lookup key.
-// - The public SSBU WSI demonstrates the Mesa ICD dispatch symbols and
-//   linear host-visible RADV image allocation. Its VideoOut flip path is
-//   intentionally NOT used here.
+// Separate from the Wine window-desktop WSI. This profile creates linear
+// host-visible RADV images, aligns and registers their buffers with VideoOut,
+// and queues flips through the GNM winsys. It uses off-screen acquire waits and
+// filters binary queue semaphores while preserving timeline semaphores.
 //
-// This implementation owns the Vulkan surface/swapchain dispatch. It creates
-// linear CPU-readable images and synchronously sends completed pixels to the
-// Wine desktop callback. It does not call VideoOut.
+// Behavioral references: Resonance, Crema, M33, SSBU and SMW. Their WSI files
+// are not copied; this implementation is derived from the MIT window WSI in
+// this repository and independently implements the native VideoOut backend.
 //
 // SPDX-License-Identifier: MIT
 
@@ -48,7 +44,6 @@ namespace {
 
 constexpr uint32_t kSurfaceMagic = 0x50534b53; // "PSKS"
 constexpr uint32_t kSwapchainMagic = 0x50534b57; // "PSKW"
-constexpr uint32_t kMaxExtent = 8192;
 constexpr uint32_t kScreenWidth = 1920;
 constexpr uint32_t kScreenHeight = 1080;
 constexpr uint32_t kMaxImages = 4;
@@ -126,15 +121,6 @@ void *pointer_from_handle(Handle handle)
         return reinterpret_cast<void *>(handle);
     else
         return reinterpret_cast<void *>(static_cast<uintptr_t>(handle));
-}
-
-template <typename Handle>
-unsigned long long handle_value(Handle handle)
-{
-    if constexpr (std::is_pointer_v<Handle>)
-        return static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(handle));
-    else
-        return static_cast<unsigned long long>(handle);
 }
 
 bool valid_surface(VkSurfaceKHR surface)
@@ -418,7 +404,7 @@ VkImageUsageFlags supported_linear_usage(VkPhysicalDevice physical_device, VkFor
     return supported;
 }
 
-VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice, VkSurfaceKHR surface,
+VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
                                                    VkSurfaceCapabilitiesKHR *capabilities)
 {
     if (!capabilities || !valid_surface(surface))
@@ -433,9 +419,8 @@ VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice, VkSurfaceKHR surf
     capabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     capabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    capabilities->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    capabilities->supportedUsageFlags = supported_linear_usage(
+        physical_device, VK_FORMAT_R8G8B8A8_UNORM);
     return VK_SUCCESS;
 }
 
@@ -869,7 +854,7 @@ VkResult VKAPI_CALL wsi_create_semaphore(VkDevice device, const VkSemaphoreCreat
     if (result != VK_SUCCESS)
         return result;
 
-    for (auto p = static_cast<const VkBaseInStructure *>(info->pNext); p; p = p->pNext) {
+    for (auto p = static_cast<const VkBaseInStructure *>(info->pNext); p; p = static_cast<const VkBaseInStructure *>(p->pNext)) {
         if (p->sType == VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO) {
             const auto *type_info = reinterpret_cast<const VkSemaphoreTypeCreateInfo *>(p);
             if (type_info->semaphoreType == VK_SEMAPHORE_TYPE_TIMELINE) {
@@ -917,7 +902,7 @@ VkResult VKAPI_CALL wsi_queue_submit(VkQueue queue, uint32_t count,
     for (uint32_t i = 0; i < count; ++i) {
         const VkTimelineSemaphoreSubmitInfo *timeline = nullptr;
         const auto *head = static_cast<const VkBaseInStructure *>(submits[i].pNext);
-        for (auto p = head; p; p = p->pNext) {
+        for (auto p = head; p; p = static_cast<const VkBaseInStructure *>(p->pNext)) {
             if (p->sType == VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO) {
                 timeline = reinterpret_cast<const VkTimelineSemaphoreSubmitInfo *>(p);
                 break;
@@ -1043,7 +1028,7 @@ PFN_vkVoidFunction VKAPI_CALL wsi_get_instance_proc_addr(VkInstance instance, co
 }
 
 } // namespace
-} // namespace ps4_kit::wsi
+} // namespace ps4_kit::videoout_wsi
 
 extern "C" void *ps4kit_vk_get_instance_proc_addr(void)
 {
