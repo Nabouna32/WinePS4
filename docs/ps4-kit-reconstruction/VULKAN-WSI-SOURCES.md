@@ -31,12 +31,35 @@ What is intentionally **not** reused:
 - The SSBU WSI's VideoOut lifecycle, fixed 1920x1080 surface, VideoOut buffer registration, flip queue, flip submissions, splash-screen handling, and its binary-semaphore dropping workaround. Those are full-screen game-specific behavior and are incompatible with Wine's per-window desktop callback.
 - The new `ps4-kit/mesa/ps4_vk_wsi_window.cpp` is a clean-room implementation of the Wine callback contract. It is not a copy of the SSBU source file. The MIT header here describes this branch's implementation; it does not relicense Mesa, Vulkan-Headers, Wine, or OpenOrbis.
 
-## 3. Other public build references
+## 3. Mesa GNM winsys source
+
+The actual PS4 kernel/command-submission backend needed by RADV is now included as
+`ps4-kit/mesa/ac_ps4_drm.c`.
+
+- Upstream: [DolphinPS4 `port/mesa/ac_ps4_drm.c`](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/port/mesa/ac_ps4_drm.c)
+- Repository commit: `879b3e57f3d3180bcb5f2234db3903688b28cd7d`
+- Upstream file blob: `a4589f0601c889a200a93d59968c763daff4aff2`
+- File header: `Copyright 2026 DolphinPS4. SPDX-License-Identifier: MIT`
+- Size at that revision: 2,938 lines.
+
+This is the PS4 implementation of Mesa's `ac_linux_drm.h` interface. It maps GPU buffers into
+the shared CPU/GPU address space, submits command buffers through GNM, and implements fences and
+sync objects using the PS4 submission sequence. The copied file retains its upstream MIT notice.
+
+The companion public recipe is
+[DolphinPS4 `scripts/build-mesa.sh`](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/scripts/build-mesa.sh)
+and its [Mesa build guide](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/BUILDING.md).
+That guide identifies Mesa 26.0.8, the PS4 cross-file, header-only libdrm pkg-config shim and the
+static RADV archive build. The exact Mesa source patch is still a separate revision-sensitive
+dependency; `ps4-kit/mesa/prepare-source.sh` stages the winsys only after Meson's source list
+already contains `ac_ps4_drm.c`. It deliberately does not invent or patch Mesa's Meson files.
+
+## 4. Other public build references
 
 - [iHaiDeeZ/SMW `docs/BUILDING.md`](https://github.com/iHaiDeeZ/SMW/blob/main/docs/BUILDING.md) describes a public PS4 RADV build based on Mesa 26.0.8, Vulkan-Headers in the build sysroot, clang 21, and the PS4 GNM winsys. It is a later public baseline, not proof of the exact private kit revision pinned by WinePS4.
 - [DolphinPS4's public Mesa link helper](https://github.com/iHaiDeeZ/DolphinPS4/blob/main/toolchain/ps4-love-style.cmake) is the source for the candidate static archive closure in `ps4-kit/mesa/archives.cmake`. This archive list remains revision-sensitive.
 
-## 4. Current implementation and validation boundary
+## 5. Current implementation and validation boundary
 
 `ps4-kit/mesa/ps4_vk_wsi_window.cpp` now implements the first clean-room WSI pass:
 
