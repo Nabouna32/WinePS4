@@ -2,11 +2,20 @@
 #define PS4_KIT_DIAG_H
 
 /*
- * Register the application data directory for the reconstructed diagnostics
- * runtime. The symbol is intentionally simple and allocation-free so it can
- * be emitted from an application translation unit before main().
+ * Set the application-specific directory used by ps4-kit diagnostics.
+ * The runtime reads this exported symbol when creating sampler/profile logs.
+ * Call this macro once at global scope in one application translation unit.
  */
+#ifdef __cplusplus
 #define PS4_DIAG_DATA_DIR(path) \
-    const char ps4_kit_diag_data_dir[] __attribute__((used, visibility("default"))) = path
+    extern "C" { \
+        __attribute__((used, visibility("default"))) \
+        const char ps4_kit_diag_data_dir[] = path; \
+    }
+#else
+#define PS4_DIAG_DATA_DIR(path) \
+    __attribute__((used, visibility("default"))) \
+    const char ps4_kit_diag_data_dir[] = path
+#endif
 
 #endif
