@@ -69,6 +69,15 @@ The implementation is independent and does not copy those files.
 - The SSBU project `LICENSE` explicitly grants MIT terms for its port code. Any reuse must retain its copyright and licence notices and must still be checked for external dependencies and compatibility with WinePS4's Vulkan ABI.
 - This is a promising public route to the WSI blocker, not yet proof that the code can be dropped into WinePS4 unchanged.
 
+## Wine window-mode WSI contract recovered
+
+- Added `docs/ps4-kit-reconstruction/WINDOW-WSI-CONTRACT.md` with the exact frame callback ABI and lifecycle requirements recovered from the checked-in WinePS4 patch.
+- Confirmed that the callback's `surface` is the opaque `VkSurfaceKHR` value used by Wine's HWND lookup; the pixel stride is in bytes and the BGRA flag controls desktop-side pixel interpretation.
+- Recorded the required per-window behavior: app-selected extents, CPU-readable linear images, actual subresource row pitch, presentation synchronization, resize/recreate handling, and synchronous callback lifetime.
+- Explicitly ruled out using the public SSBU VideoOut WSI as a drop-in: it is fixed-resolution/full-screen and presents directly to VideoOut, while WinePS4 sends frames to the desktop process.
+- Found a second blocker before implementation: the WinePS4 patch registers the frame callback but does not expose an obvious route for Vulkan surface/swapchain/present dispatch to reach a kit-owned WSI. The public SSBU project patches DXVK's loader; WinePS4 does not currently show an equivalent hook. The `vulkan_handle` argument to `PS4DRV_VulkanInit()` is currently unused.
+- The CMake WSI failure guard remains intentional. No speculative WSI translation unit has been added, and no WinePS4 project source was modified.
+
 ## Not yet implemented or verified
 
 - The private kit's exact compiler and linker command contract for WinePS4's pinned kit revision `56b3d86`; the new environment entry point is an evidence-based approximation and has not been tested.
