@@ -58,10 +58,28 @@ It also expects prepared external builds under the user's home directory:
 
 A ps4-kit compatibility module alone therefore cannot make the full project build without the PS4 sysroot, compatible system libraries, Mesa/RADV stack, and these separately prepared dependencies.
 
-## 5. Safe implementation sequence
+
+## 5. Networking boundary (new source audit)
+
+The network stack is not wholly provided by ps4-kit. WinePS4 owns substantial parts of the Windows-to-Orbis adaptation:
+
+- `ws2_32` builds from Wine's Unix socket implementation.
+- `nsiproxy.sys` builds its IP, NDIS, NSI, TCP and UDP providers.
+- `port/ps4_ifaddrs.c` implements interface enumeration and IPv4 route discovery using FreeBSD ioctl/sysctl interfaces.
+- `port/ps4_net.c` provides the console hostname special case.
+- `port/ps4_ifaddrs.c` calls `sceNetCtlInit` / `sceNetCtlGetInfo` for gateway and DNS settings, but loads Net/NetCtl through the private `ps4_kit_load_module` entry point.
+- General DNS resolution delegates to the target libc resolver; WinePS4 source comments attribute that resolver to ps4-kit.
+
+The private network boundary is therefore narrower than the complete Windows network stack: system-module loading, NetCtl availability/ABI, resolver implementation, and the target sysroot's BSD socket ABI. See [NETWORK-API-MAP.md](NETWORK-API-MAP.md) for the detailed call map, observed selectors and proposed acceptance tests.
+
+This inventory does **not** establish that the NetCtl selector numbers/payloads are independently verified, or that general DNS works without the kit. Those remain explicit validation tasks.
+
+## 6. Safe implementation sequence
 
 - [x] Inventory public call sites and environment variables.
 - [ ] Obtain a reproducible, legally redistributable PS4 toolchain/sysroot and record its provenance.
+- [x] Map the public WinePS4 networking path and isolate the remaining private-kit calls (see NETWORK-API-MAP.md).
+- [ ] Verify NetCtl selector values, system-module loading and resolver behavior against public ABI evidence and target probes.
 - [ ] Determine the required compiler target/triple, compiler drivers, flags, and CMake toolchain variables from a working independent environment.
 - [ ] Determine the PS4 linker script and executable/eboot conversion requirements from public, licensed sources.
 - [ ] Implement a minimal CMake compatibility module that validates explicit prerequisites and fails clearly when they are missing.
@@ -69,7 +87,7 @@ A ps4-kit compatibility module alone therefore cannot make the full project buil
 - [ ] Treat RADV/Mesa and the window-system integration as a separate, substantial milestone.
 - [ ] Validate each stage with a tiny independent test program before attempting WinePS4.
 
-## 6. What remains unknown
+## 7. What remains unknown
 
 The public WinePS4 call sites do **not** reveal:
 - compiler executable names, target triple, default compile/link flags, or CMake toolchain file;
