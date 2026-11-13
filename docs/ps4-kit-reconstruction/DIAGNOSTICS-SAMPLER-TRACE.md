@@ -96,17 +96,53 @@ implementation when no application override is present.
   constants, isolate them behind a PS4-only compilation guard, and validate
   on the console. Do not treat a host build as proof of signal-context ABI.
 
-## 5. Current reconstruction gap
+## 5. Current reconstruction state
 
-The branch currently provides only the PS4_DIAG_DATA_DIR macro/function
-contract. It does not yet implement any of the sampler, hot-profiler,
-thread-busy or stack-dump symbols above. TTT2 therefore cannot complete its final link yet. The next
-runtime milestone is a clean-room diagnostics component with:
+The branch now has a first-pass clean-room diagnostics runtime in
+ps4-kit/runtime/ps4_kit_diag_runtime.c, included in the shared static runtime.
+It exports the TTT2 symbols and currently implements:
 
-1. exported per-app data directory and bounded thread registry;
-2. safe SIGUSR1 stack snapshots and a watchdog dump routine;
-3. per-thread CPU-time busy report;
-4. optional 1 kHz sampler and 20 ms hot profiler;
-5. optional code/JIT dump hooks, disabled by default for TTT2;
-6. host tests for registry limits, report formatting, ring-buffer accounting
-   and path selection, plus separate target-only signal-context tests.
+- ps4_data_dir() with an application override through PS4_DIAG_DATA_DIR(path)
+  and a weak fallback to /data/ps4-kit;
+- a bounded 96-thread watch registry, thread names and kernel thread IDs;
+- ps4_dump_thread_stacks() with SIGUSR1 snapshots of RIP/RSP for each watched
+  thread, written to the caller's requested path;
+- ps4_thread_cpu_tick() and ps4_thread_busy_report(), using self-reported
+  thread CPU time when available and pthread_getcpuclockid() as fallback;
+- a four-thread SIGPROF sampler, nominally 1 kHz, writing per-window sample
+  counts and last RIP to samples.log;
+- a 20 ms SIGUSR1 hot-profiler loop writing per-thread sample counts and last
+  RIP to profile.log;
+- the ps4_sampler_set_code_dumps() compatibility flag.
+
+The host test script exercises thread registration, per-thread busy reporting,
+signal delivery and watchdog file output. A workflow run before the latest
+test-path correction failed because the script resolved the repository root
+one directory too shallow; the path has been fixed, but a fresh CI result for
+the corrected diagnostics runtime has not yet been confirmed.
+
+### Important limitations — not yet equivalent to the public profiler
+
+This is a linkable first pass, not a recovered private implementation:
+
+1. Thread dumps currently capture only RIP/RSP. They do not yet walk frame
+   pointers, symbolize addresses, inspect _umtx_op wait objects or validate
+   readable mappings before dereferencing stack words.
+2. The sampler writes counts and the last sampled RIP, not the public
+   implementation's full 16-byte address histogram and top-hot-address list.
+3. The hot profiler similarly records per-thread counts/last RIP, not full
+   caller attribution, system-module classification or JIT block maps.
+4. Code-dump enablement is only a compatibility flag. No JIT code or guest
+   memory ranges are registered or dumped.
+5. The PS4-specific ucontext offsets (mcontext +0x40, RIP slot 20, RSP slot 23)
+   and FreeBSD signal numbers (SIGUSR1 30, SIGPROF 27) come from public
+   hardware-measured source. They have not been validated against the target
+   OpenOrbis/libkernel revision used by every consumer.
+6. The registry does not yet reclaim slots for exited/restarted threads by
+   name. The public Conker/M33 implementation does; this matters for long
+   running apps that restart their emulation thread.
+
+The next diagnostic milestone is to add safe stack-frame walking and
+per-address sample histograms, then validate signal context and thread reuse
+on retail hardware. The GPL-2.0 public implementations remain behavioral
+references only; this code is a clean-room implementation.
