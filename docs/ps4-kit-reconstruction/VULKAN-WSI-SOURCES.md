@@ -169,9 +169,10 @@ The native profile is now implemented separately in
 - Exposes the headless surface and swapchain extensions through RADV dispatch.
 - Supports a fixed 1920x1080 RGBA8 UNORM linear surface, 2–3 swapchain images,
   FIFO/MAILBOX/IMMEDIATE modes, and host-visible/coherent image memory.
-- Opens VideoOut lazily, creates a flip event queue (with polling fallback),
-  registers aligned buffers, tracks four buffer banks, and defers old
-  swapchain destruction until VideoOut allows unregister.
+- Loads internal SystemService through `sceSysmoduleLoadModuleInternal` before
+  the first splash-screen call, opens VideoOut lazily, creates a flip event
+  queue (with polling fallback), registers aligned buffers, tracks four buffer
+  banks, and defers old swapchain destruction until VideoOut allows unregister.
 - Uses the GNM winsys `ac_ps4_submit_flip` helper first, falling back to
   `vkQueueWaitIdle` plus `sceVideoOutSubmitFlip`.
 - Does not use Wine's `ps4kit_window_present` callback or alter the
@@ -194,7 +195,9 @@ The native profile is now implemented separately in
 5. The four-bank retirement scheme can return out-of-host-memory if all banks
    remain registered; callers must handle swapchain recreation failure.
 6. The GPU-flip helper and CPU fallback have not been measured for frame
-   pacing, tearing or device-loss behavior on hardware.
+   pacing, tearing or device-loss behavior on hardware. The internal
+   SystemService load follows the OpenOrbis Piglet sample's documented call
+   order; the exact retail firmware behavior still needs validation.
 
 ### Source/licence boundaries
 
