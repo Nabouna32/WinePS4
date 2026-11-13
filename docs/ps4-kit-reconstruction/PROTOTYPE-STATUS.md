@@ -105,3 +105,11 @@ bash ps4-kit/runtime/tests/run-host-tests.sh
 ```
 
 GitHub Actions run [#189](https://github.com/Nabouna32/WinePS4/actions/runs/43499587125) passes all four jobs on the branch, including the Vulkan WSI C++ syntax check against host Vulkan-Headers, fake-RADV dispatch forwarding, and the guarded Mesa GNM source-staging test. GitHub Actions run [#244](https://github.com/Nabouna32/WinePS4/actions/runs/43500846603) also passes all four jobs after adding the Mesa build-driver syntax/help test and the bundled patch/staging workflow. This confirms host script/guard behavior, not that the patch applies to a real Mesa checkout or that Mesa builds for PS4. Run [#164](https://github.com/Nabouna32/WinePS4/actions/runs/43498783224) was the earlier WSI syntax/dispatch baseline, and run [#90](https://github.com/Nabouna32/WinePS4/actions/runs/43447560868) the earlier compatibility baseline. These are host-side tests with synthetic/fake dependencies; they do not validate the exact OpenOrbis toolchain, the matching Mesa build, or real PS4 presentation.
+
+## Heap policy planner (13 November 2026)
+
+- Added `ps4-kit/include/ps4_kit_heap.h` and `runtime/ps4_kit_heap_policy.c`.
+- The planner models the three real WinePS4 callback profiles: desktop direct-first with system-pool fallback; normal program direct-only main/overflow policy with 256 MiB reserve and six 2 MiB arenas; outside-process regular-only 16 MiB main plus three 16 MiB overflow heaps.
+- Added host tests for the three profiles and inconsistent configurations; wired the test into the `runtime` CI job.
+- This is policy validation only. No target allocator, direct-memory mapping, flexible-memory mapping, mspace, or overflow reserve enforcement is claimed yet.
+- Next: implement and test a separate target-only pool/mspace backend, then integrate allocator wrappers only after initialization order, pre-main allocation and cross-thread frees are proven.
