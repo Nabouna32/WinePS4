@@ -42,6 +42,7 @@ What is intentionally **not** reused:
 
 - Wine's synthetic Vulkan entry point;
 - extension enumeration and stripping before forwarding to RADV;
+- `VK_KHR_get_surface_capabilities2`-style surface capabilities/formats2 query interception when the ICD exposes those entry points;
 - headless surfaces and per-window surface capabilities;
 - linear host-visible/coherent swapchain images;
 - image-layout row pitch and RGBA/BGRA callback metadata;
@@ -49,4 +50,4 @@ What is intentionally **not** reused:
 - a queue submit + fence wait before synchronous frame delivery, preserving the caller's binary wait semaphores;
 - swapchain destruction and device/instance dispatch forwarding.
 
-This is an **initial implementation**, not yet a validated WSI. Host syntax CI, target compilation against the pinned Mesa/Vulkan-Headers set, validation-layer testing, resize/recreation testing, and real PS4 window presentation remain required. The CMake guard must remain until those checks pass. No WinePS4 project source paths are modified.
+This is an **initial implementation**, not yet a validated WSI. Host syntax CI and a fake-RADV dispatch-forwarding test pass in GitHub Actions run [#164](https://github.com/Nabouna32/WinePS4/actions/runs/43498783224). Target compilation against the pinned Mesa/Vulkan-Headers set, validation-layer testing, resize/recreation testing, and real PS4 window presentation remain required. The CMake guard must remain until those checks pass. No WinePS4 project source paths are modified.
