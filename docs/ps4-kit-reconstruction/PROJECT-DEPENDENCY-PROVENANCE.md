@@ -158,3 +158,37 @@ the target ABI, common runtime, RADV/WSI profiles and packaging boundary only.
    or generated patch; retain file-level notices.
 5. Do not absorb GPL/LGPL project-owned recompiler code, game-specific runtime,
    Sony files, game assets, or host binaries into the shared kit.
+
+
+## 7. Independent downstream build cross-check: SeriousSamPS4-RADV
+
+[JarnoVos/SeriousSamPS4-RADV](https://github.com/JarnoVos/SeriousSamPS4-RADV)
+is not a private-kit consumer, but it is a useful independent integration of
+DolphinPS4's published RADV stack. Its README and THIRD-PARTY.md state:
+
+- Mesa 26.0.8, DolphinPS4's mesa-ps4.patch and GNM winsys;
+- clang 21 for compilation, but PacBrew LLD 12.0.1 for linking because the
+  LLVM 21 linker did not work in that build;
+- OpenOrbis SDL-PS4 pinned at 7774cf3 (zlib);
+- ps4-libjbc pinned at 835fe016 for jailbreak mount support;
+- dlmalloc 2.8.6, MIT-0, for the retail malloc replacement;
+- its own PS4 platform integration, based on Nichlas Ek's older
+  [SeriousSamPS4](https://github.com/NichlasEk/SeriousSamPS4), but using RADV
+  instead of that project's OpenGNM driver.
+
+This gives us an additional real downstream warning: do not assume clang and
+LLD must come from the same LLVM release. Keep compiler and linker versions
+independently configurable in the reconstructed environment. This is a
+project-specific known-good pairing, not a universal requirement for all kit
+consumers.
+
+References:
+- [SeriousSamPS4-RADV README](https://github.com/JarnoVos/SeriousSamPS4-RADV)
+- [THIRD-PARTY.md](https://github.com/JarnoVos/SeriousSamPS4-RADV/blob/main/THIRD-PARTY.md)
+- [OpenOrbis SDL-PS4](https://github.com/OpenOrbis/SDL-PS4/tree/7774cf3)
+- [ps4-libjbc](https://github.com/bucanero/ps4-libjbc/tree/835fe016)
+- [DolphinPS4 Mesa build guide](https://github.com/iHaiDeeZ/DolphinPS4/blob/main/BUILDING.md)
+
+The README says the project is GPL-2.0 because it is a port of Serious Engine;
+its own platform integration must therefore not be copied wholesale into
+ps4-kit. Only its public toolchain and dependency facts are used here.
