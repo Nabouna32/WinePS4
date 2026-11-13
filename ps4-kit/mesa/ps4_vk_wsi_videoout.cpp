@@ -11,6 +11,10 @@
 //
 // SPDX-License-Identifier: MIT
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 
@@ -571,7 +575,8 @@ VkResult create_swapchain_image(Swapchain &swapchain, VkPhysicalDevice physical_
     if (!create_image || !get_requirements || !allocate || !bind || !map || !get_layout)
         return VK_ERROR_INITIALIZATION_FAILED;
 
-    VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    VkImageCreateInfo image_info{};
+    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.imageType = VK_IMAGE_TYPE_2D;
     image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     image_info.extent = {kScreenWidth, kScreenHeight, 1};
@@ -600,7 +605,8 @@ VkResult create_swapchain_image(Swapchain &swapchain, VkPhysicalDevice physical_
         requirements.size > UINT64_MAX - alignment)
         return VK_ERROR_INITIALIZATION_FAILED;
 
-    VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    VkMemoryAllocateInfo allocation{};
+    allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocation.allocationSize = requirements.size + alignment;
     allocation.memoryTypeIndex = find_host_coherent_memory_type(physical_device, requirements.memoryTypeBits);
     if (allocation.memoryTypeIndex == UINT32_MAX)
@@ -817,7 +823,8 @@ VkResult VKAPI_CALL wsi_acquire_next_image(VkDevice device, VkSwapchainKHR handl
     }
 
     if (fence) {
-        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         auto queue_submit = device_function<PFN_vkQueueSubmit>(device, "vkQueueSubmit");
         if (!queue_submit || !g_acquire_queue)
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -985,8 +992,12 @@ VkResult VKAPI_CALL wsi_queue_submit(VkQueue queue, uint32_t count,
 
         if (timeline || !wait_semaphores[i].empty() || !signal_semaphores[i].empty()) {
             VkTimelineSemaphoreSubmitInfo &filtered = timeline_copies[i];
-            filtered = timeline ? *timeline
-                                : VkTimelineSemaphoreSubmitInfo{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
+            if (timeline) {
+                filtered = *timeline;
+            } else {
+                filtered = {};
+                filtered.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+            }
             filtered.waitSemaphoreValueCount = static_cast<uint32_t>(wait_values[i].size());
             filtered.pWaitSemaphoreValues = wait_values[i].data();
             filtered.signalSemaphoreValueCount = static_cast<uint32_t>(signal_values[i].size());
