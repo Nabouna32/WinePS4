@@ -1,7 +1,7 @@
 # Mesa / RADV reconstruction notes
 
 This directory is reserved for the Mesa GNM build and Wine window-mode WSI.
-No Mesa source tree or compiled archive is vendored here.
+No Mesa source tree or compiled archive is vendored here. The PS4 GNM winsys source `ac_ps4_drm.c` is included with its upstream MIT SPDX notice.
 
 ## Candidate public baseline
 
@@ -13,7 +13,7 @@ A recent public PS4 port documents a reproducible Mesa build environment:
 - host Meson/Mako/PyYAML environment and `glslangValidator` under the build root;
 - a PS4 GNM implementation of Mesa's AMDGPU kernel interface, `src/amd/common/ac_ps4_drm.c`.
 
-The GNM winsys file is explicitly marked MIT. The public build recipe and archive lists are recorded in `docs/ps4-kit-reconstruction/MESA-LINK-TRACE.md`.
+The GNM winsys file is explicitly marked MIT and is staged by `prepare-source.sh` into the external Mesa tree. The helper refuses to edit Meson integration: the matching PS4 Meson patch must already be applied. The public build recipe and archive lists are recorded in `docs/ps4-kit-reconstruction/MESA-LINK-TRACE.md`.
 
 The environment entry point now exports:
 
