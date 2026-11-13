@@ -23,6 +23,8 @@ The environment entry point now exports:
 
 This is a candidate build layout from a later public port, not proof of the exact Mesa commit or build options used by WinePS4's private ps4-kit revision `56b3d86`.
 
+The candidate whole-archive closure from the public DolphinPS4 CMake helper is recorded in `archives.cmake`. Its resolver checks every expected archive under `PS4_MESA_BUILD`; it is deliberately not wired into `ps4_kit_link_mesa()` until the matching Mesa build and Wine-specific WSI are available.
+
 ## Why there is no build script yet
 
 The public build script lists all Meson archive targets it builds, while the matching CMake helper links the final whole-archive closure. Its comments explicitly say `libvulkan_radeon.a` already contains the Vulkan runtime and WSI objects, explaining why the helper does not link the standalone runtime/WSI archives a second time. The closure is therefore usable as a candidate when paired with the same Mesa revision.
