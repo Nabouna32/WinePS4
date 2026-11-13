@@ -35,11 +35,24 @@ int main()
     assert(get_instance);
 
     // Kit-owned entry points must be intercepted before RADV dispatch.
-    assert(get_instance(VK_NULL_HANDLE, "vkGetInstanceProcAddr"));
-    assert(get_instance(VK_NULL_HANDLE, "vkGetDeviceProcAddr"));
-    assert(get_instance(VK_NULL_HANDLE, "vkCreateHeadlessSurfaceEXT"));
-    assert(get_instance(VK_NULL_HANDLE, "vkCreateSwapchainKHR"));
-    assert(get_instance(VK_NULL_HANDLE, "vkQueuePresentKHR"));
+    const char *instance_entries[] = {
+        "vkGetInstanceProcAddr",
+        "vkGetDeviceProcAddr",
+        "vkEnumerateInstanceExtensionProperties",
+        "vkCreateInstance",
+        "vkEnumerateDeviceExtensionProperties",
+        "vkCreateDevice",
+        "vkCreateHeadlessSurfaceEXT",
+        "vkDestroySurfaceKHR",
+        "vkGetPhysicalDeviceSurfaceSupportKHR",
+        "vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
+        "vkGetPhysicalDeviceSurfaceCapabilities2KHR",
+        "vkGetPhysicalDeviceSurfaceFormatsKHR",
+        "vkGetPhysicalDeviceSurfaceFormats2KHR",
+        "vkGetPhysicalDeviceSurfacePresentModesKHR"
+    };
+    for (const char *name : instance_entries)
+        assert(get_instance(VK_NULL_HANDLE, name));
 
     // Driver-owned instance functions must still reach RADV.
     assert(get_instance(VK_NULL_HANDLE, "vkDriverOnlyInstanceFunction") ==
@@ -48,9 +61,17 @@ int main()
     auto get_device = reinterpret_cast<PFN_vkGetDeviceProcAddr>(
         get_instance(VK_NULL_HANDLE, "vkGetDeviceProcAddr"));
     assert(get_device);
-    assert(get_device(VK_NULL_HANDLE, "vkGetDeviceProcAddr"));
-    assert(get_device(VK_NULL_HANDLE, "vkCreateSwapchainKHR"));
-    assert(get_device(VK_NULL_HANDLE, "vkQueuePresentKHR"));
+    const char *device_entries[] = {
+        "vkGetDeviceProcAddr",
+        "vkCreateSwapchainKHR",
+        "vkDestroySwapchainKHR",
+        "vkGetSwapchainImagesKHR",
+        "vkAcquireNextImageKHR",
+        "vkAcquireNextImage2KHR",
+        "vkQueuePresentKHR"
+    };
+    for (const char *name : device_entries)
+        assert(get_device(VK_NULL_HANDLE, name));
     assert(get_device(VK_NULL_HANDLE, "vkDriverOnlyDeviceFunction") ==
            reinterpret_cast<PFN_vkVoidFunction>(&fake_driver_function));
     return 0;
