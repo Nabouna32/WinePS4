@@ -10,8 +10,10 @@ evidence of a compatibility requirement, not a copy of the private source.
 |---|---:|---|---|---|
 | [WinePS4](https://github.com/iHaiDeeZ/WinePS4) | `56b3d86` | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake`; includes `ps4-kit.cmake` in app and launcher | `ps4_kit_app()`, `ps4_kit_link_mesa()`, linker script, target sysroot, runtime, package script | `window-desktop` |
 | [MGR-PS4](https://github.com/iHaiDeeZ/MGR-PS4) | `79fba0f` | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake`; `CMAKE_PROJECT_sa2_INCLUDE=...`; `PS4_KIT_NETFS=OFF` | project() injection, shared PS4 linker/runtime/Mesa/VideoOut base, `make-pkg.sh`; builds `sa2_eboot` | `native-videoout`, ReXGlue |
-| [MP3-PS4](https://github.com/iHaiDeeZ/MP3-PS4) | not stated in checked public build docs | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake`; `CMAKE_PROJECT_mp3_INCLUDE=...`; `PS4_KIT_NETFS=OFF` | same project() injection pattern, shared ReXGlue runtime/RADV/VideoOut base and `make-pkg.sh`; builds `mp3_eboot` | `native-videoout`, ReXGlue |
+| [MP3-PS4](https://github.com/iHaiDeeZ/MP3-PS4) | `56b3d86` | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake`; `CMAKE_PROJECT_mp3_INCLUDE=...`; `PS4_KIT_NETFS=OFF` | same project() injection pattern, shared ReXGlue runtime/RADV/VideoOut base and `make-pkg.sh`; builds `mp3_eboot` | `native-videoout`, ReXGlue |
 | [TTT2-PS4](https://github.com/iHaiDeeZ/TTT2-PS4) | `ff30ff6` | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake` on `port/ps4`; kit package script | shared runtime, Mesa RADV, VideoOut swapchain, packaging; builds `ttt2_eboot` | `native-videoout`, XenonRecomp/DXVK |
+
+MP3's current README explicitly says release v00.51 was built with kit revision `56b3d86`, matching WinePS4's documented revision. Its `docs/DEVELOPMENT.md` separately documents the ReXGlue/Renut/VideoOut dependency boundary. This makes WinePS4 and MP3 a particularly useful same-revision compatibility pair; MGR's `79fba0f` and TTT2's `ff30ff6` remain separate version targets.
 
 The MGR and MP3 scripts are unusually valuable because they expose the exact
 CMake hook names and the same explicit optional-component setting:
@@ -42,7 +44,7 @@ CMakeLists has declared its executable target.
 - TTT2's public docs name kit revision `ff30ff6`. Its CMake build is driven
   from `port/ps4`, while the script uses the kit environment and package
   helper. Its exact CMake-to-kit coupling needs a separate source audit.
-- No source or binary from the private kit has been recovered. Do not recreate
+- The MP3 revision evidence comes from its current README rather than a private source checkout; it identifies the kit build used for the published release, not necessarily every historical MP3 build. No source or binary from the private kit has been recovered. Do not recreate
   private commit history or claim byte-for-byte compatibility.
 
 ## 2. Related ports that reuse the same graphics/runtime lineage
