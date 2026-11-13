@@ -147,3 +147,23 @@ have been checked.
 
 No claim is made yet that all projects configure, link, package or run on
 hardware. Each profile needs its own reproducible acceptance test.
+
+
+## Additional direct-consumer blockers found in TTT2
+
+The TTT2 patch confirms that the shared CMake entry point must export
+PS4_KIT_DIR as the root of this directory; the compatibility entry point now
+does so. TTT2 also requires a diagnostics runtime, not just the
+PS4_DIAG_DATA_DIR macro:
+
+- ps4_watch_thread and ps4_dump_thread_stacks;
+- ps4_thread_busy_report;
+- ps4_sampler_register_thread, ps4_sampler_set_code_dumps and ps4_sampler_start;
+- ps4_hot_profiler_set_enabled.
+
+The branch exports the per-app data-directory symbol with C linkage and has a
+host test for C and C++ consumers. The sampler/watchdog implementation is not
+yet present. Public DolphinPS4/Resonance/HENkaku/Conker code is GPL-2.0 project
+code, so it is being used as a behavioral reference rather than copied into
+WinePS4. See
+[DIAGNOSTICS-SAMPLER-TRACE.md](../docs/ps4-kit-reconstruction/DIAGNOSTICS-SAMPLER-TRACE.md).
