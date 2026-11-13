@@ -81,7 +81,7 @@ M33's [technical guide](https://github.com/iHaiDeeZ/M33/blob/78f0f40edd55b618363
 
 **Important distinction:** M33 copies a broader FFmpeg build for PSP video/audio (H.264, ATRAC3/3+, MP3, AAC). WinePS4 needs its own image-only configure profile. The source version and PS4 wrappers are the valuable shared inputs; do not blindly copy M33's configured libraries and assume they contain Wine's image codecs.
 
-The exact public repository URL for the local `$HOME/rpcs3` wrapper checkout and the full `$HOME/rpcs3-build` source/build workspace has not yet been established. The public scripts prove the path contract and artifact reuse, but not where an independent user can clone that exact wrapper tree. Do not substitute stock upstream RPCS3 without checking for `toolchain/bin/ps4-cc`, `ps4-c++` and the matching PS4 patches.
+The exact public repository URL for the local `$HOME/rpcs3` wrapper checkout and the full `$HOME/rpcs3-build` source/build workspace has not yet been established. However, a second public project, TOTK-PS4, independently documents the same RPCS3 source path and provides the matching wrapper implementation in its own `toolchain/` tree. Its [`scripts/build-ffmpeg-vp9.sh`](https://github.com/iHaiDeeZ/TOTK-PS4/blob/aa5ad9b01510f3e6cdf6f6c44408bc3a645727ac/scripts/build-ffmpeg-vp9.sh) explicitly says the source is FFmpeg 7.1.1 fetched by RPCS3's `scripts/build-deps.sh ffmpeg`, and uses `$HOME/rpcs3/toolchain/bin/ps4-cc` / `ps4-c++`. TOTK-PS4's [`toolchain/env.sh`](https://github.com/iHaiDeeZ/TOTK-PS4/blob/main/toolchain/env.sh), [`toolchain/bin/ps4-cc`](https://github.com/iHaiDeeZ/TOTK-PS4/blob/main/toolchain/bin/ps4-cc) and [`toolchain/bin/ps4-c++`](https://github.com/iHaiDeeZ/TOTK-PS4/blob/main/toolchain/bin/ps4-c++) expose the same Clang 21 / OpenOrbis wrapper contract and implementation as DolphinPS4. Therefore, we have found a public reusable wrapper source; what remains unlocated is the original RPCS3 build repository/recipe and the exact FFmpeg source checkout revision. Do not substitute stock upstream RPCS3 without checking for the PS4 dependency patch set.
 
 ## 5. Concrete recovery/validation sequence
 
@@ -106,8 +106,8 @@ Install the PacBrew/OpenOrbis packages separately using the verified package dat
 
 ## 6. Remaining high-value searches
 
-1. Find the public origin/revision for `$HOME/rpcs3/toolchain/bin/ps4-cc` and `ps4-c++`; inspect commit history and submodules before deciding to recreate wrappers.
-2. Find the RPCS3 build recipe that produced `$HOME/rpcs3-build/sysroot/lib/libavcodec.a` (M33 identifies `scripts/build-deps.sh ffmpeg`).
+1. Reuse/compare the public TOTK-PS4 and DolphinPS4 `toolchain/env.sh`, `ps4-cc` and `ps4-c++` implementations against the private RPCS3 wrapper path; no wrapper needs to be invented unless a meaningful difference is found.
+2. Find the RPCS3 build repository/recipe that produced `$HOME/rpcs3-build/sysroot/lib/libavcodec.a` (M33 and TOTK both identify `scripts/build-deps.sh ffmpeg`), then record the exact FFmpeg 7.1.1 source commit and PS4 patch/configuration.
 3. Recover the exact FreeType 2.13.3 PS4 recipe, then compare it with the existing PS4MC recipe and PacBrew's older 2.10.1 PKGBUILD.
 4. Validate the public SDK candidate against WinePS4's pinned kit build. The private ps4-kit commit is only abbreviated as `56b3d86` in the public build guide; exact LLVM, Mesa and archive revisions remain unproven.
 
