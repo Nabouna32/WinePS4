@@ -12,14 +12,18 @@ that a project calls the private kit API.
 | Project | Public evidence | Kit revision / interface visible | Build profile that must be supported |
 |---|---|---|---|
 | [WinePS4](https://github.com/iHaiDeeZ/WinePS4) | `docs/BUILDING.md`, `app/CMakeLists.txt`, `app/launcher/CMakeLists.txt`, probes | `56b3d86`; `ps4_cmake`, `ps4-kit.cmake`, `ps4_kit_app()`, `ps4_kit_link_mesa()`, `PS4_LINK_SCRIPT`, `PS4_SYSROOT`, `make-pkg.sh` | **window-desktop**: headless Vulkan surface, window-sized host-readable swapchain images and callback to the desktop; no app-owned VideoOut |
-| [MGR-PS4](https://github.com/iHaiDeeZ/MGR-PS4) | `README.md`, `CREDITS.md`, `scripts/build-mgr.sh` | `79fba0f`; sources `toolchain/env.sh`, injects `ps4-kit.cmake` through `CMAKE_PROJECT_sa2_INCLUDE`, sets `PS4_KIT_NETFS=OFF`; the project credits kit runtime, RADV, VideoOut, crash log, profiler and packaging | **native-videoout**: app-owned VideoOut presentation, ReXGlue PS4 SDK integration, RADV and package creation |
+| [MGR-PS4](https://github.com/iHaiDeeZ/MGR-PS4) | `README.md`, `CREDITS.md`, `scripts/build-mgr.sh` | `79fba0f`; sources `toolchain/env.sh`, injects `ps4-kit.cmake` through `CMAKE_PROJECT_sa2_INCLUDE`, sets `PS4_KIT_NETFS=OFF`; builds `sa2_eboot` and uses kit packaging | **native-videoout**: ReXGlue PS4 SDK, RADV and app-owned VideoOut |
+| [MP3-PS4](https://github.com/iHaiDeeZ/MP3-PS4) | `CREDITS.md`, `docs/DEVELOPMENT.md`, `scripts/build-mp3.sh` | Revision not stated in checked docs; injects `ps4-kit.cmake` through `CMAKE_PROJECT_mp3_INCLUDE`, sets `PS4_KIT_NETFS=OFF`; builds `mp3_eboot` and uses kit packaging | **native-videoout**: ReXGlue PS4 SDK, RADV and app-owned VideoOut |
+| [TTT2-PS4](https://github.com/iHaiDeeZ/TTT2-PS4) | `README.md`, `CREDITS.md`, `scripts/build-ttt2.sh` | `ff30ff6`; sources `toolchain/env.sh`, uses `ps4_cmake` on `port/ps4` and `make-pkg.sh`; credits kit runtime, RADV and VideoOut | **native-videoout**: XenonRecomp/DXVK, app-owned VideoOut and package creation |
 
-The two revisions are different. The replacement must therefore be a versioned,
+The named private revisions differ, and MP3's checked public docs do not state one. The replacement must therefore be a versioned,
 documented compatibility layer rather than a one-off snapshot tuned only to
-WinePS4. The exact private implementation and complete historical API for
-`79fba0f` remain unavailable; do not invent undocumented function signatures.
-The first integration target is to make both projects' public build entry points
-configure against one shared kit, then close their distinct link/runtime needs.
+WinePS4. The exact private implementation and complete historical APIs remain unavailable;
+do not invent undocumented function signatures. MGR and MP3 expose the same
+CMake project-injection pattern with different project names and both disable
+the optional NetFS component. TTT2 uses a different CMake path but the same
+environment/package boundary. See [DIRECT-CONSUMER-AUDIT.md](DIRECT-CONSUMER-AUDIT.md)
+for the source-level details and the new host configure regression test.
 
 ## 2. Projects that supply or reuse the common base
 
@@ -32,6 +36,7 @@ configure against one shared kit, then close their distinct link/runtime needs.
 | [xemu-ps4](https://github.com/iHaiDeeZ/xemu-ps4) | Its build guide seeds `xemups4-build` from Resonance's tree, then builds a project-specific libc overlay, Vulkan headers, pixman, glib and SDL3 | Reusable sysroot/Mesa seed plus a test of the kit's ability to support additional host/target dependency recipes |
 | [SMW](https://github.com/iHaiDeeZ/SMW) | `docs/BUILDING.md` uses Resonance's build tree and Crema's Mesa build; release `sdk-1` bundles a sysroot and static Mesa archives | Reproducible SDK/sysroot artifact format and common RADV archive bundle |
 | [TOTK-PS4](https://github.com/iHaiDeeZ/TOTK-PS4) | Its build guide seeds its work tree from SMW's build tree | Validate that the same SDK bundle/build-tree contract works for another large static recompilation |
+| [SSBU](https://github.com/iHaiDeeZ/SSBU) | Its build docs use SMW's sysroot and Crema's Mesa; its WSI source documents the Resonance/Crema lineage | Native VideoOut WSI, DXVK/RADV and package compatibility; not currently classified as a direct private-kit consumer |
 
 These are not all confirmed direct consumers of the private kit API. They are
 nevertheless essential compatibility targets because they show which common
@@ -59,7 +64,7 @@ substrate shared, and make project-facing profiles explicit:
    configuration match.
 5. **Presentation profiles** — at minimum:
    - `native-videoout`: app owns VideoOut, swapchain buffers and flip queue
-     (DolphinPS4/Crema/Resonance/M33/xemu-ps4/SMW/TOTK/MGR-style apps);
+     (DolphinPS4/Crema/Resonance/M33/xemu-ps4/SMW/TOTK/SSBU/MGR/MP3/TTT2-style apps);
    - `window-desktop`: Wine program has no VideoOut; its headless swapchain
      is copied/forwarded to the desktop callback (WinePS4).
    These backends share RADV/GNM primitives but not surface ownership or
@@ -94,14 +99,14 @@ substrate shared, and make project-facing profiles explicit:
 
 1. Finish WinePS4's current unchanged-source build path first: environment,
    launcher/app configure, RADV window-WSI link, eboot and package.
-2. Add a second compatibility test for MGR's public CMake injection path with
-   `PS4_KIT_NETFS=OFF`; identify the exact native VideoOut symbols and package
-   hooks before implementing them.
+2. Add host configure regression tests for MGR's `CMAKE_PROJECT_sa2_INCLUDE`
+   and MP3's `CMAKE_PROJECT_mp3_INCLUDE` paths with `PS4_KIT_NETFS=OFF`;
+   identify the exact native VideoOut symbols and package hooks before implementing them.
 3. Extract the common host toolchain/sysroot/Mesa manifest into a versioned
    SDK profile, using SMW's published `sdk-1` format as a reproducibility
    reference rather than copying opaque binaries blindly.
 4. Add build-tree smoke profiles for DolphinPS4/Crema/Resonance, then M33,
-   xemu-ps4, SMW and TOTK. Record which ones build from source and which
+   xemu-ps4, SMW, SSBU and TOTK; audit TTT2's separate CMake path. Record which ones build from source and which
    consume a prebuilt SDK bundle.
 5. Only call the kit multi-project compatible when each profile has a clean
    configure, link, package and (where hardware is available) runtime test.
