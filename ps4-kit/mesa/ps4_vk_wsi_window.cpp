@@ -63,7 +63,6 @@ struct Swapchain {
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t width = 0;
     uint32_t height = 0;
-    uint32_t row_bytes = 0;
     bool bgra = false;
     uint32_t next_image = 0;
     std::vector<SwapchainImage> images;
@@ -124,22 +123,6 @@ bool valid_surface(VkSurfaceKHR surface)
 bool is_supported_format(VkFormat format)
 {
     return format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_B8G8R8A8_UNORM;
-}
-
-VkResult append_extension(VkExtensionProperties *properties, uint32_t *count,
-                          const char *name, uint32_t version)
-{
-    if (!count) return VK_ERROR_INITIALIZATION_FAILED;
-    if (!properties) {
-        ++*count;
-        return VK_SUCCESS;
-    }
-    VkExtensionProperties extension{};
-    std::strncpy(extension.extensionName, name, sizeof(extension.extensionName) - 1);
-    extension.specVersion = version;
-    properties[*count] = extension;
-    ++*count;
-    return VK_SUCCESS;
 }
 
 VkResult enumerate_instance_extensions(const char *layer, uint32_t *count,
@@ -531,7 +514,6 @@ VkResult VKAPI_CALL wsi_create_swapchain(VkDevice device, const VkSwapchainCreat
         destroy_swapchain_images(*swapchain);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    swapchain->row_bytes = static_cast<uint32_t>(first.layout.rowPitch);
 
     VkSwapchainKHR key = handle_from_pointer<VkSwapchainKHR>(swapchain.get());
     {
