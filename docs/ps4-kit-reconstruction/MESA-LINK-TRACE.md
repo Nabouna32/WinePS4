@@ -76,3 +76,14 @@ The implementation wraps statically linked RADV's ICD/device proc-address functi
 This gives us an implementation to study and potentially adapt under its MIT terms, preserving the copyright and licence notice. It is not yet known whether WinePS4's private kit revision `56b3d86` used the same ABI, and the WSI currently has SSBU-specific logging/trace hooks and assumptions. Do not copy it into the kit unchanged or claim Wine compatibility until its API is reconciled with Wine's `winevulkan` path.
 
 SSBU's [Mesa build script](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/scripts/build-mesa.sh) also pins a Crema Mesa base commit (`7d010de97ed0e5d3b02e0d7c6bf0c829298490c9`) and builds the archive set in its CMake helper. This is a stronger reproducible candidate than a floating Mesa branch, but it is later than WinePS4's kit pin and must be treated as a candidate baseline, not as proof of the original kit's exact Mesa revision.
+
+## WinePS4's actual WSI contract (from its checked-in Wine patch)
+
+The Wine patch narrows the interface considerably. Its `dlls/wineps4.drv/vulkan.c` does **not** ask the kit to present the entire process directly to VideoOut. It creates a headless host surface for each Wine client surface, then expects the kit's window-mode swapchain to call back with the completed pixels:
+
+- `ps4kit_set_window_present(void (*hook)(unsigned long long surface, const void *pixels, unsigned width, unsigned height, unsigned row_bytes, int bgra))`
+- `ps4kit_set_log(void (*log)(const char *line))`
+
+The callback maps the host surface handle back to the Wine HWND, clips the rendered client area into the top-level window and sends the pixels to the desktop over WinePS4's existing display socket. The patch comments identify the implementation as `gpu/ps4_vk_wsi.cpp` and explicitly describe its swapchain images as window-sized, CPU-readable memory. The desktop itself owns VideoOut.
+
+This means the SSBU WSI is useful Vulkan reference code, but **not a drop-in replacement**: it presents full-screen buffers to VideoOut, whereas WinePS4 needs a window-sized surface and a pixel callback. The reconstruction must implement the Wine-specific window mode and those two C ABI hooks while leaving Wine's existing callback/display behavior unchanged. This is now the precise graphics integration target.
