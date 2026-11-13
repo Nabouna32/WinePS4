@@ -29,6 +29,14 @@ the matching `project(sa2 ...)` or `project(mp3 ...)` call. The kit must be
 safe at that point in configuration, before the rest of the project's
 CMakeLists has declared its executable target.
 
+MGR's `mgr_ps4.cpp` callback only sets `log_tag = "mgr"`, so the kit must
+initialize a shared default heap policy before invoking the callback. Godot's
+`ps4_hooks.cpp` sets only `max_overflow_heaps = 8`; its comment specifies
+512 MiB per direct-memory overflow heap. The branch now models this as a
+provisional 512 MiB system-flexible main heap plus a 512 MiB default overflow
+size when overflow is enabled. This is inferred from public source behavior,
+not a recovered private struct ABI.
+
 ### What is and is not established
 
 - MGR's public script asks Ninja to build `sa2_eboot`; MP3 asks for
