@@ -88,4 +88,4 @@ bash ps4-kit/scripts/tests/test_make_pkg.sh
 bash ps4-kit/runtime/tests/run-host-tests.sh
 ```
 
-GitHub Actions run [#70](https://github.com/Nabouna32/WinePS4/actions/runs/43446895778) passed all three host-test jobs: linker/CMake, package script and runtime wrappers. These are host-side tests with synthetic/fake dependencies; they are not a substitute for running the generator against the exact `link.x`, compiling with the actual OpenOrbis toolchain, or building a real PKG.
+GitHub Actions run [#90](https://github.com/Nabouna32/WinePS4/actions/runs/43447560868) passed all three host-test jobs: linker/CMake, package script and runtime wrappers. These are host-side tests with synthetic/fake dependencies; they are not a substitute for running the generator against the exact `link.x`, compiling with the actual OpenOrbis toolchain, or building a real PKG.
