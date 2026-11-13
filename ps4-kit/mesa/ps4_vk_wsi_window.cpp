@@ -26,6 +26,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -96,18 +97,27 @@ Handle handle_from_pointer(void *pointer)
         return static_cast<Handle>(reinterpret_cast<uintptr_t>(pointer));
 }
 
-template <typename T>
-T *pointer_from_handle(T handle)
+template <typename Handle>
+void *pointer_from_handle(Handle handle)
 {
-    if constexpr (std::is_pointer_v<T>)
+    if constexpr (std::is_pointer_v<Handle>)
         return reinterpret_cast<void *>(handle);
     else
         return reinterpret_cast<void *>(static_cast<uintptr_t>(handle));
 }
 
+template <typename Handle>
+unsigned long long handle_value(Handle handle)
+{
+    if constexpr (std::is_pointer_v<Handle>)
+        return static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(handle));
+    else
+        return static_cast<unsigned long long>(handle);
+}
+
 bool valid_surface(VkSurfaceKHR surface)
 {
-    const auto *object = pointer_from_handle(surface);
+    const auto *object = static_cast<const Surface *>(pointer_from_handle(surface));
     return object && object->magic == kSurfaceMagic;
 }
 
@@ -312,7 +322,7 @@ VkResult VKAPI_CALL wsi_create_headless_surface(VkInstance, const VkHeadlessSurf
 void VKAPI_CALL wsi_destroy_surface(VkInstance, VkSurfaceKHR surface, const VkAllocationCallbacks *)
 {
     if (!valid_surface(surface)) return;
-    delete pointer_from_handle(surface);
+    delete static_cast<Surface *>(pointer_from_handle(surface));
 }
 
 VkResult VKAPI_CALL wsi_surface_support(VkPhysicalDevice physical_device, uint32_t family,
@@ -446,6 +456,7 @@ VkResult create_swapchain_image(Swapchain &swapchain, VkPhysicalDevice physical_
     image_info.tiling = VK_IMAGE_TILING_LINEAR;
     image_info.usage = usage;
     image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (swapchain.images.empty()) { /* populated by the caller below */ }
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkResult result = create_image(swapchain.device, &image_info, nullptr, &out.image);
@@ -488,9 +499,13 @@ VkResult VKAPI_CALL wsi_create_swapchain(VkDevice device, const VkSwapchainCreat
         info->imageExtent.width == 0 || info->imageExtent.height == 0 ||
         info->imageExtent.width > kMaxExtent || info->imageExtent.height > kMaxExtent)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if (!(info->imageUsage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT)))
+    constexpr VkImageUsageFlags supported_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (!info->imageUsage || (info->imageUsage & ~supported_usage))
         return VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR;
+    if (info->minImageCount < 2 || info->minImageCount > 3)
+        return VK_ERROR_INITIALIZATION_FAILED;
 
     auto swapchain = std::make_unique<Swapchain>();
     swapchain->device = device;
@@ -652,9 +667,7 @@ VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *inf
             bgra = swapchain.bgra ? 1 : 0;
             // The callback is synchronous. Keep the swapchain lock until it returns so
             // destruction cannot unmap the image while the desktop is consuming the pixels.
-            ps4kit_window_present(static_cast<unsigned long long>(handle_from_pointer<uintptr_t>(
-                                      pointer_from_handle(handle))),
-                                  pixels, width, height, row_bytes, bgra);
+            ps4kit_window_present(handle_value(swapchain.surface), pixels, width, height, row_bytes, bgra);
         }
         if (info->pResults) info->pResults[i] = VK_SUCCESS;
     }
