@@ -71,6 +71,8 @@ set(PS4_MESA_SOURCE "$ENV{PS4_MESA_SOURCE}" CACHE PATH "Mesa PS4 source director
 set(PS4_KIT_MESA_WSI_SOURCE
     "${_PS4_KIT_ROOT}/mesa/ps4_vk_wsi_window.cpp"
     CACHE FILEPATH "Wine window-mode Vulkan WSI implementation")
+set(PS4_VULKAN_HEADERS "$ENV{PS4_SYSROOT}/include" CACHE PATH
+    "Directory containing the Vulkan-Headers include/vulkan tree")
 
 function(ps4_kit_link_mesa target)
     if (NOT TARGET ${target})
@@ -80,10 +82,13 @@ function(ps4_kit_link_mesa target)
     include("${_PS4_KIT_ROOT}/mesa/archives.cmake")
     ps4_kit_resolve_mesa_archives(_ps4_mesa_archives)
 
-    if (NOT PS4_MESA_SOURCE OR NOT EXISTS "${PS4_MESA_SOURCE}/include/vulkan/vulkan.h")
+    if (NOT PS4_MESA_SOURCE OR NOT IS_DIRECTORY "${PS4_MESA_SOURCE}")
+        message(FATAL_ERROR "PS4_MESA_SOURCE must point to the matching Mesa source tree")
+    endif ()
+    if (NOT PS4_VULKAN_HEADERS OR NOT EXISTS "${PS4_VULKAN_HEADERS}/vulkan/vulkan.h")
         message(FATAL_ERROR
-            "PS4_MESA_SOURCE must point to the matching Mesa source tree "
-            "(missing include/vulkan/vulkan.h)")
+            "PS4_VULKAN_HEADERS must point to a Vulkan-Headers include directory "
+            "(expected <path>/vulkan/vulkan.h); PS4_SYSROOT should provide it")
     endif ()
     if (NOT EXISTS "${PS4_KIT_MESA_WSI_SOURCE}")
         message(FATAL_ERROR
@@ -93,7 +98,9 @@ function(ps4_kit_link_mesa target)
 
     target_sources(${target} PRIVATE "${PS4_KIT_MESA_WSI_SOURCE}")
     target_include_directories(${target} PRIVATE
+        "${PS4_VULKAN_HEADERS}"
         "${PS4_MESA_SOURCE}/include"
+        "${PS4_MESA_SOURCE}/src"
         "${_PS4_KIT_ROOT}/include")
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_compile_options(${target} PRIVATE -march=btver2)
