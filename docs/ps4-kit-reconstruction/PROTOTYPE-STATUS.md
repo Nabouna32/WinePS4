@@ -60,7 +60,7 @@ The implementation is independent and does not copy those files.
 - The checked-in `patches/wine-ps4.patch` adds `dlls/wineps4.drv/vulkan.c` and declares `ps4kit_set_window_present()` plus `ps4kit_set_log()`.
 - Its frame callback carries the host surface handle, pixel pointer, width/height, row pitch and BGRA flag. Wine maps that surface to a client HWND and forwards the frame to the existing desktop display socket.
 - Wine's program windows are headless and window-sized; the desktop alone owns VideoOut. This differs from the public full-screen VideoOut WSI implementations.
-- The same audit confirms kit-owned `ps4_kit.h` / `ps4_kit_diag.h` requirements: heap options/configuration, minimum thread stack, thread priorities and `PS4_DIAG_DATA_DIR`. The exact `ps4kit_set_window_present` / `ps4kit_set_log` bridge is now implemented and host-tested; the actual Vulkan WSI is not.
+- The same audit confirms kit-owned `ps4_kit.h` / `ps4_kit_diag.h` requirements: heap options/configuration, minimum thread stack, thread priorities and `PS4_DIAG_DATA_DIR`. The exact `ps4kit_set_window_present` / `ps4kit_set_log` bridge is implemented and host-tested; the initial window-mode Vulkan WSI is now present under `ps4-kit/mesa/ps4_vk_wsi_window.cpp` and passes host syntax CI, but has not been target-built or hardware-tested.
 
 ## Public WSI evidence and implementation base
 
