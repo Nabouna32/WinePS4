@@ -122,3 +122,9 @@ jobs:
             -I "$RUNNER_TEMP/vulkan-headers" -I ps4-kit/include \
             -Wall -Wextra -Wno-unused-parameter \
             ps4-kit/mesa/ps4_vk_wsi_videoout.cpp
+          clang -target x86_64-pc-freebsd12-elf -std=c11 -fsyntax-only \
+            -D__PS4__ -isysroot "$OO_PS4_TOOLCHAIN" \
+            -isystem "$OO_PS4_TOOLCHAIN/include" -I ps4-kit/include \
+            -Wall -Wextra \
+            ps4-kit/runtime/ps4_kit_diag_runtime.c \
+            ps4-kit/runtime/ps4_kit_heap_policy.c
