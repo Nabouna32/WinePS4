@@ -64,7 +64,7 @@ For WinePS4's target kit revision `56b3d86`, the exact Mesa revision and archive
 2. Verify the archive members and undefined symbols for the selected Mesa build against the public helper's stated `libvulkan_radeon.a` runtime/WSI aggregation.
 3. Identify the exact symbols WinePS4's final link expects from ps4-kit (including any `ps4kit::` entry points).
 4. Separate RADV/GNM winsys symbols from VideoOut WSI symbols and from generic OpenOrbis runtime hooks.
-5. Pin/reconstruct the Mesa Meson integration patch, stage the MIT GNM winsys, and build the archive closure; then validate the clean-room WSI against that exact Mesa revision.
+5. Obtain the Mesa 26.0.8 source checkout expected by the public patch, run `ps4-kit/scripts/build-mesa.sh setup`, and verify the produced archive closure; then validate the clean-room WSI against that exact Mesa revision.
 
 ## Scope reminder
 
@@ -125,6 +125,6 @@ References:
 - [DolphinPS4 ps4-love-style.cmake](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/ps4-love-style.cmake)
 - [DolphinPS4 CREDITS](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/CREDITS.md), which identifies the PS4 Mesa GNM backend and patch as MIT/per-file licensed.
 
-The reconstructed `ps4-kit/toolchain/env.sh` exports the same build-root vocabulary: `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, and `PS4_MESA_BUILD`, defaulting to the existing WinePS4 build tree. The GNM winsys source is now vendored and can be staged into a pre-patched Mesa tree. No Mesa source is cloned or built yet because the exact Meson integration patch/revision remains unresolved.
+The reconstructed `ps4-kit/toolchain/env.sh` exports the same build-root vocabulary: `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, and `PS4_MESA_BUILD`, defaulting to the existing WinePS4 build tree. The GNM winsys and its MIT Meson integration patch are now vendored, and `ps4-kit/scripts/build-mesa.sh` drives the candidate static build. No Mesa source is cloned or built yet; the user's external source checkout must match the patch before the script proceeds.
 
 **Important:** the public helper's whole-archive list omits the separate runtime/WSI archives that the public build script also builds. We must establish which archive set belongs to which Mesa patch/revision before using it. Mesa 26.0.8 is a promising later baseline, not a recovered fact about private kit revision `56b3d86`.
