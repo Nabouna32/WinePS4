@@ -73,7 +73,6 @@ std::mutex g_lock;
 VkInstance g_instance = VK_NULL_HANDLE;
 VkPhysicalDevice g_physical_device = VK_NULL_HANDLE;
 VkDevice g_device = VK_NULL_HANDLE;
-uint32_t g_graphics_family = UINT32_MAX;
 VkQueue g_acquire_queue = VK_NULL_HANDLE;
 std::unordered_map<VkSwapchainKHR, std::unique_ptr<Swapchain>> g_swapchains;
 
@@ -120,11 +119,6 @@ bool valid_surface(VkSurfaceKHR surface)
 {
     const auto *object = static_cast<const Surface *>(pointer_from_handle(surface));
     return object && object->magic == kSurfaceMagic;
-}
-
-bool valid_swapchain(const Swapchain *swapchain)
-{
-    return swapchain && swapchain->magic == kSwapchainMagic;
 }
 
 bool is_supported_format(VkFormat format)
@@ -295,10 +289,18 @@ VkResult VKAPI_CALL wsi_create_device(VkPhysicalDevice physical_device,
             break;
         }
     }
-    if (graphics_family == UINT32_MAX) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (graphics_family == UINT32_MAX) {
+        auto destroy = device_function<PFN_vkDestroyDevice>(*device, "vkDestroyDevice");
+        if (destroy) destroy(*device, allocator);
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
 
     auto get_queue = device_function<PFN_vkGetDeviceQueue>(*device, "vkGetDeviceQueue");
-    if (!get_queue) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!get_queue) {
+        auto destroy = device_function<PFN_vkDestroyDevice>(*device, "vkDestroyDevice");
+        if (destroy) destroy(*device, allocator);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     VkQueue acquire_queue = VK_NULL_HANDLE;
     get_queue(*device, graphics_family, 0, &acquire_queue);
 
@@ -306,7 +308,6 @@ VkResult VKAPI_CALL wsi_create_device(VkPhysicalDevice physical_device,
         std::lock_guard guard(g_lock);
         g_physical_device = physical_device;
         g_device = *device;
-        g_graphics_family = graphics_family;
         g_acquire_queue = acquire_queue;
     }
     return VK_SUCCESS;
@@ -661,7 +662,7 @@ VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *inf
             pixels = static_cast<const uint8_t *>(image.mapping) + image.layout.offset;
             width = swapchain.width;
             height = swapchain.height;
-            row_bytes = swapchain.row_bytes;
+            row_bytes = static_cast<uint32_t>(image.layout.rowPitch);
             bgra = swapchain.bgra ? 1 : 0;
             // The callback is synchronous. Keep the swapchain lock until it returns so
             // destruction cannot unmap the image while the desktop is consuming the pixels.
