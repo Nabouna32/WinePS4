@@ -46,13 +46,24 @@ This is the PS4 implementation of Mesa's `ac_linux_drm.h` interface. It maps GPU
 the shared CPU/GPU address space, submits command buffers through GNM, and implements fences and
 sync objects using the PS4 submission sequence. The copied file retains its upstream MIT SPDX notice, and `ps4-kit/mesa/LICENSE.ac_ps4_drm` carries the corresponding license text.
 
+The companion public integration patch is
+[DolphinPS4 `patches/mesa-ps4.patch`](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/patches/mesa-ps4.patch)
+(commit `879b3e57f3d3180bcb5f2234db3903688b28cd7d`, blob
+`888487895341980d27314abf7cbbe403f3e587a3`, 1,265 lines). DolphinPS4's
+[`CREDITS.md`](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/CREDITS.md)
+explicitly identifies Mesa 26.0.8 and the PS4 Mesa port/patch as MIT and per-file licensed.
+The patch is included at `ps4-kit/mesa/patches/mesa-ps4.patch` with a separate MIT notice.
+`prepare-source.sh` checks it with `git apply --check`, applies it only when it matches the
+external Mesa checkout, then stages the GNM winsys. It does not attempt to adapt the patch to an
+unmatched Mesa revision.
+
 The companion public recipe is
 [DolphinPS4 `scripts/build-mesa.sh`](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/scripts/build-mesa.sh)
 and its [Mesa build guide](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/BUILDING.md).
 That guide identifies Mesa 26.0.8, the PS4 cross-file, header-only libdrm pkg-config shim and the
-static RADV archive build. The exact Mesa source patch is still a separate revision-sensitive
-dependency; `ps4-kit/mesa/prepare-source.sh` stages the winsys only after Meson's source list
-already contains `ac_ps4_drm.c`. It deliberately does not invent or patch Mesa's Meson files.
+static RADV archive build. A clean-room adaptation is now included as
+`ps4-kit/scripts/build-mesa.sh`; it builds the public 19-target set, while WinePS4's final link
+uses the 16-archive closure in `ps4-kit/mesa/archives.cmake`.
 
 ## 4. Other public build references
 
