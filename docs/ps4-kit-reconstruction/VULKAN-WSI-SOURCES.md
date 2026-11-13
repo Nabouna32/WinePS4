@@ -44,7 +44,7 @@ The actual PS4 kernel/command-submission backend needed by RADV is now included 
 
 This is the PS4 implementation of Mesa's `ac_linux_drm.h` interface. It maps GPU buffers into
 the shared CPU/GPU address space, submits command buffers through GNM, and implements fences and
-sync objects using the PS4 submission sequence. The copied file retains its upstream MIT notice.
+sync objects using the PS4 submission sequence. The copied file retains its upstream MIT SPDX notice, and `ps4-kit/mesa/LICENSE.ac_ps4_drm` carries the corresponding license text.
 
 The companion public recipe is
 [DolphinPS4 `scripts/build-mesa.sh`](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/scripts/build-mesa.sh)
@@ -73,4 +73,4 @@ already contains `ac_ps4_drm.c`. It deliberately does not invent or patch Mesa's
 - a queue submit + fence wait before synchronous frame delivery, preserving the caller's binary wait semaphores;
 - swapchain destruction and device/instance dispatch forwarding.
 
-This is an **initial implementation**, not yet a validated WSI. Host syntax CI and a fake-RADV dispatch-forwarding test pass in GitHub Actions run [#164](https://github.com/Nabouna32/WinePS4/actions/runs/43498783224). Target compilation against the pinned Mesa/Vulkan-Headers set, validation-layer testing, resize/recreation testing, and real PS4 window presentation remain required. The CMake guard must remain until those checks pass. No WinePS4 project source paths are modified.
+This is an **initial implementation**, not yet a validated WSI. Host syntax CI, a fake-RADV dispatch-forwarding test, and the guarded GNM source-staging test pass in GitHub Actions run [#189](https://github.com/Nabouna32/WinePS4/actions/runs/43499587125). Target compilation against the pinned Mesa/Vulkan-Headers set, validation-layer testing, resize/recreation testing, and real PS4 window presentation remain required. The CMake guard must remain until those checks pass. No WinePS4 project source paths are modified.
