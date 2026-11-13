@@ -25,6 +25,6 @@ This is a candidate build layout from a later public port, not proof of the exac
 
 ## Why there is no build script yet
 
-The public CMake archive list and the corresponding Mesa build script do not list exactly the same static archives. In addition, WinePS4 needs a window-sized, CPU-readable headless swapchain that calls `ps4kit_window_present()`; a full-screen VideoOut WSI is not compatible.
+The public build script lists all Meson archive targets it builds, while the matching CMake helper links the final whole-archive closure. Its comments explicitly say `libvulkan_radeon.a` already contains the Vulkan runtime and WSI objects, explaining why the helper does not link the standalone runtime/WSI archives a second time. The closure is therefore usable as a candidate when paired with the same Mesa revision.
 
-Before adding a build script or replacing the deliberate `ps4_kit_link_mesa()` failure, we must pin one Mesa source revision, match its Meson patch and archive outputs, and implement the Wine-specific WSI against that exact revision.
+WinePS4 still needs a window-sized, CPU-readable headless swapchain that calls `ps4kit_window_present()`; a full-screen VideoOut WSI is not compatible. Before replacing the deliberate `ps4_kit_link_mesa()` failure, we must pin the Mesa source/patch set and implement the Wine-specific WSI against that exact revision.
