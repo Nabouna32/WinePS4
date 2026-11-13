@@ -94,3 +94,38 @@ the exact FFmpeg build from source.
    `app/package.sh`.
 
 No source under `app/`, `port/`, `shell/` or `patches/` is to be modified for this work.
+
+
+## PacBrew source-level audit (2026-11-13)
+
+The package catalogue is not just a list of package names: its submodules pin the exact source trees used by PacBrew. At the current `PacBrew/pacbrew-packages` master revision, the gitlinks are:
+
+- `ps4-toolchain` → `PacBrew/ps4-openorbis`, commit `16f27e38760ea21eaf1187d0edbf4342c4a44021`.
+- `ps4-portlibs` → `PacBrew/ps4-openorbis-portlibs`, commit `d6a523a5a4a7b86846d91134d40a34357721a273`.
+
+Sources: [package catalogue](https://github.com/PacBrew/pacbrew-packages), [submodule pins](https://github.com/PacBrew/pacbrew-packages/blob/master/.gitmodules), [PS4 package list](https://github.com/PacBrew/pacbrew-packages/blob/master/pacbrew-packages.cfg).
+
+### Exact reusable build recipes
+
+- [PacBrew FFmpeg PKGBUILD](https://github.com/PacBrew/ps4-openorbis-portlibs/blob/d6a523a5a4a7b86846d91134d40a34357721a273/ffmpeg/PKGBUILD): FFmpeg **5.0**, release tarball SHA-256 `51e919f7d205062c0fd4fae6243a84850391115104ccf1efc451733bc0ac7298`, static-only. It enables swscale/swresample, network and several protocols, and depends on zlib, bzip2, libass, libfribidi and FreeType. It is a real PS4 port recipe and useful reference for target flags/dependency structure, but **not** WinePS4's FFmpeg 7.1.1 image-only configuration.
+- [PacBrew FreeType PKGBUILD](https://github.com/PacBrew/ps4-openorbis-portlibs/blob/d6a523a5a4a7b86846d91134d40a34357721a273/freetype/PKGBUILD): FreeType **2.10.1**, static, with zlib/bzip2/PNG. WinePS4 requires 2.13.3, so use as a build recipe reference, not as a version substitute.
+- [PacBrew Clang PKGBUILD](https://github.com/PacBrew/ps4-openorbis/blob/16f27e38760ea21eaf1187d0edbf4342c4a44021/clang/PKGBUILD): bundled Clang/LLVM **12.0.1** with a PS4 patch. This is the historical PacBrew toolchain compiler; it is not the Clang 21 host toolchain used by the newer iHaiDeeZ ports.
+- [PacBrew environment](https://github.com/PacBrew/ps4-openorbis/blob/16f27e38760ea21eaf1187d0edbf4342c4a44021/vars/ps4vars.sh): exports `OPENORBIS`, `OO_PS4_TOOLCHAIN`, `PS4SDK` at `/opt/pacbrew/ps4/openorbis`, compiler/binutils paths, pkg-config, target triple `x86_64-pc-freebsd12-elf`, PS4 defines, sysroot/include paths, and linker flags. This is the authoritative starting point for our environment compatibility layer.
+- [PacBrew CMake toolchain](https://github.com/PacBrew/ps4-openorbis/blob/16f27e38760ea21eaf1187d0edbf4342c4a44021/vars/ps4.cmake): provides compiler selection, root-path lookup rules, CRT objects, standard libraries, direct-LLD link commands, `add_self()` and `add_pkg()`. This is particularly relevant to implementing the missing kit's app/package wrappers without guessing their lower-level mechanics.
+
+The package catalogue also confirms that PacBrew has recipes for zlib, bzip2, libpng, libjpeg-turbo, libwebp, FreeType, Mbed TLS, curl, audio codecs, SDL2, libass, FFmpeg, libmpv, fmt, libvpx, libarchive and freegnm. These should be checked individually for version, flags and licence before selecting them for WinePS4.
+
+### Important distinction: FFmpeg in WinePS4 versus PacBrew
+
+WinePS4's own `scripts/build-ffmpeg-img.sh` is unusually specific: FFmpeg 7.1.1, static, image codecs only, no network, no programs/shared libraries, no PNG decoder (stb handles PNG), and a set of image demuxers/parsers. Its source path is `~/rpcs3-build/src/deps/ffmpeg` and its compiler wrappers are `~/rpcs3/toolchain/bin/ps4-cc` and `ps4-c++`. PacBrew's FFmpeg 5.0 recipe does not satisfy that contract and should not replace it.
+
+MGR-PS4's credits independently show another FFmpeg lineage: FFmpeg comes from the ReXGlue SDK's `sdk/thirdparty/FFmpeg` submodule, with a PS4 configuration under `patches/ffmpeg/`. That build is for XMA/WMA game audio decoders, not WinePS4's desktop image decoding. It is evidence of a second reusable PS4 FFmpeg port/configuration, not a drop-in replacement. See [MGR-PS4 credits](https://github.com/iHaiDeeZ/MGR-PS4/blob/main/CREDITS.md).
+
+### Practical reuse order
+
+1. Reuse PacBrew's OpenOrbis tree, package tools, headers, musl/libc++ and `ps4vars.sh` conventions as the baseline; keep the Clang 12 versus Clang 21 choice explicit.
+2. Reuse PacBrew portlib recipes only when their versions and configure options match the consumer. Preserve WinePS4's exact FreeType 2.13.3 and FFmpeg 7.1.1 requirements.
+3. Recover the newer shared sysroot/build-tree lineage (Crema → Resonance/DolphinPS4 → M33 → HENkaku) and the RPCS3 PS4 wrappers before rebuilding those libraries.
+4. Recreate only the private ps4-kit-specific glue that is not present in PacBrew/OpenOrbis or the public port repositories.
+
+This audit is source-level only. It does not claim that packages were installed, binaries were retrieved from PacBrew's package server, or a target build was run.
