@@ -72,7 +72,10 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
                 "set(PS4_MESA_SOURCE \"" + mesa_source.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_VULKAN_HEADERS \"" + vulkan_headers.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_KIT_WINDOW_WSI_SOURCE \"" + wsi_source.as_posix() + "\" CACHE FILEPATH \"\")\n"
-                "include(\"" + str(COMPAT / "ps4-kit.cmake") + "\")\n"
+                "include(\"" + str(ROOT / "ps4-kit" / "ps4-kit.cmake") + "\")\n"
+                "if(NOT PS4_KIT_DIR STREQUAL \"" + str(ROOT / "ps4-kit") + "\")\n"
+                "  message(FATAL_ERROR \"PS4_KIT_DIR was not exported by the compatibility entry point\")\n"
+                "endif()\n"
                 "add_executable(sample main.c)\n"
                 "ps4_kit_app(sample)\n"
                 "ps4_kit_link_mesa(sample)\n", encoding="utf-8")
