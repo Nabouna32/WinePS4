@@ -1,0 +1,26 @@
+cmake_minimum_required(VERSION 3.20)
+
+if(NOT DEFINED PS4_KIT_TEST_PROJECT OR PS4_KIT_TEST_PROJECT STREQUAL "")
+    message(FATAL_ERROR "PS4_KIT_TEST_PROJECT must be sa2 or mp3")
+endif()
+
+project(${PS4_KIT_TEST_PROJECT} C CXX)
+
+if(NOT TARGET ps4_kit_runtime)
+    message(FATAL_ERROR "ps4-kit project hook did not create ps4_kit_runtime")
+endif()
+if(NOT COMMAND ps4_kit_app)
+    message(FATAL_ERROR "ps4-kit project hook did not define ps4_kit_app()")
+endif()
+if(NOT COMMAND ps4_kit_link_mesa)
+    message(FATAL_ERROR "ps4-kit project hook did not define ps4_kit_link_mesa()")
+endif()
+if(NOT DEFINED PS4_LINK_SCRIPT OR NOT EXISTS "${PS4_LINK_SCRIPT}")
+    message(FATAL_ERROR "ps4-kit project hook did not generate PS4_LINK_SCRIPT")
+endif()
+if(NOT PS4_KIT_NETFS STREQUAL "OFF")
+    message(FATAL_ERROR "the fixture must preserve the consumer's PS4_KIT_NETFS=OFF setting")
+endif()
+
+add_executable(${PS4_KIT_TEST_PROJECT} main.c)
+message(STATUS "PS4 kit injection verified for ${PS4_KIT_TEST_PROJECT}")

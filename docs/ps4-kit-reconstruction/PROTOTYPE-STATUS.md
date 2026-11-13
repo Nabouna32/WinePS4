@@ -1,0 +1,115 @@
+# Compatibility prototype status
+
+## Implemented on `research/ps4-kit-reconstruction`
+
+- `toolchain/ps4-kit-compat/generate-link-script.py`: clean-room generator for the publicly documented OpenOrbis linker-script fixes:
+  - priority-ordered `.init_array.*` and `.ctors.*`;
+  - priority-ordered `.fini_array.*` and `.dtors.*`;
+  - suffixed `.data.*`, `.tdata.*`, and `.tbss.*` sections.
+- `toolchain/ps4-kit-compat/ps4-linker.cmake`: invokes the generator, publishes `PS4_LINK_SCRIPT`, and redirects the CMake executable linker flags to the generated copy.
+- `toolchain/ps4-kit-compat/ps4-kit.cmake`: provisional compatibility surface:
+  - `ps4_kit_app(target)` generates the `<target>_eboot/eboot.bin` and `<target>_eboot/<target>.oelf` outputs expected by WinePS4's package script, using OpenOrbis `create-fself`;
+  - `check-oelf.cmake` checks for exactly one read-write PT_LOAD before packaging;
+  - `ps4_kit_link_mesa(target)` resolves the candidate 16-archive RADV manifest, checks the Mesa source tree and Vulkan-Headers sysroot, and wires the whole-archive closure plus the Wine window-mode WSI source into the target. It still fails closed unless the candidate Mesa archives and headers are present.
+- `toolchain/ps4-kit-compat/tests/test_linker_script.py`: host-side regression tests against a synthetic linker-script fixture.
+- `toolchain/ps4-kit-compat/tests/test_cmake_smoke.py`: configure-only CMake smoke test using fake OpenOrbis and Mesa trees; checks generated script, eboot target, RADV archive link closure and WSI source wiring.
+
+- Added `ps4-kit/toolchain/env.sh`, the path-compatible entry point expected by the unchanged WinePS4 scripts. It exposes `PS4_KIT`, `PSB`, `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, `PS4_MESA_BUILD`, `OPENORBIS`, `PS4_SYSROOT`, versioned LLVM tool names and `ps4_cmake`; `CLANG_VER` remains explicit because the WinePS4 kit pin's exact LLVM version is not yet proven.
+- Added `ps4-kit/ps4-kit.cmake` as the existing CMake include path, delegating to the compatibility implementation.
+- Added the MIT/per-file PS4 GNM winsys `ps4-kit/mesa/ac_ps4_drm.c` and Mesa 26.0.8 integration patch `ps4-kit/mesa/patches/mesa-ps4.patch` from DolphinPS4 commit `879b3e57f3d3180bcb5f2234db3903688b28cd7d`; both have separate MIT notices. `prepare-source.sh` checks the patch against the external Mesa Git checkout before applying it and staging the winsys.
+- Added `ps4-kit/mesa/tests/test_prepare_source.sh` to verify patch application, staging, and fail-closed behavior on a mismatched Mesa tree.
+- Added `ps4-kit/scripts/build-mesa.sh`, a clean-room adaptation of the public DolphinPS4 Mesa build recipe. It configures the PS4 Meson cross file and builds the public 19 static RADV targets; the final WinePS4 link closure remains the 16 archives in `archives.cmake`.
+- Updated `ps4-kit/toolchain/env.sh` with the guarded PacBrew `ld.lld` / `libxml2.so.2` host compatibility workaround documented by the same public build recipe.
+- Added `ps4-kit/scripts/make-pkg.sh`, implementing the six-argument interface used by the unchanged `app/package.sh`: SFO generation, GP4 generation and `PkgTool.Core pkg_build`. The plain SFO profile honours WinePS4's `SFO_ATTRIBUTE=0x800002`; `NO_RIGHT_SPRX=1` is honoured as passed by the project. It uses local OpenOrbis tools only and does not add SDK binaries to the repository.
+- Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path. The test passes in GitHub Actions with mocked OpenOrbis tools; this does not validate the real OpenOrbis packaging binaries.
+- Added source-level `ps4-kit/include/ps4_kit.h` and `ps4_kit_diag.h` declarations based on WinePS4's actual call sites. The heap-options struct is explicitly a clean-room contract, not a recovered private ABI layout.
+- Added `ps4-kit/runtime/ps4_kit_runtime.c` for `ps4_kit_load_module`, thread-priority helpers, minimum thread stack, a `pthread_create` wrapper, and the Wine Vulkan callback registration/dispatch bridge (`ps4kit_set_window_present`, `ps4kit_set_log`). The CMake kit now links this runtime and exposes the include directory without editing WinePS4 project files.
+- Added `ps4-kit/include/ps4_kit_vulkan.h`; the runtime test now verifies the exact frame callback payload, log callback and unregistered-callback behavior.
+- Added a host test with mocked Sce APIs for the runtime wrapper. The host compile/run passes in GitHub Actions with mocked Sce imports and callbacks; a target OpenOrbis build is still required.
+- Added installation and packaging-boundary notes under `ps4-kit/`.
+- No files under `app/`, `port/`, `shell/`, or the Wine source were changed to integrate the kit. The intended installation is a symlink at `$HOME/ps4-kit`.
+
+## Environment bootstrap test
+
+The environment bootstrap test passes in CI with a fake SDK and checks the path contract, versioned tool names, sysroot preservation and `ps4_cmake` flag sanitization. This does not validate an actual PacBrew/OpenOrbis installation.
+
+## Mesa archive link integration
+
+- `ps4-kit/mesa/archives.cmake` records the 16-archive candidate whole-archive closure from the public DolphinPS4 helper.
+- `ps4_kit_link_mesa()` validates this closure, requires Vulkan-Headers from `PS4_SYSROOT/include`, and wires the archive list plus the real Wine WSI translation unit into the target.
+- The CMake smoke test uses fake archives and a fake WSI override to verify the generated link command and fail-closed behavior. This does not validate the actual Mesa build.
+
+## Packaging evidence and limits
+
+The GP4/SFO/PkgTool workflow is visible in public DolphinPS4 and PS4SX2 package helpers. PS4SX2's public variant explicitly supports `SFO_ATTRIBUTE`; WinePS4's unchanged package script already sets that variable to `0x800002`. This supports the initial plain-profile implementation, but it does not prove the exact private kit's defaults. See `ps4-kit/scripts/README.md` for source pins and the remaining validation requirements. The fake-tool smoke test passes in CI; a real OpenOrbis PKG inspection remains necessary.
+
+## Evidence and design basis
+
+The eboot output layout is directly required by WinePS4's existing `app/package.sh`. The `create-fself` option names and required input/output shape are confirmed by the official OpenOrbis tool documentation; the OELF segment check follows a public DolphinPS4 build convention:
+- https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/ps4-love-style.cmake
+- https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/check-oelf.cmake
+- https://github.com/iHaiDeeZ/xemu-ps4/blob/3738f4d7389055e9727c7ccf79af64e562eeb369/toolchain/make-link-script.py
+
+The implementation is independent and does not copy those files.
+
+## Networking audit added
+
+- `docs/ps4-kit-reconstruction/NETWORK-API-MAP.md` now maps Wine's Winsock/NSI/DNS layers, WinePS4's `ps4_net.c` and `ps4_ifaddrs.c`, and the remaining private-kit boundaries.
+- Confirmed in the public app CMake that WinePS4 compiles `ws2_32`, `nsiproxy` and its own DNS Unix half, and links `SceNetCtl`.
+- Identified the explicit private runtime call `ps4_kit_load_module()` for Net/NetCtl and the resolver dependency that still needs an independent implementation or verified sysroot support.
+- This is a source audit only. No network code was changed and no PS4 networking test has been run.
+
+## Exact WinePS4 Vulkan callback contract recovered
+
+- The checked-in `patches/wine-ps4.patch` adds `dlls/wineps4.drv/vulkan.c` and declares `ps4kit_set_window_present()` plus `ps4kit_set_log()`.
+- Its frame callback carries the host surface handle, pixel pointer, width/height, row pitch and BGRA flag. Wine maps that surface to a client HWND and forwards the frame to the existing desktop display socket.
+- Wine's program windows are headless and window-sized; the desktop alone owns VideoOut. This differs from the public full-screen VideoOut WSI implementations.
+- The same audit confirms kit-owned `ps4_kit.h` / `ps4_kit_diag.h` requirements: heap options/configuration, minimum thread stack, thread priorities and `PS4_DIAG_DATA_DIR`. The exact `ps4kit_set_window_present` / `ps4kit_set_log` bridge is implemented and host-tested; the initial window-mode Vulkan WSI is now present under `ps4-kit/mesa/ps4_vk_wsi_window.cpp` and passes host syntax CI, but has not been target-built or hardware-tested.
+
+## Public WSI evidence and implementation base
+
+- SSBU's public MIT-licensed PS4 port contains `port/ps4_vk_wsi.cpp` / `.h`, implementing a headless Vulkan surface and `VK_KHR_swapchain` on VideoOut over statically linked RADV. Its header exposes the `vk_get_instance_proc_addr()` shape that later ports describe as the ps4-kit Vulkan entry point.
+- SSBU's `scripts/build-mesa.sh` pins a Crema Mesa base commit and lists the static RADV archive closure. Its CMake helper says `libvulkan_radeon.a` already includes runtime/WSI objects; a separate build script from Dolphin lists additional runtime/WSI archives, so those lists must not be mixed across Mesa revisions.
+- The SSBU project `LICENSE` explicitly grants MIT terms for its port code. Any reuse must retain its copyright and licence notices and must still be checked for external dependencies and compatibility with WinePS4's Vulkan ABI.
+- The reference is used for API/ABI evidence only. The Wine WSI in this branch is a clean-room window-mode implementation; no VideoOut code is copied.
+
+## Wine window-mode WSI contract recovered
+
+- Added `docs/ps4-kit-reconstruction/WINDOW-WSI-CONTRACT.md` with the exact frame callback ABI and lifecycle requirements recovered from the checked-in WinePS4 patch.
+- Confirmed that the callback's `surface` is the opaque `VkSurfaceKHR` value used by Wine's HWND lookup; the pixel stride is in bytes and the BGRA flag controls desktop-side pixel interpretation.
+- Recorded the required per-window behavior: app-selected extents, CPU-readable linear images, actual subresource row pitch, presentation synchronization, resize/recreate handling, and synchronous callback lifetime.
+- Explicitly ruled out using the public SSBU VideoOut WSI as a drop-in: it is fixed-resolution/full-screen and presents directly to VideoOut, while WinePS4 sends frames to the desktop process.
+- Recovered the missing dispatch route from unchanged `port/ps4_unixlibs.c`: its synthetic `libvulkan.so.1` exports `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` through `ps4kit_vk_get_instance_proc_addr()`. The kit WSI must implement this exact C ABI entry point and preserve the swapchain/present interceptors in device dispatch.
+- Added `ps4-kit/mesa/ps4_vk_wsi_window.cpp`: clean-room entry-point dispatch, headless surfaces, per-window capabilities, linear host-visible/coherent swapchain images, subresource row-pitch handling, acquire semaphore/fence signaling, and synchronous presentation after a queue-submit fence wait. The frame callback receives the exact `VkSurfaceKHR` value, not the swapchain handle.
+- Added `docs/ps4-kit-reconstruction/VULKAN-WSI-SOURCES.md` with exact reference paths, commit SHA, MIT license provenance, and a list of excluded full-screen VideoOut behavior.
+- Added a CI syntax-check against host Vulkan-Headers and a fake-RADV dispatch test. Both pass; target Mesa/Vulkan-Headers compatibility, swapchain resize behavior and real PS4 presentation remain unvalidated. No WinePS4 project source was modified.
+
+## Not yet implemented or verified
+
+- The private kit's exact compiler and linker command contract for WinePS4's pinned kit revision `56b3d86`; the new environment entry point is an evidence-based approximation and has not been tested.
+- WinePS4's exact PAID/auth-info requirements; current values are configurable defaults drawn from a public PS4 port and must be confirmed for this application.
+- The exact WinePS4-compatible RADV + GNM archive dependency closure and target ABI are still revision-sensitive. A public Mesa 26.0.8 patch/winsys baseline is bundled and guarded by `git apply --check`, but the exact private kit Mesa revision remains unknown; the first window-mode WSI implementation is not target-validated.
+- A later public Mesa 26.0.8 / GNM build layout is now documented and mapped to `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE` and `PS4_MESA_BUILD`; the candidate 16-archive whole-archive closure is recorded in `ps4-kit/mesa/archives.cmake` and covered by a synthetic CMake test. This is not proven to match private kit revision `56b3d86`.
+- The custom heap backend that consumes WinePS4's `ps4_kit_configure_heap()` policy callback; the source-level options struct exists, but the allocator is not implemented.
+- RADV's `VK_EXT_map_memory_placed` CPU alias path for 32-bit Wine guests: the current Mesa patch does not yet remap the same direct-memory BO backing below 4 GiB at Wine's reserved address. OrbisDesk W126 independently demonstrates the required `sceKernelMapDirectMemory(MAP_FIXED)` path with 16 KiB alignment; see `INDEPENDENT-WINE-PORT-EVIDENCE.md` and the new blocker in `MESA-LINK-TRACE.md`.
+- The full diagnostics/crash logging backend, profiler and stdio/runtime hooks.
+- Validation of `make-pkg.sh` against the installed OpenOrbis `PkgTool.Core` / `create-gp4`, including SFO inspection and a real PKG build.
+- A real OpenOrbis configure/link test, eboot validation on a PS4, and a complete WinePS4 build.
+
+## Test command
+
+```sh
+python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
+bash ps4-kit/scripts/tests/test_make_pkg.sh
+bash ps4-kit/runtime/tests/run-host-tests.sh
+```
+
+GitHub Actions run [#189](https://github.com/Nabouna32/WinePS4/actions/runs/43499587125) passes all four jobs on the branch, including the Vulkan WSI C++ syntax check against host Vulkan-Headers, fake-RADV dispatch forwarding, and the guarded Mesa GNM source-staging test. GitHub Actions run [#244](https://github.com/Nabouna32/WinePS4/actions/runs/43500846603) also passes all four jobs after adding the Mesa build-driver syntax/help test and the bundled patch/staging workflow. This confirms host script/guard behavior, not that the patch applies to a real Mesa checkout or that Mesa builds for PS4. Run [#164](https://github.com/Nabouna32/WinePS4/actions/runs/43498783224) was the earlier WSI syntax/dispatch baseline, and run [#90](https://github.com/Nabouna32/WinePS4/actions/runs/43447560868) the earlier compatibility baseline. These are host-side tests with synthetic/fake dependencies; they do not validate the exact OpenOrbis toolchain, the matching Mesa build, or real PS4 presentation.
+
+## Heap policy planner (13 November 2026)
+
+- Added `ps4-kit/include/ps4_kit_heap.h` and `runtime/ps4_kit_heap_policy.c`.
+- The planner models the three real WinePS4 callback profiles: desktop direct-first with system-pool fallback; normal program direct-only main/overflow policy with 256 MiB reserve and six 2 MiB arenas; outside-process regular-only 16 MiB main plus three 16 MiB overflow heaps.
+- Added host tests for the three profiles and inconsistent configurations; wired the test into the `runtime` CI job.
+- This is policy validation only. No target allocator, direct-memory mapping, flexible-memory mapping, mspace, or overflow reserve enforcement is claimed yet.
+- Next: implement and test a separate target-only pool/mspace backend, then integrate allocator wrappers only after initialization order, pre-main allocation and cross-thread frees are proven.
