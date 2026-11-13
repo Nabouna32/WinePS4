@@ -38,6 +38,8 @@ so choosing one automatically would be unsafe.
   implementation, with the SFO attributes expected by WinePS4. Its fake-tool
   smoke test is in `scripts/tests/`.
 
+Host-only checks are green: [GitHub Actions run #9](https://github.com/Nabouna32/WinePS4/actions/runs/43444896819) passed linker/CMake, fake package-builder and mocked runtime tests. These checks do not validate the PS4 toolchain or generated PKG.
+
 ## Known blockers
 
 - `ps4_kit_link_mesa()` still fails closed. WinePS4 expects statically linked
