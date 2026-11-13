@@ -14,12 +14,13 @@ OrbisDesk's [HARDWARE_W124.md](https://github.com/jl-casella/OrbisDesk/blob/dev/
 - DXVK x86 reaches device creation but fails in vkMapMemory2KHR / vkMapMemory2EXT with VK_ERROR_MEMORY_MAP_FAILED.
 - The recorded cause is the PS4 branch of Crema's RADV winsys returning NULL for use_fixed_addr / VK_EXT_map_memory_placed. A 32-bit process needs CPU-visible mappings below 4 GiB.
 
-The subsequent W126 note records the implemented fix and a physical test:
+The subsequent W126 note and the actual [patch-mesa-placed.py](https://github.com/jl-casella/OrbisDesk/blob/bc745be7ee60f4667e78c51a9627cd275521b116/tools/vk-h0/patch-mesa-placed.py) script expose the implemented fix and a physical test:
 
-- Remap the BO's direct-memory backing at the address reserved by Wine using sceKernelMapDirectMemory with MAP_FIXED.
-- Use 16 KiB alignment and report 16 KiB as minPlacedMemoryMapAlignment.
-- Keep the GPU mapping; the CPU mapping aliases the same physical pages.
-- Return the virtual reservation to Wine when unmapping.
+- Add a CPU-only mapping helper for the RADV BO. It takes the BO's direct-memory physical offset and maps it at the caller's reserved address with sceKernelMapDirectMemory and MAP_FIXED.
+- Reject an address that is not 16 KiB aligned; round the BO mapping length up to 16 KiB; require the kernel to return exactly the requested address or report failure.
+- Keep the GPU mapping; the CPU mapping aliases the same physical pages. If the BO is write-combined, flush the CPU cache after mapping.
+- Store the placed address in RADV's BO cpu_map field. The unmap lifecycle leaves the alias reservation to Wine, which releases it after Mesa has unmapped it.
+- Report max(os_page_size, 16 KiB) as minPlacedMemoryMapAlignment for PS4.
 - W126 reports 32-bit DXVK D3D9 success, with placed mappings below 4 GiB and a successful process exit.
 
 This independently corroborates the WinePS4 engineering notes for private kit 941b771 / Mesa patch 0030 (placed mappings at the application's requested address) and 53cf427 / patch 0031 (enable direct-memory aliasing before the first placed map). It also clarifies that the requirement is not merely "a fixed mmap": the CPU alias must refer to the same direct-memory backing used by the GPU BO, and the mapping/unmapping lifecycle must preserve Wine's reservation.
