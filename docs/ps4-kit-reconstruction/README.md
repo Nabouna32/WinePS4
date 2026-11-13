@@ -28,7 +28,7 @@ Rebuild the **minimum compatible interface**, not an imagined byte-for-byte copy
 
 ## Status
 
-See [PUBLIC-TRACES.md](PUBLIC-TRACES.md) for the evidence collected so far.
+See [PUBLIC-TRACES.md](PUBLIC-TRACES.md) for the evidence collected so far, [NETWORK-API-MAP.md](NETWORK-API-MAP.md) for the Winsock/NSI/DNS/NetCtl dependency map, and [INTERFACE-AUDIT.md](INTERFACE-AUDIT.md) for the build/runtime boundary.
 
 No replacement implementation is claimed to work yet. In particular, the graphics/RADV integration, PS4 linker script, sysroot, packaging/signing path and runtime must be validated rather than guessed.
 
