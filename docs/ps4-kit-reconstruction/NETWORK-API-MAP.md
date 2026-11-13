@@ -1,5 +1,7 @@
 # WinePS4 networking: public dependency map
 
+> **Priority: deferred.** This is retained as background research only. The active goal is to compile and package the existing WinePS4 source. Do not implement networking changes unless a concrete build failure makes one necessary.
+
 Status: source-level audit of the public WinePS4 tree. This document separates the network behavior already implemented in WinePS4 from the parts that still cross the unpublished `ps4-kit` boundary. It is not a claim of a working replacement or a hardware validation.
 
 ## Executive finding
