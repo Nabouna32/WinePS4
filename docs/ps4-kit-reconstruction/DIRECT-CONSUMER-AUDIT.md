@@ -12,8 +12,10 @@ evidence of a compatibility requirement, not a copy of the private source.
 | [MGR-PS4](https://github.com/iHaiDeeZ/MGR-PS4) | `79fba0f` | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake`; `CMAKE_PROJECT_sa2_INCLUDE=...`; `PS4_KIT_NETFS=OFF` | project() injection, shared PS4 linker/runtime/Mesa/VideoOut base, `make-pkg.sh`; builds `sa2_eboot` | `native-videoout`, ReXGlue |
 | [MP3-PS4](https://github.com/iHaiDeeZ/MP3-PS4) | `56b3d86` | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake`; `CMAKE_PROJECT_mp3_INCLUDE=...`; `PS4_KIT_NETFS=OFF` | same project() injection pattern, shared ReXGlue runtime/RADV/VideoOut base and `make-pkg.sh`; builds `mp3_eboot` | `native-videoout`, ReXGlue |
 | [TTT2-PS4](https://github.com/iHaiDeeZ/TTT2-PS4) | `ff30ff6` | `source ~/ps4-kit/toolchain/env.sh`; `ps4_cmake` on `port/ps4`; kit package script | shared runtime, Mesa RADV, VideoOut swapchain, packaging; builds `ttt2_eboot` | `native-videoout`, XenonRecomp/DXVK |
+| [ConkerLR-PS4](https://github.com/iHaiDeeZ/ConkerLR-PS4) | `87a517c` | `scripts/build-clx.sh` sources `~/ps4-kit/toolchain/env.sh`; package step calls `$PS4_KIT/scripts/make-pkg.sh` | shared runtime, Mesa RADV, VideoOut swapchain and packaging; `libs` mode builds runtime targets without an XBE | `native-videoout`, Xbox recomp |
+| [Godot PS4 branch](https://github.com/iHaiDeeZ/godot/tree/ps4/platform/ps4) | not pinned in public README | `platform/ps4/build.sh`; eboot CMake includes `$PS4_KIT/ps4-kit.cmake` | calls `ps4_kit_link_mesa()` and `ps4_kit_app()`; uses kit runtime, linker wraps, Mesa and VideoOut presenter | `native-videoout`, SCons engine build |
 
-MP3's current README explicitly says release v00.51 was built with kit revision `56b3d86`, matching WinePS4's documented revision. Its `docs/DEVELOPMENT.md` separately documents the ReXGlue/Renut/VideoOut dependency boundary. This makes WinePS4 and MP3 a particularly useful same-revision compatibility pair; MGR's `79fba0f` and TTT2's `ff30ff6` remain separate version targets.
+MP3's current README explicitly says release v00.51 was built with kit revision `56b3d86`, matching WinePS4's documented revision. Its `docs/DEVELOPMENT.md` separately documents the ReXGlue/Renut/VideoOut dependency boundary. This makes WinePS4 and MP3 a particularly useful same-revision compatibility pair; MGR's `79fba0f`, TTT2's `ff30ff6` and ConkerLR's `87a517c` remain separate version targets. Godot is a confirmed direct consumer but its public build docs do not pin a kit commit.
 
 The MGR and MP3 scripts are unusually valuable because they expose the exact
 CMake hook names and the same explicit optional-component setting:
@@ -56,6 +58,8 @@ CMakeLists has declared its executable target.
 | [Crema](https://github.com/iHaiDeeZ/Crema) | Later GNM winsys with write-combined/cache-flush support | Mesa lifecycle and CPU/GPU cache coherency |
 | [Resonance](https://github.com/iHaiDeeZ/Resonance) | Earlier VideoOut WSI and common runtime/build-tree ancestry | native VideoOut semantics and shared runtime provenance |
 | [M33](https://github.com/iHaiDeeZ/M33), [SMW](https://github.com/iHaiDeeZ/SMW), [xemu-ps4](https://github.com/iHaiDeeZ/xemu-ps4), [TOTK-PS4](https://github.com/iHaiDeeZ/TOTK-PS4) | Consume or adapt the public Resonance/Crema/Dolphin/SMW build lineage | reproducible sysroot/Mesa bundle and native WSI integration |
+| [ConkerLR-PS4](https://github.com/iHaiDeeZ/ConkerLR-PS4) | Direct private-kit consumer, separate revision `87a517c` | additional native-videoout, packaging and runtime-library build target |
+| [Godot PS4 branch](https://github.com/iHaiDeeZ/godot/tree/ps4/platform/ps4) | Direct private-kit consumer through `ps4-kit.cmake` | large SCons-built engine linked as one grouped eboot; validates generic `ps4_kit_app()` and Mesa helpers |
 
 WinePS4's notes explicitly say TTT2 and SSBU drew on the private kit's RADV
 and VideoOut WSI, while Wine itself required a separate window-desktop mode.
