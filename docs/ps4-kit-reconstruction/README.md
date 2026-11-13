@@ -2,9 +2,9 @@
 
 This directory tracks a **clean-room compatibility effort** for the shared PS4
 build/runtime base used by the developer's public ports. WinePS4 remains the
-first unchanged-source build target; the longer-term goal is a versioned kit
-that can also support MGR-PS4 and the shared toolchain/runtime lineage behind
-DolphinPS4, Crema, Resonance, M33, SMW and TOTK-PS4.
+first unchanged-source build target; the direct-consumer targets now include
+MGR-PS4, MP3-PS4 and TTT2-PS4, with the related graphics/runtime lineage behind
+SSBU, DolphinPS4, Crema, Resonance, M33, SMW, xemu-ps4 and TOTK-PS4.
 
 It is not the original private ps4-kit. It contains no Sony SDK files,
 proprietary libraries, leaked binaries, game data or private keys. The goal is
@@ -21,11 +21,11 @@ WinePS4's public build depends on an unpublished external kit:
   `PS4_SYSROOT`.
 - `docs/BUILDING.md` records private kit revision `56b3d86`.
 
-MGR-PS4 independently documents private kit revision `79fba0f`, sources the
-same `toolchain/env.sh`, injects `ps4-kit.cmake` into its CMake project, and
-credits the kit for runtime, RADV, VideoOut, diagnostics and packaging. These
-two revision identifiers prove that the compatibility target is broader than
-WinePS4 alone.
+MGR-PS4 independently documents private kit revision `79fba0f`, while
+TTT2-PS4 documents `ff30ff6`. MGR and MP3 both inject the kit through
+`CMAKE_PROJECT_<name>_INCLUDE` and disable NetFS; TTT2 uses the shared
+environment, runtime, graphics and packaging boundary through a different
+CMake path. The direct-consumer audit records the exact public evidence.
 
 ## Current strategy
 
@@ -57,8 +57,8 @@ Mesa GNM/RADV and Wine window-WSI build path.
 
 The repository contains kit entry points, runtime/package prototypes, a first
 Wine window-mode WSI, the MIT/per-file Mesa 26.0.8 GNM winsys and integration
-patch, and a Mesa cross-build driver. Host tests cover scripts, CMake/link glue,
-runtime wrappers and WSI dispatch.
+patch, a Mesa cross-build driver, and a host-only CMake injection regression
+test for the MGR/MP3 project hooks. The test does not claim target linking.
 
 This is **not yet a complete or target-validated kit**. The exact private Mesa
 and LLVM revisions, actual OpenOrbis target build, final linker closure, eboot
@@ -66,6 +66,11 @@ and package output, MGR's native VideoOut path, and PS4 presentation still need
 validation.
 
 ## Research map
+
+- [DIRECT-CONSUMER-AUDIT.md](DIRECT-CONSUMER-AUDIT.md) inventories WinePS4,
+  MGR-PS4, MP3-PS4 and TTT2-PS4 as confirmed direct kit consumers, distinguishes
+  SSBU and the related ports as shared-lineage references, and documents the
+  host CMake project-injection test.
 
 - [ECOSYSTEM-ANCESTRY.md](ECOSYSTEM-ANCESTRY.md) traces WinePS4's explicit
   credits to Resonance, DolphinPS4, M33 and Crema, alongside love-ps4,
