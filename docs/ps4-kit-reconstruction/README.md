@@ -28,7 +28,7 @@ Rebuild the **minimum compatible interface**, not an imagined byte-for-byte copy
 
 ## Status
 
-**Build-first scope:** [BUILD-RECONSTRUCTION-PLAN.md](BUILD-RECONSTRUCTION-PLAN.md) is the active plan and acceptance checklist. See [PUBLIC-TRACES.md](PUBLIC-TRACES.md) for public evidence and [INTERFACE-AUDIT.md](INTERFACE-AUDIT.md) for the build/runtime boundary. [NETWORK-API-MAP.md](NETWORK-API-MAP.md) is background only; networking is not a priority.
+**Build-first scope:** [BUILD-RECONSTRUCTION-PLAN.md](BUILD-RECONSTRUCTION-PLAN.md) is the active plan and acceptance checklist. See [PUBLIC-TRACES.md](PUBLIC-TRACES.md) for public evidence, [INTERFACE-AUDIT.md](INTERFACE-AUDIT.md) for the build/runtime boundary, and [MESA-LINK-TRACE.md](MESA-LINK-TRACE.md) for the RADV/VideoOut link blocker. [NETWORK-API-MAP.md](NETWORK-API-MAP.md) is background only; networking is not a priority.
 
 No replacement implementation is claimed to work yet. In particular, the graphics/RADV integration, PS4 linker script, sysroot, packaging/signing path and runtime must be validated rather than guessed.
 
