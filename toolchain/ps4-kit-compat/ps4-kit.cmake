@@ -109,7 +109,7 @@ function(_ps4_kit_attach_wsi target)
     else ()
         if (NOT EXISTS "${PS4_KIT_NATIVE_WSI_SOURCE}")
             message(FATAL_ERROR
-                "Native VideoOut WSI is not reconstructed yet: ${PS4_KIT_NATIVE_WSI_SOURCE}. "
+                "Native VideoOut WSI source is missing: ${PS4_KIT_NATIVE_WSI_SOURCE}. "
                 "Refusing to link Wine's window-desktop WSI into '${target}'.")
         endif ()
         target_sources(${target} PRIVATE "${PS4_KIT_NATIVE_WSI_SOURCE}")
