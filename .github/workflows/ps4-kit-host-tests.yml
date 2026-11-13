@@ -59,3 +59,17 @@ jobs:
         uses: actions/checkout@v4
       - name: Test runtime wrappers with mocked PS4 imports
         run: bash ps4-kit/runtime/tests/run-host-tests.sh
+
+  mesa-upstream-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out reconstruction branch
+        uses: actions/checkout@v4
+      - name: Fetch the exact public Mesa 26.0.8 tag
+        run: git clone --depth 1 --branch mesa-26.0.8 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa
+      - name: Apply-check the PS4 patch against real upstream Mesa sources
+        run: |
+          git -C /tmp/mesa rev-parse HEAD
+          PS4_MESA_SOURCE=/tmp/mesa bash ps4-kit/mesa/prepare-source.sh
+          git -C /tmp/mesa diff --check
+          git -C /tmp/mesa status --short
