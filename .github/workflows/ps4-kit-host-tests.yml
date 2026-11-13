@@ -37,6 +37,8 @@ jobs:
         run: python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
       - name: Configure MGR and MP3 project-injection hooks
         run: bash ps4-kit/tests/test-project-injection.sh
+      - name: Keep Wine and native VideoOut WSI profiles separate
+        run: bash ps4-kit/tests/test-wsi-profiles.sh
 
   environment:
     runs-on: ubuntu-latest
