@@ -82,7 +82,7 @@ The current app also includes kit-owned headers `ps4_kit.h` and `ps4_kit_diag.h`
 - `ps4_kit_set_thread_priority()`, `ps4_kit_set_new_thread_priority()`, and `ps4_kit_thread_priority()`;
 - diagnostic macro `PS4_DIAG_DATA_DIR()`.
 
-These are now confirmed compatibility requirements from WinePS4's own source, not guesses from other ports. The exact struct fields, default weak implementations, diagnostics hooks and runtime library composition still need to be recovered from the full source references and target behavior.
+These are confirmed requirements from WinePS4's own source. The reconstruction now supplies a source-level heap-options struct and initial implementations of the thread-priority, minimum-stack and system-module helpers. The struct layout is our own paired contract, not a recovered private ABI. The heap allocator that consumes the callback and the diagnostics backend remain missing.
 
 ## 6. Networking boundary (new source audit)
 
@@ -95,7 +95,7 @@ The network stack is not wholly provided by ps4-kit. WinePS4 owns substantial pa
 - `port/ps4_ifaddrs.c` calls `sceNetCtlInit` / `sceNetCtlGetInfo` for gateway and DNS settings, but loads Net/NetCtl through the private `ps4_kit_load_module` entry point.
 - General DNS resolution delegates to the target libc resolver; WinePS4 source comments attribute that resolver to ps4-kit.
 
-The private network boundary is therefore narrower than the complete Windows network stack: system-module loading, NetCtl availability/ABI, resolver implementation, and the target sysroot's BSD socket ABI. See [NETWORK-API-MAP.md](NETWORK-API-MAP.md) for the detailed call map, observed selectors and proposed acceptance tests.
+The private network boundary is therefore narrower than the complete Windows network stack: NetCtl availability/ABI, resolver implementation, and the target sysroot's BSD socket ABI. The kit's `ps4_kit_load_module()` wrapper now has an initial clean-room implementation over the public `sceSysmoduleLoadModuleInternal` import. See [NETWORK-API-MAP.md](NETWORK-API-MAP.md) for the detailed call map, observed selectors and proposed acceptance tests.
 
 This inventory does **not** establish that the NetCtl selector numbers/payloads are independently verified, or that general DNS works without the kit. Those remain explicit validation tasks.
 
