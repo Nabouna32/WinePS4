@@ -60,7 +60,52 @@ and VideoOut WSI, while Wine itself required a separate window-desktop mode.
 That is why the native WSI must be a separate kit profile rather than being
 folded into the Wine implementation.
 
-## 3. Host configure regression test added
+## 3. Native VideoOut WSI contract recovered from public ports
+
+The [SSBU PS4 WSI source](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/port/ps4_vk_wsi.cpp)
+and [M33 technical notes](https://github.com/iHaiDeeZ/M33/blob/78f0f40edd55b6183631150cfe609170b5c530b8/docs/TECHNICAL.md)
+expose a concrete native-videoout design. RADV is linked into the executable
+and has no WSI; a separate layer supplies `VK_EXT_headless_surface` and
+`VK_KHR_swapchain`.
+
+Observed implementation contract:
+
+- Open VideoOut and create a kernel event queue; register the flip event before
+  creating the swapchain. The ports' boot notes warn that required system
+  modules must be loaded before the first VideoOut call.
+- Create linear `VK_FORMAT_R8G8B8A8_UNORM` images in memory that is
+  device-local, host-visible and host-coherent. Derive row pitch and image
+  offset from `vkGetImageSubresourceLayout`; do not assume tightly packed
+  rows.
+- Align VideoOut buffer addresses to 2 MiB and register the image addresses
+  with `sceVideoOutRegisterBuffers`. The SSBU implementation advertises a
+  fixed 1920x1080 surface and 2–3 images; these are profile choices, not
+  universal Vulkan limits.
+- Queue a GPU-side flip through `ac_ps4_submit_flip` after the frame's GPU
+  work. Fall back to a CPU queue-idle followed by
+  `sceVideoOutSubmitFlip` only if the winsys flip path fails.
+- Track flip completion with `sceVideoOutGetFlipStatus` and the flip event
+  queue so an image is not rendered into while it is still being scanned out.
+  Alternate VideoOut buffer-index ranges during swapchain recreation, then
+  wait idle and unregister the old buffer set.
+- The cited SSBU port filters binary semaphores from submits but preserves
+  timeline semaphores. Its comments report a PS4 device-loss issue when an
+  otherwise-empty submit waits on or signals a binary semaphore. This is a
+  platform-specific workaround that must be revalidated against the exact
+  Mesa winsys and Vulkan workloads; it must not be generalized blindly.
+- The WSI wraps ICD instance/device proc-address lookup and intercepts the
+  surface, swapchain, acquire, present and semaphore/submit entry points. This
+  is separate from RADV's own Vulkan ICD entry point.
+
+This is sufficient to define the native profile's interface and a hardware
+test plan, but not to transplant a file blindly. SSBU's source comments trace
+the implementation through SMW, Resonance and Crema; record file-level
+provenance and licensing before copying any implementation. Wine's
+`window-desktop` WSI remains separate: it has window-sized CPU-readable
+images and forwards completed frames to a desktop callback rather than owning
+VideoOut.
+
+## 4. Host configure regression test added
 
 Run:
 
@@ -80,16 +125,17 @@ generated, and `PS4_KIT_NETFS=OFF` survives configuration. It is a host-only
 configure test: it does not compile the PS4 runtime, link Mesa, create an eboot
 or prove that the private NetFS behavior has been reproduced.
 
-## 4. Next implementation gates
+## 5. Next implementation gates
 
 1. [x] Add the host injection test to `.github/workflows/ps4-kit-integration.yml`;
    its first GitHub Actions result still needs to be checked.
 2. Audit the full MGR and MP3 patched CMakeLists and generated link commands;
    identify which target receives runtime, RADV archives, ICD entry point,
    VideoOut WSI and system-library imports.
-3. Add a generic ReXGlue/native-videoout kit profile only after that audit.
-   Keep `PS4_KIT_NETFS=OFF` explicit and avoid implementing or advertising
-   NetFS until its required symbols and semantics are known.
+3. Implement the native-videoout WSI as a separate profile from the recovered
+   contract above, with source provenance and lifecycle tests. Keep
+   `PS4_KIT_NETFS=OFF` explicit and avoid implementing or advertising NetFS
+   until its required symbols and semantics are known.
 4. Audit TTT2's `port/ps4/CMakeLists.txt` and runtime target separately; it
    has a different integration path from MGR/MP3.
 5. Reuse the public Resonance/Crema-derived WSI only after recording exact
