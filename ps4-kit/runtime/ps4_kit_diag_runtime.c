@@ -65,6 +65,7 @@ static ps4_kit_diag_thread g_threads[PS4_KIT_DIAG_MAX_THREADS];
 static _Atomic unsigned int g_thread_count;
 static pthread_mutex_t g_thread_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_busy_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_signal_capture_lock = PTHREAD_MUTEX_INITIALIZER;
 static _Thread_local int g_tls_thread_index = -1;
 
 static _Atomic int g_sampler_started;
@@ -343,12 +344,14 @@ void ps4_dump_thread_stacks(const char *path, const char *reason)
     }
     pthread_mutex_unlock(&g_thread_lock);
 
+    pthread_mutex_lock(&g_signal_capture_lock);
     for (i = 0; i < count; i++) {
         g_threads[i].dump_done = 0;
         if (pthread_kill(handles[i], SIGUSR1) == 0)
             signaled[i] = 1;
     }
     wait_for_dump_set(count, signaled);
+    pthread_mutex_unlock(&g_signal_capture_lock);
 
     for (i = 0; i < count; i++) {
         if (!signaled[i]) {
@@ -576,6 +579,7 @@ static void *hot_profiler_thread_main(void *unused)
 
             {
                 unsigned char signaled[PS4_KIT_DIAG_MAX_THREADS] = {0};
+                pthread_mutex_lock(&g_signal_capture_lock);
                 for (i = 0; i < count; i++) {
                     if (pthread_equal(handles[i], pthread_self()))
                         continue;
@@ -592,6 +596,7 @@ static void *hot_profiler_thread_main(void *unused)
                                                   memory_order_relaxed);
                     }
                 }
+                pthread_mutex_unlock(&g_signal_capture_lock);
             }
         }
         if (monotonic_ns() - last_report >= PS4_KIT_DIAG_REPORT_NS) {
