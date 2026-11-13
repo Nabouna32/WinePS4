@@ -45,11 +45,18 @@ for required in \
 done
 
 # PacBrew's own setup provides SDK paths and system library flags.
+# Preserve the kit build-tree overlay: ps4vars.sh may set PS4_SYSROOT to the
+# OpenOrbis SDK root, while WinePS4's target headers/libraries live in PSB/sysroot.
+_PS4_KIT_SYSROOT="$PS4_SYSROOT"
+_PS4_KIT_MESA_SOURCE="$PS4_MESA_SOURCE"
+_PS4_KIT_MESA_BUILD="$PS4_MESA_BUILD"
 # shellcheck disable=SC1090
 source "$OPENORBIS/ps4vars.sh"
+export PS4_SYSROOT="$_PS4_KIT_SYSROOT"
+export PS4_MESA_SOURCE="$_PS4_KIT_MESA_SOURCE"
+export PS4_MESA_BUILD="$_PS4_KIT_MESA_BUILD"
+unset _PS4_KIT_SYSROOT _PS4_KIT_MESA_SOURCE _PS4_KIT_MESA_BUILD
 
-# Reassert the build-tree paths after ps4vars.sh; the kit's sysroot is an
-# overlay (libc++ and any additional target libraries), not OpenOrbis itself.
 export PS4_KIT OPENORBIS PSB PS4_BUILD_ROOT PS4_SYSROOT PS4_MESA_SOURCE PS4_MESA_BUILD PS4_TARGET CLANG_VER
 export PS4_CC PS4_CXX PS4_LD PS4_AR PS4_RANLIB PS4_OBJCOPY JOBS
 export PS4_BASE_FLAGS="${PS4_BASE_FLAGS:-"--target=$PS4_TARGET -D_GNU_SOURCE -D__PS4__ -D__ORBIS__ -D__OPENORBIS__ -fPIC -funwind-tables --sysroot=$OPENORBIS -isystem $PS4_SYSROOT/libc-overlay -isystem $OPENORBIS/include"}"
