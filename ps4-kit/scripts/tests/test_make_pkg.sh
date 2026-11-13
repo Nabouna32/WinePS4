@@ -41,11 +41,11 @@ export PKGTOOL_LOG="$TMP/pkgtool.log"
 NO_RIGHT_SPRX=1 SFO_ATTRIBUTE=0x800002 \
     bash "$HERE/make-pkg.sh" "$STAGE" WINE00002 WinePS4 00.71 WINEPS4 "$OUT" > "$TMP/result"
 
-EXPECTED="$OUT/IV0000-WINE00002_00-WINEPS400000000.pkg"
+EXPECTED="$OUT/IV0000-WINE00002_00-WINEPS4000000000.pkg"
 [[ "$(cat "$TMP/result")" == "$EXPECTED" ]]
 [[ -f "$EXPECTED" ]]
 grep -Fq 'sfo_setentry' "$PKGTOOL_LOG"
 grep -Fq 'ATTRIBUTE --type Integer --maxsize 4 --value 0x800002' "$PKGTOOL_LOG"
-grep -Fq 'CONTENT_ID --type Utf8 --maxsize 48 --value IV0000-WINE00002_00-WINEPS400000000' "$PKGTOOL_LOG"
+grep -Fq 'CONTENT_ID --type Utf8 --maxsize 48 --value IV0000-WINE00002_00-WINEPS4000000000' "$PKGTOOL_LOG"
 [[ ! -e "$STAGE/pkg.gp4" ]]
 echo "make-pkg smoke test passed"
