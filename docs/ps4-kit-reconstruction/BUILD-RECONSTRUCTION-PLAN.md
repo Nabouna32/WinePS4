@@ -107,4 +107,4 @@ A milestone is complete only when its evidence is recorded:
 - [ ] `app/package.sh` produces the expected package with all expected paths.
 - [ ] The final package is tested on a PS4 (separate runtime milestone).
 
-Current status: early reconstruction only. The packaging script and a fake-tool test have been added but not executed; no real OpenOrbis package build, end-to-end target build or PS4 hardware validation has been completed.
+Current status: early reconstruction only. Host CI passes all three test groups, but no real OpenOrbis package build, end-to-end target build or PS4 hardware validation has been completed.
