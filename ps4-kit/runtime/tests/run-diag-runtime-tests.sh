@@ -2,7 +2,7 @@
 # Host test for the clean-room diagnostics thread registry and watchdog dump.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" /tmp/ps4-kit-diag-runtime-test' EXIT
 CC="${CC:-cc}"
