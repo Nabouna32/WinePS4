@@ -48,8 +48,10 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
                 "}\n", encoding="utf-8")
 
             mesa_source = work / "mesa-source"
-            (mesa_source / "include" / "vulkan").mkdir(parents=True)
-            (mesa_source / "include" / "vulkan" / "vulkan.h").write_text("/* fake Vulkan header */\n", encoding="utf-8")
+            (mesa_source / "include").mkdir(parents=True)
+            vulkan_headers = work / "vulkan-headers"
+            (vulkan_headers / "vulkan").mkdir(parents=True)
+            (vulkan_headers / "vulkan" / "vulkan.h").write_text("/* fake Vulkan header */\n", encoding="utf-8")
             mesa_build = work / "mesa-build"
             for relative in MESA_ARCHIVES:
                 archive = mesa_build / relative
@@ -68,6 +70,7 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
                 "project(compat_smoke C CXX)\n"
                 "set(PS4_MESA_BUILD \"" + mesa_build.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_MESA_SOURCE \"" + mesa_source.as_posix() + "\" CACHE PATH \"\")\n"
+                "set(PS4_VULKAN_HEADERS \"" + vulkan_headers.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_KIT_MESA_WSI_SOURCE \"" + wsi_source.as_posix() + "\" CACHE FILEPATH \"\")\n"
                 "include(\"" + str(COMPAT / "ps4-kit.cmake") + "\")\n"
                 "add_executable(sample main.c)\n"
