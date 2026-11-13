@@ -38,7 +38,7 @@ printf 'LIBS=%s\n' "${LIBS-unset}" >> "$CMAKE_ENV_LOG"
 STUB
 chmod +x "$TOOLS/cmake"
 
-export OPENORBIS="$OO" PSB CLANG_VER=21
+export OPENORBIS="$OO" PSB
 export PATH="$TOOLS:$PATH"
 export CMAKE_ARGS_LOG="$TMP/cmake.args" CMAKE_ENV_LOG="$TMP/cmake.env"
 export CFLAGS=leak CXXFLAGS=leak CPPFLAGS=leak LDFLAGS=leak LIBS=leak
