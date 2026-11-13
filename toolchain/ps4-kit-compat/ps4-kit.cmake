@@ -10,6 +10,15 @@
 include_guard(GLOBAL)
 include(${CMAKE_CURRENT_LIST_DIR}/ps4-linker.cmake)
 
+# The runtime subset is compiled from this clean-room kit tree and linked only
+# through the existing ps4_kit_app() entry point.
+get_filename_component(_PS4_KIT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../ps4-kit" ABSOLUTE)
+set(_PS4_KIT_RUNTIME "${_PS4_KIT_ROOT}/runtime/ps4_kit_runtime.c")
+if (NOT TARGET ps4_kit_runtime)
+    add_library(ps4_kit_runtime STATIC "${_PS4_KIT_RUNTIME}")
+    target_include_directories(ps4_kit_runtime PUBLIC "${_PS4_KIT_ROOT}/include")
+endif ()
+
 set(PS4_PAID "${PS4_PAID}" CACHE STRING "PS4 program authority ID")
 if (PS4_PAID STREQUAL "")
     set(PS4_PAID "0x3100000000000002" CACHE STRING "PS4 program authority ID" FORCE)
@@ -34,6 +43,8 @@ function(ps4_kit_app target)
     if (NOT TARGET ${target})
         message(FATAL_ERROR "ps4_kit_app: target '${target}' does not exist")
     endif ()
+    target_link_libraries(${target} PRIVATE ps4_kit_runtime)
+    target_link_options(${target} PRIVATE "LINKER:--wrap=pthread_create")
     set(out_dir "${CMAKE_CURRENT_BINARY_DIR}/${target}_eboot")
     set(oelf "${out_dir}/${target}.oelf")
     set(eboot "${out_dir}/eboot.bin")
