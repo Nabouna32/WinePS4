@@ -82,7 +82,7 @@ The current app also includes kit-owned headers `ps4_kit.h` and `ps4_kit_diag.h`
 - `ps4_kit_set_thread_priority()`, `ps4_kit_set_new_thread_priority()`, and `ps4_kit_thread_priority()`;
 - diagnostic macro `PS4_DIAG_DATA_DIR()`.
 
-These are confirmed requirements from WinePS4's own source. The reconstruction now supplies a source-level heap-options struct and initial implementations of the thread-priority, minimum-stack and system-module helpers. The struct layout is our own paired contract, not a recovered private ABI. The heap allocator that consumes the callback and the diagnostics backend remain missing.
+These are confirmed requirements from WinePS4's own source. The reconstruction now supplies a source-level heap-options struct and initial implementations of the thread-priority, minimum-stack, system-module and Wine Vulkan callback-registration helpers. The struct layout is our own paired contract, not a recovered private ABI. The heap allocator that consumes the callback and the diagnostics backend remain missing.
 
 ## 6. Networking boundary (new source audit)
 
