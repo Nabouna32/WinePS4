@@ -20,7 +20,6 @@
 #include <orbis/libkernel.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -87,7 +86,7 @@ VkDevice g_device = VK_NULL_HANDLE;
 VkQueue g_acquire_queue = VK_NULL_HANDLE;
 int g_video = -1;
 OrbisKernelEqueue g_flip_queue = 0;
-std::atomic<uint64_t> g_flips{0};
+uint64_t g_flips = 0;
 bool g_videoout_banks[kVideoOutBanks]{};
 std::vector<std::unique_ptr<Swapchain>> g_retired;
 std::unordered_map<VkSwapchainKHR, std::unique_ptr<Swapchain>> g_swapchains;
@@ -436,6 +435,32 @@ VkResult VKAPI_CALL wsi_surface_capabilities2(VkPhysicalDevice physical_device,
 {
     if (!info || !caps) return VK_ERROR_INITIALIZATION_FAILED;
     return wsi_surface_capabilities(physical_device, info->surface, &caps->surfaceCapabilities);
+}
+
+VkResult VKAPI_CALL wsi_surface_formats2(VkPhysicalDevice physical_device,
+                                             const VkPhysicalDeviceSurfaceInfo2KHR *info,
+                                             uint32_t *count, VkSurfaceFormat2KHR *formats)
+{
+    if (!info || !count)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t available = 0;
+    VkResult result = wsi_surface_formats(physical_device, info->surface, &available, nullptr);
+    if (result != VK_SUCCESS)
+        return result;
+    if (!formats) {
+        *count = available;
+        return VK_SUCCESS;
+    }
+    const uint32_t capacity = *count;
+    std::vector<VkSurfaceFormatKHR> base(available);
+    result = wsi_surface_formats(physical_device, info->surface, &available, base.data());
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+        return result;
+    const uint32_t copied = std::min<uint32_t>(capacity, available);
+    for (uint32_t i = 0; i < copied; ++i)
+        formats[i].surfaceFormat = base[i];
+    *count = copied;
+    return copied < available ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
 VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
@@ -828,7 +853,7 @@ VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *inf
                 SwapchainImage &presented_image = swapchain.images[info->pImageIndices[i]];
                 const unsigned buffer = static_cast<unsigned>(swapchain.first_buffer) +
                                         info->pImageIndices[i];
-                const int64_t arg = static_cast<int64_t>(g_flips.load(std::memory_order_acquire) + 1u);
+                const int64_t arg = static_cast<int64_t>(g_flips + 1u);
                 int result = ac_ps4_submit_flip(g_video, buffer, swapchain.flip_mode, arg);
                 const bool gpu_flip = result == 0;
                 if (!gpu_flip) {
@@ -851,7 +876,7 @@ VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *inf
                     item_result = VK_ERROR_SURFACE_LOST_KHR;
                 } else if (item_result == VK_SUCCESS) {
                     presented_image.last_flip_arg = arg;
-                    const uint64_t submitted = g_flips.fetch_add(1u, std::memory_order_acq_rel) + 1u;
+                    const uint64_t submitted = ++g_flips;
                     if (submitted == 1u)
                         sceSystemServiceHideSplashScreen();
                     release_retired();
