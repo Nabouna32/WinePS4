@@ -22,7 +22,7 @@ grep -q 'kFramebufferAlign' "$NATIVE"
 grep -q 'g_retired' "$NATIVE"
 grep -q 'wsi_queue_submit2' "$NATIVE"
 grep -q 'VK_SEMAPHORE_TYPE_TIMELINE' "$NATIVE"
-grep -q 'SceVideoOut SceSystemService' "$CMAKE"
+grep -q 'SceSysmodule SceSystemService SceVideoOut' "$CMAKE"
 
 if grep -q 'sceVideoOut\|ac_ps4_submit_flip' "$WINDOW"; then
     echo "Wine window WSI must not own native VideoOut" >&2
