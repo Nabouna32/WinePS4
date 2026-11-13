@@ -13,6 +13,7 @@ __attribute__((visibility("default"))) const char *ps4_data_dir(void);
 void ps4_watch_thread(const char *name);
 void ps4_dump_thread_stacks(const char *path, const char *reason);
 void ps4_thread_busy_report(char *out, size_t size, int min_percent);
+void ps4_thread_cpu_tick(void);
 void ps4_sampler_register_thread(const char *name);
 void ps4_sampler_set_code_dumps(int enabled);
 void ps4_sampler_set_enabled(int enabled);
