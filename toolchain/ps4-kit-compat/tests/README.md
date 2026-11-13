@@ -1,0 +1,1 @@
+Run the host-side regression tests with:\n\n```sh\npython3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v\n```\n\nThese tests exercise the clean-room generator against a small synthetic linker script. They do not prove compatibility with every OpenOrbis release; the real installed `link.x` must still be tested.\n
