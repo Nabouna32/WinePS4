@@ -38,6 +38,12 @@ It also describes a PS4 GNM winsys based on `libSceGnmDriver`, with no Linux DRM
 
 Source: https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/scripts/build-mesa.sh
 
+The public recipe also documents a small OpenOrbis header gap: its
+[`port/mesa-overlay/sys/ioccom.h`](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/port/mesa-overlay/sys/ioccom.h)
+provides FreeBSD-style ioctl request encoding for libdrm UAPI headers. This branch includes a
+minimal clean-room shim at `ps4-kit/mesa/mesa-overlay/sys/ioccom.h`; it only supplies the ioctl
+encoding macros, because the PS4 GNM winsys does not issue Linux DRM ioctls.
+
 The MIT-licensed GNM winsys source from that exact DolphinPS4 commit is now included at
 `ps4-kit/mesa/ac_ps4_drm.c`. Its original SPDX notice and copyright line are retained. The
 source's GitHub blob is `a4589f0601c889a200a93d59968c763daff4aff2` (2,938 lines). The guarded
