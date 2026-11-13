@@ -35,6 +35,14 @@ if (NOT _ps4_linker_result EQUAL 0)
         "${_ps4_linker_stderr}")
 endif ()
 
+# OpenOrbis' CMake toolchain places its stock link.x in the executable link command.
+# Redirect that argument to the generated copy; do not merely publish a variable.
+string(REPLACE "${PS4_LINK_SCRIPT_IN}" "${PS4_LINK_SCRIPT}"
+    CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+if (NOT CMAKE_EXE_LINKER_FLAGS MATCHES "ps4-link\\.x")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " --script ${PS4_LINK_SCRIPT}")
+endif ()
+
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${PS4_LINK_SCRIPT_IN}" "${_PS4_LINKER_GENERATOR}")
 message(STATUS "WinePS4 linker script: ${PS4_LINK_SCRIPT}")
