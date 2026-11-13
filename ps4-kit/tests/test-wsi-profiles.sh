@@ -51,8 +51,8 @@ src/util/blake3/libblake3.a
 src/c11/impl/libmesa_util_c11.a
 EOF
 
-NATIVE_WSI="$TMP/native-wsi.cpp"
-: > "$NATIVE_WSI"
+NATIVE_WSI="$ROOT/ps4-kit/mesa/ps4_vk_wsi_videoout.cpp"
+[ -f "$NATIVE_WSI" ]
 FIXTURE="$TMP/fixture"
 mkdir -p "$FIXTURE"
 cat > "$FIXTURE/main.c" <<'EOF'
