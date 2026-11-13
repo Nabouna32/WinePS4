@@ -76,7 +76,7 @@ Define an application-owned interface with explicit outcomes:
 - report already-loaded / load failure distinctly;
 - never attempt a system-module call from process classes where WinePS4 currently suppresses it (`ps4_outside_process`).
 
-Do not guess a replacement for `ps4_kit_load_module` until the OpenOrbis module-loading API, required initialization order, and process restrictions are verified from public headers/source. Keep the adapter injectable so host-side tests can exercise failure paths without a PS4.
+Do not guess a replacement for `ps4_kit_load_module` until the OpenOrbis module-loading API, required initialization order, and process restrictions are verified from public headers/source. The OpenOrbis libkernel reference itself cautions that many known function names still lack fully reversed prototypes, so a plausible symbol name is not enough evidence: https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/blob/master/docs/MD/PS4%20Libraries/Libkernel.md. Keep the adapter injectable so host-side tests can exercise failure paths without a PS4.
 
 ### C. Isolate NetCtl
 
