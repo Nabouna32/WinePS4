@@ -44,7 +44,7 @@ so choosing one automatically would be unsafe.
 - `scripts/build-mesa.sh`: clean-room Mesa 26.0.8-family cross-build driver based on the public DolphinPS4 recipe; it builds the static RADV target set from the external Mesa checkout.
 - `mesa/README.md`: records the public Mesa 26.0.8 / GNM build-root candidate. No Mesa source tree or compiled archives are vendored.
 
-Host-only checks passed in [GitHub Actions run #168](https://github.com/Nabouna32/WinePS4/actions/runs/43498925858), including WSI syntax and fake-RADV dispatch, as well as environment bootstrap, linker/CMake, fake package-builder and mocked runtime tests. The GNM/patch staging and Mesa build-driver syntax/help tests pass in [run #227](https://github.com/Nabouna32/WinePS4/actions/runs/43500374383). These checks do not validate the PS4 toolchain or generated PKG.
+Host-only checks passed in [GitHub Actions run #168](https://github.com/Nabouna32/WinePS4/actions/runs/43498925858), including WSI syntax and fake-RADV dispatch, as well as environment bootstrap, linker/CMake, fake package-builder and mocked runtime tests. The GNM/patch staging and Mesa build-driver syntax/help tests pass in [run #244](https://github.com/Nabouna32/WinePS4/actions/runs/43500846603). These checks do not validate the PS4 toolchain or generated PKG.
 
 ## Known blockers
 
