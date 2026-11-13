@@ -10,6 +10,8 @@ CMAKE="$ROOT/toolchain/ps4-kit-compat/ps4-kit.cmake"
 [ -f "$NATIVE" ]
 [ -f "$WINDOW" ]
 
+grep -q 'sceSysmoduleLoadModuleInternal' "$NATIVE"
+grep -q 'ORBIS_SYSMODULE_INTERNAL_SYSTEM_SERVICE' "$NATIVE"
 grep -q 'sceVideoOutOpen' "$NATIVE"
 grep -q 'sceVideoOutRegisterBuffers' "$NATIVE"
 grep -q 'sceVideoOutUnregisterBuffers' "$NATIVE"
