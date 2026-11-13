@@ -107,3 +107,17 @@ For Wine's window mode, the adaptation boundary is now explicit:
 6. Preserve correct acquire/present synchronization, swapchain resize/destruction, BGRA/RGBA selection and image lifetime. SSBU's binary-semaphore workaround is PS4-specific and must be checked against Wine's DXVK 3.1.1 usage rather than copied blindly.
 
 The clean-room runtime now provides the exact callback-registration functions used by Wine (`ps4kit_set_window_present`, `ps4kit_set_log`) and internal dispatch helpers (`ps4kit_window_present`, `ps4kit_vulkan_log`). Their host test verifies callback arguments and null/unregistered behavior. This is only the callback bridge; no Vulkan WSI entry points or RADV archives have been linked yet.
+
+## Newer reproducible Mesa build-root evidence
+
+DolphinPS4's pinned public build instructions identify **Mesa 26.0.8** in `$PS4_BUILD_ROOT/src/mesa`, the target sysroot in `$PS4_BUILD_ROOT/sysroot`, and the Meson build in `$PS4_BUILD_ROOT/build/mesa`. Its build script uses a PS4 cross file targeting `x86_64-pc-freebsd12-elf`, header-only libdrm pkg-config metadata (there is no Linux DRM device on PS4), a host `glslangValidator`, and static RADV archives.
+
+References:
+- [DolphinPS4 BUILDING.md](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/BUILDING.md)
+- [DolphinPS4 build-mesa.sh](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/scripts/build-mesa.sh)
+- [DolphinPS4 ps4-love-style.cmake](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/ps4-love-style.cmake)
+- [DolphinPS4 CREDITS](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/CREDITS.md), which identifies the PS4 Mesa GNM backend and patch as MIT/per-file licensed.
+
+The reconstructed `ps4-kit/toolchain/env.sh` now exports the same build-root vocabulary: `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, and `PS4_MESA_BUILD`, defaulting to the existing WinePS4 build tree. This is a path-compatibility step only; no Mesa source is cloned or built yet.
+
+**Important:** the public helper's whole-archive list omits the separate runtime/WSI archives that the public build script also builds. We must establish which archive set belongs to which Mesa patch/revision before using it. Mesa 26.0.8 is a promising later baseline, not a recovered fact about private kit revision `56b3d86`.
