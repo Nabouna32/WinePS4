@@ -9,12 +9,12 @@
 #ifdef __cplusplus
 #define PS4_DIAG_DATA_DIR(path) \
     extern "C" { \
-        __attribute__((used, visibility("default"))) \
+        extern __attribute__((used, visibility("default"))) \
         const char ps4_kit_diag_data_dir[] = path; \
     }
 #else
 #define PS4_DIAG_DATA_DIR(path) \
-    __attribute__((used, visibility("default"))) \
+    extern __attribute__((used, visibility("default"))) \
     const char ps4_kit_diag_data_dir[] = path
 #endif
 
