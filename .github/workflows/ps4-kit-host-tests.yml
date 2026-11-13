@@ -83,3 +83,41 @@ jobs:
           PS4_MESA_SOURCE=/tmp/mesa bash ps4-kit/mesa/prepare-source.sh
           git -C /tmp/mesa diff --check
           git -C /tmp/mesa status --short
+
+  native-wsi-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host clang and Vulkan headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libc++-dev libvulkan-dev
+      - name: Download OpenOrbis PS4 sysroot
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/openorbis"
+          curl -fL --retry 3 \
+            https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
+            -o "$RUNNER_TEMP/openorbis-toolchain.tar.gz"
+          tar -xzf "$RUNNER_TEMP/openorbis-toolchain.tar.gz" -C "$RUNNER_TEMP/openorbis"
+          SDK_HEADER="$(find "$RUNNER_TEMP/openorbis" -path '*/include/orbis/VideoOut.h' -print -quit)"
+          test -n "$SDK_HEADER"
+          SDK_ROOT="${SDK_HEADER%/include/orbis/VideoOut.h}"
+          echo "OO_PS4_TOOLCHAIN=$SDK_ROOT" >> "$GITHUB_ENV"
+          CXX_INCLUDE="$(find "$SDK_ROOT" -path '*/include/c++/v1/vector' -print -quit | sed 's#/vector$##')"
+          if [ -z "$CXX_INCLUDE" ]; then
+            CXX_INCLUDE=/usr/include/c++/v1
+          fi
+          test -f "$CXX_INCLUDE/vector"
+          echo "CXX_INCLUDE=$CXX_INCLUDE" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/vulkan-headers"
+          cp -a /usr/include/vulkan "$RUNNER_TEMP/vulkan-headers/"
+      - name: Syntax-check native VideoOut WSI against OpenOrbis headers
+        run: |
+          clang++ --version
+          clang++ -target x86_64-pc-freebsd12-elf -std=c++20 -fsyntax-only \
+            -D__PS4__ -nostdinc++ -isysroot "$OO_PS4_TOOLCHAIN" \
+            -isystem "$CXX_INCLUDE" -isystem "$OO_PS4_TOOLCHAIN/include" \
+            -I "$RUNNER_TEMP/vulkan-headers" -I ps4-kit/include \
+            -Wall -Wextra -Wno-unused-parameter \
+            ps4-kit/mesa/ps4_vk_wsi_videoout.cpp
