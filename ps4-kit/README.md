@@ -3,8 +3,8 @@
 This directory is a clean-room reconstruction of the shared PS4 build/runtime
 base described by the developer's public ports. Its first compatibility target
 is the unchanged WinePS4 build, but the architecture is being widened to support
-the public projects that explicitly use ps4-kit and the related DolphinPS4 /
-Crema / Resonance build-tree lineage.
+the confirmed direct consumers MGR-PS4, MP3-PS4 and TTT2-PS4, plus the related
+SSBU / DolphinPS4 / Crema / Resonance build-tree lineage.
 
 It is deliberately separate from WinePS4's `app/`, `port/`, `shell/` and
 Wine source. It does not contain Sony SDK files, proprietary libraries, game
@@ -24,11 +24,27 @@ export CLANG_VER=21
 source "$HOME/ps4-kit/toolchain/env.sh"
 ```
 
-The public DolphinPS4, Crema, Resonance, M33, SMW and MGR build documentation
-uses LLVM/Clang 21 with OpenOrbis and libc++ 21. WinePS4 documents private kit
+The public DolphinPS4, Crema, Resonance, M33, SMW, MGR, MP3 and TTT2 build
+documentation uses LLVM/Clang 21 with OpenOrbis and libc++ 21. WinePS4 documents private kit
 revision `56b3d86`, but the exact compiler revision used by that private kit
 has not been recovered. The default in `env.sh` is therefore a public modern
 baseline, not a claim that the private revision used the same toolchain.
+
+## Check the ReXGlue project-injection contract
+
+MGR-PS4 and MP3-PS4 use the same kit include at different CMake project names:
+`CMAKE_PROJECT_sa2_INCLUDE` and `CMAKE_PROJECT_mp3_INCLUDE`. Both explicitly
+pass `PS4_KIT_NETFS=OFF`. A host-only regression test exercises the hook timing,
+runtime target, helper definitions and generated linker script:
+
+```bash
+bash "$PS4_KIT/tests/test-project-injection.sh"
+```
+
+This does not compile or link the PS4 application and does not implement the
+private NetFS component. See
+[DIRECT-CONSUMER-AUDIT.md](../docs/ps4-kit-reconstruction/DIRECT-CONSUMER-AUDIT.md)
+for the source audit and remaining integration gates.
 
 ## Build the Mesa/RADV prerequisite
 
