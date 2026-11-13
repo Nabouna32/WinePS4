@@ -382,6 +382,9 @@ VkResult VKAPI_CALL wsi_surface_capabilities2(VkPhysicalDevice physical_device,
     return wsi_surface_capabilities(physical_device, info->surface, &caps->surfaceCapabilities);
 }
 
+VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
+                                        uint32_t *count, VkSurfaceFormatKHR *formats);
+
 VkResult VKAPI_CALL wsi_surface_formats2(VkPhysicalDevice physical_device,
                                              const VkPhysicalDeviceSurfaceInfo2KHR *info,
                                              uint32_t *count, VkSurfaceFormat2KHR *formats)
