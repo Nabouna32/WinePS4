@@ -329,7 +329,27 @@ VkResult VKAPI_CALL wsi_surface_support(VkPhysicalDevice physical_device, uint32
     return VK_SUCCESS;
 }
 
-VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice, VkSurfaceKHR surface,
+VkImageUsageFlags supported_linear_usage(VkPhysicalDevice physical_device, VkFormat format)
+{
+    auto get_properties = instance_function<PFN_vkGetPhysicalDeviceImageFormatProperties>(
+        g_instance, "vkGetPhysicalDeviceImageFormatProperties");
+    if (!get_properties) return 0;
+    constexpr VkImageUsageFlags candidates[] = {
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT
+    };
+    VkImageUsageFlags supported = 0;
+    for (VkImageUsageFlags usage : candidates) {
+        VkImageFormatProperties properties{};
+        if (get_properties(physical_device, format, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_LINEAR,
+                           usage, 0, &properties) == VK_SUCCESS)
+            supported |= usage;
+    }
+    return supported;
+}
+
+VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
                                              VkSurfaceCapabilitiesKHR *caps)
 {
     if (!caps || !valid_surface(surface)) return VK_ERROR_SURFACE_LOST_KHR;
@@ -344,9 +364,9 @@ VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice, VkSurfaceKHR surf
     caps->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     caps->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     caps->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    caps->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    const VkImageUsageFlags rgba = supported_linear_usage(physical_device, VK_FORMAT_R8G8B8A8_UNORM);
+    const VkImageUsageFlags bgra = supported_linear_usage(physical_device, VK_FORMAT_B8G8R8A8_UNORM);
+    caps->supportedUsageFlags = rgba & bgra;
     return VK_SUCCESS;
 }
 
@@ -362,18 +382,19 @@ VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice, VkSurfaceKHR surface,
                                         uint32_t *count, VkSurfaceFormatKHR *formats)
 {
     if (!count || !valid_surface(surface)) return VK_ERROR_SURFACE_LOST_KHR;
-    constexpr VkSurfaceFormatKHR supported[] = {
-        {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}
-    };
+    std::vector<VkSurfaceFormatKHR> supported;
+    if (supported_linear_usage(g_physical_device, VK_FORMAT_R8G8B8A8_UNORM) & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+        supported.push_back({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR});
+    if (supported_linear_usage(g_physical_device, VK_FORMAT_B8G8R8A8_UNORM) & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+        supported.push_back({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR});
     if (!formats) {
-        *count = static_cast<uint32_t>(std::size(supported));
+        *count = static_cast<uint32_t>(supported.size());
         return VK_SUCCESS;
     }
-    const uint32_t copied = std::min<uint32_t>(*count, static_cast<uint32_t>(std::size(supported)));
-    std::copy_n(std::begin(supported), copied, formats);
+    const uint32_t copied = std::min<uint32_t>(*count, static_cast<uint32_t>(supported.size()));
+    std::copy_n(supported.begin(), copied, formats);
     *count = copied;
-    return copied < std::size(supported) ? VK_INCOMPLETE : VK_SUCCESS;
+    return copied < supported.size() ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
 VkResult VKAPI_CALL wsi_present_modes(VkPhysicalDevice, VkSurfaceKHR surface,
@@ -491,7 +512,8 @@ VkResult VKAPI_CALL wsi_create_swapchain(VkDevice device, const VkSwapchainCreat
     constexpr VkImageUsageFlags supported_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if (!info->imageUsage || (info->imageUsage & ~supported_usage))
+    if (!info->imageUsage || (info->imageUsage & ~supported_usage) ||
+        (info->imageUsage & ~supported_linear_usage(g_physical_device, info->imageFormat)))
         return VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR;
     if (info->minImageCount < 2 || info->minImageCount > 3 ||
         info->preTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
