@@ -34,6 +34,13 @@ The implementation is independent and does not copy those files.
 - Identified the explicit private runtime call `ps4_kit_load_module()` for Net/NetCtl and the resolver dependency that still needs an independent implementation or verified sysroot support.
 - This is a source audit only. No network code was changed and no PS4 networking test has been run.
 
+## Exact WinePS4 Vulkan callback contract recovered
+
+- The checked-in `patches/wine-ps4.patch` adds `dlls/wineps4.drv/vulkan.c` and declares `ps4kit_set_window_present()` plus `ps4kit_set_log()`.
+- Its frame callback carries the host surface handle, pixel pointer, width/height, row pitch and BGRA flag. Wine maps that surface to a client HWND and forwards the frame to the existing desktop display socket.
+- Wine's program windows are headless and window-sized; the desktop alone owns VideoOut. This differs from the public full-screen VideoOut WSI implementations.
+- The same audit confirms kit-owned `ps4_kit.h` / `ps4_kit_diag.h` requirements: heap options/configuration, minimum thread stack, thread priorities and `PS4_DIAG_DATA_DIR`.
+
 ## New public WSI evidence (not yet integrated)
 
 - SSBU's public MIT-licensed PS4 port contains `port/ps4_vk_wsi.cpp` / `.h`, implementing a headless Vulkan surface and `VK_KHR_swapchain` on VideoOut over statically linked RADV. Its header exposes the `vk_get_instance_proc_addr()` shape that later ports describe as the ps4-kit Vulkan entry point.
