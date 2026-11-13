@@ -13,7 +13,7 @@ A recent public PS4 port documents a reproducible Mesa build environment:
 - host Meson/Mako/PyYAML environment and `glslangValidator` under the build root;
 - a PS4 GNM implementation of Mesa's AMDGPU kernel interface, `src/amd/common/ac_ps4_drm.c`.
 
-The GNM winsys file is explicitly marked MIT. The matching public PS4 Mesa integration patch is also identified as MIT/per-file in DolphinPS4's `CREDITS.md`; both are included with separate MIT notices. `prepare-source.sh` uses `git apply --check` before applying the patch to an external Mesa checkout, then stages the winsys. It fails closed if the patch does not match.
+The GNM winsys file is explicitly marked MIT. DolphinPS4's `CREDITS.md` describes the Mesa port as MIT/per-file, and this tree carries separate notices for the winsys and integration patch. There is a provenance discrepancy to keep visible: OrbisDesk's `THIRD_PARTY.md` describes the Mesa patches originating in DolphinPS4 as GPL-2.0-or-later while identifying the winsys itself as MIT. Preserve the per-file notices and re-check exact provenance before copying further hunks; do not infer a blanket licence from the repository root. `prepare-source.sh` uses `git apply --check` before applying the patch to an external Mesa checkout, then stages the winsys. It fails closed if the patch does not match.
 
 The environment entry point now exports:
 
@@ -38,3 +38,10 @@ The dispatch path is no longer an open question: unchanged `port/ps4_unixlibs.c`
 ## Real upstream patch check
 
 GitHub Actions run [#265](https://github.com/Nabouna32/WinePS4/actions/runs/43503275708) now fetches the official upstream `mesa-26.0.8` tag from Mesa's GitLab repository and runs `prepare-source.sh` against that real source tree. The dedicated `mesa-upstream-patch` job passed: the patch applies cleanly, the GNM source is staged, and `git diff --check` reports no whitespace errors. This validates patch applicability to the public 26.0.8 tag; it does not yet validate the PS4 cross-build or resulting archives.
+
+
+## Wine-specific placed mappings (not implemented yet)
+
+OrbisDesk's W126 hardware test confirms that 32-bit DXVK needs a CPU-only alias of the same direct-memory BO pages at Wine's reserved address, using `sceKernelMapDirectMemory(..., MAP_FIXED, ...)` and 16 KiB alignment. Its generator is based on Crema's Wine winsys, not the DolphinPS4 file currently staged here: the generator expects a `write_combined` flag and `ps4_flush_cpu_cache()` cache-coherency helper absent from our current source. The cache flush is required to prevent dirty cached lines from a previous onion owner overwriting data after pages are reused as write-combined garlic.
+
+Do not apply `patch-mesa-placed.py` verbatim. First port the missing coherency prerequisites (or deliberately select and audit Crema's complete winsys), then implement fixed mapping and inspect RADV's unmap path and Wine's reservation ownership. Also resolve the private-kit `sceKernelEnableDmemAliasing` prerequisite. See [the independent Wine-port evidence](../../docs/ps4-kit-reconstruction/INDEPENDENT-WINE-PORT-EVIDENCE.md) and [the Mesa integration trace](../../docs/ps4-kit-reconstruction/MESA-LINK-TRACE.md).
