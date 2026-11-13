@@ -65,7 +65,7 @@ but that behavior has not been established for this WinePS4/Mesa combination.
 ## 3. Memory requirements
 
 The current implementation requires a memory type satisfying
-`HOST_VISIBLE | HOST_COHERENT` for linear swapchain images. It uses
+`DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT` for linear swapchain images. It uses
 `vkGetImageSubresourceLayout()` for the mapped base offset and row pitch rather
 than assuming `width * 4`. Non-coherent memory fallback (flush/invalidate) is not
 implemented yet; the WSI must fail swapchain creation if no coherent host-visible
