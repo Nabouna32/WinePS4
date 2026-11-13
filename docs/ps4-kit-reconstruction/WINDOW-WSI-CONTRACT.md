@@ -76,21 +76,29 @@ allocation, but its fixed 1920x1080 VideoOut registration, VideoOut flips, and
 full-screen lifecycle are incompatible with this contract. No part of that
 full-screen path is copied into the Wine window-mode WSI.
 
-## 4. Dispatch integration is still unresolved
+## 4. Dispatch integration recovered
 
-The WinePS4 patch's surface callback establishes the HWND-to-`VkSurfaceKHR`
-mapping, but the patch excerpt does not by itself establish how calls such as
-`vkCreateHeadlessSurfaceEXT`, `vkGetPhysicalDeviceSurfaceCapabilitiesKHR`,
-`vkCreateSwapchainKHR`, and `vkQueuePresentKHR` are routed to a kit-owned
-implementation instead of RADV's default dispatch.
+The route is explicitly present in the unchanged `port/ps4_unixlibs.c`:
 
-The public SSBU port solves this for DXVK by exposing a custom
-`vk_get_instance_proc_addr()` and patching DXVK's loader to use it. WinePS4 has
-no equivalent loader hook in the checked-in patch. Its
-`PS4DRV_VulkanInit()` receives a `vulkan_handle` parameter but currently does
-not use it. Before writing the WSI translation unit or removing the CMake
-fail-closed guard, the actual Wine/Mesa dispatch route must be proven. Merely
-adding a C++ source file to `wineps4` does not make Vulkan calls reach it.
+- Wine registers a synthetic `libvulkan.so.1` in `ps4_unixlibs[]`;
+- its `vkGetInstanceProcAddr` export calls `ps4kit_vk_get_instance_proc_addr()`;
+- its `vkGetDeviceProcAddr` export obtains the kit's device-proc function from
+  that same instance-proc entry point and forwards device lookups to it.
+
+Therefore the kit WSI translation unit must export the C ABI symbol
+`ps4kit_vk_get_instance_proc_addr(void)`, returning the kit-owned
+`PFN_vkGetInstanceProcAddr`. It must provide a consistent device dispatch path
+that keeps the swapchain/present interceptors reachable. This is a concrete
+link-time contract, not an inferred loader hook. `PS4DRV_VulkanInit()`'s
+`vulkan_handle` argument is unrelated to this synthetic library path and need
+not be used for WSI dispatch.
+
+The public SSBU port's `vk_get_instance_proc_addr()` is useful as a reference
+for wrapping RADV's `vk_icdGetInstanceProcAddr` and `vk_common_GetDeviceProcAddr`,
+but its DXVK-specific exported name and VideoOut implementation must not be
+copied as-is. The CMake fail-closed guard can be removed only after the Wine
+symbol, the full window-mode WSI, and the actual Mesa link closure are all
+implemented and tested.
 
 ## 5. Evidence and limits
 
