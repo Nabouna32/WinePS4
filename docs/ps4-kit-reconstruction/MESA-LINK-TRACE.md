@@ -62,3 +62,17 @@ For WinePS4's target kit revision `56b3d86`, the exact Mesa revision and archive
 ## Scope reminder
 
 This work is justified only because `ps4_kit_link_mesa(wineps4)` is a direct blocker to compiling the current application. Do not expand into graphics performance or new rendering features.
+
+## Additional public VideoOut WSI implementation found
+
+A later public port provides a concrete, licensed implementation candidate rather than only an API description:
+
+- [SSBU `port/ps4_vk_wsi.cpp`](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/port/ps4_vk_wsi.cpp)
+- [SSBU `port/ps4_vk_wsi.h`](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/port/ps4_vk_wsi.h)
+- [SSBU MIT licence](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/LICENSE)
+
+The implementation wraps statically linked RADV's ICD/device proc-address functions, exposes `VK_EXT_headless_surface` and `VK_KHR_swapchain`, allocates linear host-visible images, registers their addresses with VideoOut, and submits flips through the Mesa PS4 winsys. Its exported entry point is `dxvk_ps4_vk_get_instance_proc_addr()`; other consumers describe the same conceptual boundary as `ps4kit::vk_get_instance_proc_addr`.
+
+This gives us an implementation to study and potentially adapt under its MIT terms, preserving the copyright and licence notice. It is not yet known whether WinePS4's private kit revision `56b3d86` used the same ABI, and the WSI currently has SSBU-specific logging/trace hooks and assumptions. Do not copy it into the kit unchanged or claim Wine compatibility until its API is reconciled with Wine's `winevulkan` path.
+
+SSBU's [Mesa build script](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/scripts/build-mesa.sh) also pins a Crema Mesa base commit (`7d010de97ed0e5d3b02e0d7c6bf0c829298490c9`) and builds the archive set in its CMake helper. This is a stronger reproducible candidate than a floating Mesa branch, but it is later than WinePS4's kit pin and must be treated as a candidate baseline, not as proof of the original kit's exact Mesa revision.
