@@ -19,8 +19,9 @@
 - Added `ps4-kit/scripts/make-pkg.sh`, implementing the six-argument interface used by the unchanged `app/package.sh`: SFO generation, GP4 generation and `PkgTool.Core pkg_build`. The plain SFO profile honours WinePS4's `SFO_ATTRIBUTE=0x800002`; `NO_RIGHT_SPRX=1` is honoured as passed by the project. It uses local OpenOrbis tools only and does not add SDK binaries to the repository.
 - Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path. The test passes in GitHub Actions with mocked OpenOrbis tools; this does not validate the real OpenOrbis packaging binaries.
 - Added source-level `ps4-kit/include/ps4_kit.h` and `ps4_kit_diag.h` declarations based on WinePS4's actual call sites. The heap-options struct is explicitly a clean-room contract, not a recovered private ABI layout.
-- Added `ps4-kit/runtime/ps4_kit_runtime.c` for `ps4_kit_load_module`, thread-priority helpers, minimum thread stack and a `pthread_create` wrapper. The CMake kit now links this runtime and exposes the include directory without editing WinePS4 project files.
-- Added a host test with mocked Sce APIs for the runtime wrapper. The host compile/run passes in GitHub Actions with mocked Sce imports; a target OpenOrbis build is still required.
+- Added `ps4-kit/runtime/ps4_kit_runtime.c` for `ps4_kit_load_module`, thread-priority helpers, minimum thread stack, a `pthread_create` wrapper, and the Wine Vulkan callback registration/dispatch bridge (`ps4kit_set_window_present`, `ps4kit_set_log`). The CMake kit now links this runtime and exposes the include directory without editing WinePS4 project files.
+- Added `ps4-kit/include/ps4_kit_vulkan.h`; the runtime test now verifies the exact frame callback payload, log callback and unregistered-callback behavior.
+- Added a host test with mocked Sce APIs for the runtime wrapper. The host compile/run passes in GitHub Actions with mocked Sce imports and callbacks; a target OpenOrbis build is still required.
 - Added installation and packaging-boundary notes under `ps4-kit/`.
 - No files under `app/`, `port/`, `shell/`, or the Wine source were changed to integrate the kit. The intended installation is a symlink at `$HOME/ps4-kit`.
 
@@ -49,7 +50,7 @@ The implementation is independent and does not copy those files.
 - The checked-in `patches/wine-ps4.patch` adds `dlls/wineps4.drv/vulkan.c` and declares `ps4kit_set_window_present()` plus `ps4kit_set_log()`.
 - Its frame callback carries the host surface handle, pixel pointer, width/height, row pitch and BGRA flag. Wine maps that surface to a client HWND and forwards the frame to the existing desktop display socket.
 - Wine's program windows are headless and window-sized; the desktop alone owns VideoOut. This differs from the public full-screen VideoOut WSI implementations.
-- The same audit confirms kit-owned `ps4_kit.h` / `ps4_kit_diag.h` requirements: heap options/configuration, minimum thread stack, thread priorities and `PS4_DIAG_DATA_DIR`.
+- The same audit confirms kit-owned `ps4_kit.h` / `ps4_kit_diag.h` requirements: heap options/configuration, minimum thread stack, thread priorities and `PS4_DIAG_DATA_DIR`. The exact `ps4kit_set_window_present` / `ps4kit_set_log` bridge is now implemented and host-tested; the actual Vulkan WSI is not.
 
 ## New public WSI evidence (not yet integrated)
 
