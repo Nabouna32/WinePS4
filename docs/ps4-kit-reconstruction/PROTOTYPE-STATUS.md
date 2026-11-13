@@ -99,4 +99,4 @@ bash ps4-kit/scripts/tests/test_make_pkg.sh
 bash ps4-kit/runtime/tests/run-host-tests.sh
 ```
 
-GitHub Actions run [#90](https://github.com/Nabouna32/WinePS4/actions/runs/43447560868) passed the earlier three host-test jobs: linker/CMake, package script and runtime wrappers. The new WSI syntax-check was subsequently added and its first run failed; it is being corrected before claiming the new test passes. Host-side tests with synthetic/fake dependencies are not a substitute for the exact OpenOrbis toolchain, the matching Mesa build, or a real PS4 presentation test.
+GitHub Actions run [#164](https://github.com/Nabouna32/WinePS4/actions/runs/43498783224) passes all four jobs on the branch, including the new Vulkan WSI C++ syntax check against host Vulkan-Headers and a fake-RADV dispatch test that verifies kit interception and fallback forwarding. Run [#90](https://github.com/Nabouna32/WinePS4/actions/runs/43447560868) remains the earlier baseline. These are host-side tests with synthetic/fake dependencies; they do not validate the exact OpenOrbis toolchain, the matching Mesa build, or real PS4 presentation.
