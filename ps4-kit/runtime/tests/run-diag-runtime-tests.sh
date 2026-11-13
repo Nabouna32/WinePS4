@@ -28,8 +28,11 @@ static void *worker_main(void *unused)
 {
     (void)unused;
     ps4_sampler_register_thread("worker");
-    while (!atomic_load_explicit(&g_stop, memory_order_relaxed))
-        atomic_fetch_add_explicit(&g_work, 1ul, memory_order_relaxed);
+    while (!atomic_load_explicit(&g_stop, memory_order_relaxed)) {
+        unsigned long work = atomic_fetch_add_explicit(&g_work, 1ul, memory_order_relaxed);
+        if ((work & 0x3fful) == 0)
+            ps4_thread_cpu_tick();
+    }
     return NULL;
 }
 
