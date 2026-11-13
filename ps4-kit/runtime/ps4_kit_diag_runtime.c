@@ -295,7 +295,7 @@ void ps4_dump_thread_stacks(const char *path, const char *reason)
     unsigned char signaled[PS4_KIT_DIAG_MAX_THREADS] = {0};
     unsigned int count;
     unsigned int i;
-    int fd = -1;
+    int fd;
     char default_path[256];
     char line[256];
 
@@ -312,7 +312,7 @@ void ps4_dump_thread_stacks(const char *path, const char *reason)
     if (fd < 0)
         return;
 
-    snprintf(line, sizeof(line), "==== %s ====\n", reason ? reason : "thread dump");
+    snprintf(line, sizeof(line), "==== %s ====\\n", reason ? reason : "thread dump");
     write_all(fd, line, strlen(line));
 
     pthread_mutex_lock(&g_thread_lock);
@@ -326,20 +326,22 @@ void ps4_dump_thread_stacks(const char *path, const char *reason)
 
     for (i = 0; i < count; i++) {
         g_threads[i].dump_done = 0;
-        if (pthread_kill(handles[i], SIGUSR1) != 0) {
-            snprintf(line, sizeof(line), "-- %s tid=%d: signal failed\n", names[i], tids[i]);
-            write_all(fd, line, strlen(line));
-            continue;
-        }
-        wait_for_dump(&g_threads[i]);
-        if (g_threads[i].dump_done) {
+        if (pthread_kill(handles[i], SIGUSR1) == 0)
+            signaled[i] = 1;
+    }
+    wait_for_dump_set(count, signaled);
+
+    for (i = 0; i < count; i++) {
+        if (!signaled[i]) {
+            snprintf(line, sizeof(line), "-- %s tid=%d: signal failed\\n", names[i], tids[i]);
+        } else if (g_threads[i].dump_done) {
             snprintf(line, sizeof(line),
-                     "-- %s tid=%d rip=0x%llx rsp=0x%llx\n",
+                     "-- %s tid=%d rip=0x%llx rsp=0x%llx\\n",
                      names[i], tids[i],
                      (unsigned long long)g_threads[i].rip,
                      (unsigned long long)g_threads[i].rsp);
         } else {
-            snprintf(line, sizeof(line), "-- %s tid=%d: signal timed out\n", names[i], tids[i]);
+            snprintf(line, sizeof(line), "-- %s tid=%d: signal timed out\\n", names[i], tids[i]);
         }
         write_all(fd, line, strlen(line));
     }
