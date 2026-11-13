@@ -2,7 +2,7 @@
 
 Priority: **compile and package the existing WinePS4 revision unchanged**. Do not spend time improving networking, application behavior or adding features unless a concrete build failure requires it.
 
-The target is the current public build described by `docs/BUILDING.md`, not an imagined clean-room redesign.
+The target is the current public build described by `docs/BUILDING.md`, not an imagined clean-room redesign. **Do not modify WinePS4's app/runtime behavior to make the reconstruction easier**: all missing compatibility behavior must be supplied by the kit boundary.
 
 ## 1. Exact build graph from WinePS4
 
@@ -59,7 +59,7 @@ Important: `ps4_kit_link_mesa` is the largest known missing build blocker. It is
 - Pin the Mesa source revision and all build dependencies from public evidence.
 - Recreate the cross Meson configuration and the PS4 RADV winsys integration using independently implemented code or code with clear compatible licences.
 - Identify every static archive required by WinePS4's actual Vulkan imports; use whole-archive only where weak dispatch references require it.
-- Identify and implement the minimum VideoOut WSI required by WinePS4's current `winevulkan`/window path. Do not claim that a generic headless WSI is equivalent.
+- Implement the minimum Wine window-mode WSI required by the checked-in `wineps4.drv/vulkan.c`: headless surface creation, window-sized CPU-readable swapchain images, present synchronization, and the exact `ps4kit_set_window_present` / `ps4kit_set_log` callbacks. The desktop remains the sole VideoOut owner. Do not substitute a full-screen VideoOut swapchain.
 - Verify symbol closure with the exact WinePS4 link command; classify each unresolved symbol as OpenOrbis, RADV, WSI, or missing runtime.
 
 ### Milestone D — packaging
