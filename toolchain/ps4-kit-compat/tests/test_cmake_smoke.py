@@ -67,15 +67,15 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
             (project / "CMakeLists.txt").write_text(
                 "cmake_minimum_required(VERSION 3.20)\n"
                 "set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)\n"
-                "project(compat_smoke C CXX)\n"
+                "project(wineps4 C CXX)\n"
                 "set(PS4_MESA_BUILD \"" + mesa_build.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_MESA_SOURCE \"" + mesa_source.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_VULKAN_HEADERS \"" + vulkan_headers.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_KIT_MESA_WSI_SOURCE \"" + wsi_source.as_posix() + "\" CACHE FILEPATH \"\")\n"
                 "include(\"" + str(COMPAT / "ps4-kit.cmake") + "\")\n"
                 "add_executable(sample main.c)\n"
-                "ps4_kit_app(sample)\n"
-                "ps4_kit_link_mesa(sample)\n", encoding="utf-8")
+                "ps4_kit_link_mesa(sample)\n"
+                "ps4_kit_app(sample)\n", encoding="utf-8")
             build = work / "build"
             result = subprocess.run(
                 ["cmake", "-S", str(project), "-B", str(build), f"-DOPENORBIS={openorbis}"],
@@ -113,7 +113,7 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
                  f"-DOPENORBIS={openorbis}"],
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             self.assertNotEqual(missing_wsi.returncode, 0)
-            self.assertIn("Wine window-mode Vulkan WSI is not reconstructed yet", missing_wsi.stdout)
+            self.assertIn("Wine window WSI source not found", missing_wsi.stdout)
 
 
 if __name__ == "__main__":
