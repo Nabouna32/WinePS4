@@ -99,6 +99,7 @@ jobs:
           curl -fL --retry 3 \
             https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
             -o "$RUNNER_TEMP/openorbis-toolchain.tar.gz"
+          echo "3c7cd5bb593ca74fa1c13fd59f3938dc0fc07985167f7275063019e63abe4526  $RUNNER_TEMP/openorbis-toolchain.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/openorbis-toolchain.tar.gz" -C "$RUNNER_TEMP/openorbis"
           SDK_HEADER="$(find "$RUNNER_TEMP/openorbis" -path '*/include/orbis/VideoOut.h' -print -quit)"
           test -n "$SDK_HEADER"
