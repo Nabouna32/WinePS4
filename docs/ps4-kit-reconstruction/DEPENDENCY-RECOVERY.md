@@ -71,11 +71,13 @@ The upstream WinePS4 BUILDING guide says:
 - Its configure flags enable only the needed image decoders/demuxers/parsers, disable network,
   programs and shared libraries, and omit zlib because Wine's stb path already handles PNG.
 
-The local `rpcs3` checkout and its PS4 wrapper directory are referenced by the public WinePS4
-build script and M33/TOTK documentation, but their exact publicly accessible repository URL
-has not yet been established from the credits/search trail. Do not assume stock upstream RPCS3
-contains those PS4 wrappers. This is the remaining provenance/access question for reproducing
-the exact FFmpeg build from source.
+The local `rpcs3` checkout and its PS4 wrapper directory are referenced by WinePS4, M33 and TOTK.
+The original public repository URL for that RPCS3 workspace is still unlocated, but TOTK-PS4 and
+DolphinPS4 publish matching Clang 21/OpenOrbis `env.sh`, `ps4-cc` and `ps4-c++` wrappers that
+can be reused rather than recreated. TOTK's [FFmpeg VP9 build script](https://github.com/iHaiDeeZ/TOTK-PS4/blob/aa5ad9b01510f3e6cdf6f6c44408bc3a645727ac/scripts/build-ffmpeg-vp9.sh)
+independently confirms the shared `~/rpcs3-build/src/deps/ffmpeg` source path and that RPCS3's
+`scripts/build-deps.sh ffmpeg` fetches FFmpeg 7.1.1. The remaining provenance/access question is
+the RPCS3 recipe/revision and its PS4-specific FFmpeg patches/configuration, not the wrappers.
 
 ## What to do next
 
