@@ -10,11 +10,11 @@
 - `toolchain/ps4-kit-compat/ps4-kit.cmake`: provisional compatibility surface:
   - `ps4_kit_app(target)` generates the `<target>_eboot/eboot.bin` and `<target>_eboot/<target>.oelf` outputs expected by WinePS4's package script, using OpenOrbis `create-fself`;
   - `check-oelf.cmake` checks for exactly one read-write PT_LOAD before packaging;
-  - `ps4_kit_link_mesa(target)` intentionally stops with a clear error. The private VideoOut WSI is not reproduced, and linking a public RADV archive set alone would not be equivalent.
+  - `ps4_kit_link_mesa(target)` resolves the candidate 16-archive RADV manifest, checks the matching Mesa headers, and wires the whole-archive closure plus a configurable WSI source into the target. It still fails closed because the Wine window-mode WSI source has not been implemented.
 - `toolchain/ps4-kit-compat/tests/test_linker_script.py`: host-side regression tests against a synthetic linker-script fixture.
-- `toolchain/ps4-kit-compat/tests/test_cmake_smoke.py`: configure-only CMake smoke test using a temporary fake OpenOrbis tree; checks generated script, link command redirection and eboot target declaration.
+- `toolchain/ps4-kit-compat/tests/test_cmake_smoke.py`: configure-only CMake smoke test using fake OpenOrbis and Mesa trees; checks generated script, eboot target, RADV archive link closure and WSI source wiring.
 
-- Added `ps4-kit/toolchain/env.sh`, the path-compatible entry point expected by the unchanged WinePS4 scripts. It exposes `PS4_KIT`, `PSB`, `OPENORBIS`, `PS4_SYSROOT`, versioned LLVM tool names and `ps4_cmake`; `CLANG_VER` remains explicit because the WinePS4 kit pin's exact LLVM version is not yet proven.
+- Added `ps4-kit/toolchain/env.sh`, the path-compatible entry point expected by the unchanged WinePS4 scripts. It exposes `PS4_KIT`, `PSB`, `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, `PS4_MESA_BUILD`, `OPENORBIS`, `PS4_SYSROOT`, versioned LLVM tool names and `ps4_cmake`; `CLANG_VER` remains explicit because the WinePS4 kit pin's exact LLVM version is not yet proven.
 - Added `ps4-kit/ps4-kit.cmake` as the existing CMake include path, delegating to the compatibility implementation.
 - Added `ps4-kit/scripts/make-pkg.sh`, implementing the six-argument interface used by the unchanged `app/package.sh`: SFO generation, GP4 generation and `PkgTool.Core pkg_build`. The plain SFO profile honours WinePS4's `SFO_ATTRIBUTE=0x800002`; `NO_RIGHT_SPRX=1` is honoured as passed by the project. It uses local OpenOrbis tools only and does not add SDK binaries to the repository.
 - Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path. The test passes in GitHub Actions with mocked OpenOrbis tools; this does not validate the real OpenOrbis packaging binaries.
@@ -27,7 +27,13 @@
 
 ## Environment bootstrap test
 
-The environment bootstrap test passes locally with a fake SDK and checks the path contract, versioned tool names, sysroot preservation and `ps4_cmake` flag sanitization. It is now a separate CI job; this does not validate an actual PacBrew/OpenOrbis installation.
+The environment bootstrap test passes in CI with a fake SDK and checks the path contract, versioned tool names, sysroot preservation and `ps4_cmake` flag sanitization. This does not validate an actual PacBrew/OpenOrbis installation.
+
+## Mesa archive link integration
+
+- `ps4-kit/mesa/archives.cmake` records the 16-archive candidate whole-archive closure from the public DolphinPS4 helper.
+- `ps4_kit_link_mesa()` now validates this closure and wires the archive list plus the configured Wine WSI source into the target.
+- The CMake smoke test uses fake archives and a fake WSI translation unit to verify the generated link command. The real WSI source and actual Mesa build are still absent.
 
 ## Packaging evidence and limits
 
