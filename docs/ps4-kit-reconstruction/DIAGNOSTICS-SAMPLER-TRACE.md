@@ -100,6 +100,8 @@ implementation when no application override is present.
 
 The branch now has a first-pass clean-room diagnostics runtime in
 ps4-kit/runtime/ps4_kit_diag_runtime.c, included in the shared static runtime.
+It uses a 96-thread watch registry and caps the 1 kHz sampler at four
+registered threads, matching the public sampler's documented bounds.
 It exports the TTT2 symbols and currently implements:
 
 - ps4_data_dir() with an application override through PS4_DIAG_DATA_DIR(path)
@@ -108,7 +110,8 @@ It exports the TTT2 symbols and currently implements:
 - ps4_dump_thread_stacks() with SIGUSR1 snapshots of RIP/RSP for each watched
   thread, written to the caller's requested path;
 - ps4_thread_cpu_tick() and ps4_thread_busy_report(), using self-reported
-  thread CPU time when available and pthread_getcpuclockid() as fallback;
+  thread CPU time when the app calls the tick API and pthread_getcpuclockid()
+  as fallback;
 - a four-thread SIGPROF sampler, nominally 1 kHz, writing per-window sample
   counts and last RIP to samples.log;
 - a 20 ms SIGUSR1 hot-profiler loop writing per-thread sample counts and last
