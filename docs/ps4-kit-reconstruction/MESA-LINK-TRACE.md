@@ -24,7 +24,7 @@ The public `toolchain/ps4-love-style.cmake` implements a `ps4_link_mesa(target)`
 
 The helper comments that the RADV archive already contains the Vulkan runtime and WSI objects, and that weak dispatch-table references require whole-archive linking.
 
-Source: https://github.com/iHaiDeeZ/DolphinPS4/blob/main/toolchain/ps4-love-style.cmake
+Source: https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/ps4-love-style.cmake
 
 ## Public evidence: DolphinPS4 Mesa build script
 
@@ -36,7 +36,7 @@ The public `scripts/build-mesa.sh` independently lists a broader static target s
 
 It also describes a PS4 GNM winsys based on `libSceGnmDriver`, with no Linux DRM device on the console. It builds a patched `ac_ps4_drm.c` into Mesa's AMD common sources.
 
-Source: https://github.com/iHaiDeeZ/DolphinPS4/blob/main/scripts/build-mesa.sh
+Source: https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/scripts/build-mesa.sh
 
 ## Public evidence: xemu-ps4 and MGR-PS4
 
@@ -45,16 +45,16 @@ Source: https://github.com/iHaiDeeZ/DolphinPS4/blob/main/scripts/build-mesa.sh
 
 These are related but not identical layers: the Mesa GNM winsys submits GPU work; the ps4-kit VideoOut WSI presents frames.
 
-## Important discrepancy — do not copy an archive list blindly
+## Build targets versus final link closure
 
-Dolphin's CMake helper omits the separate runtime/WSI archives that its Mesa build script lists. This may reflect a later Mesa build layout, archive merging, or a mismatch between revisions. The helper and build script must be tied to the same Mesa commit before the list is considered authoritative.
+The two Dolphin lists describe different stages, not necessarily conflicting dependencies. The Meson build script lists all static targets produced by the build, including standalone Vulkan runtime/WSI archives. The matching CMake helper links the final whole-archive closure and explicitly comments that `libvulkan_radeon.a` already contains the Vulkan runtime and WSI objects, so it does not link those standalone targets a second time. This is a coherent candidate closure for that Mesa build.
 
-For WinePS4's target kit revision `56b3d86`, the exact Mesa revision and archive closure are not yet known. Do not replace the current deliberate CMake failure with an unverified list.
+For WinePS4's target kit revision `56b3d86`, the exact Mesa revision and archive closure are still not known. Do not replace the current deliberate CMake failure with the public list until the Mesa source/patch version is selected and the archive members are verified.
 
 ## Next verification steps
 
 1. Recover the Mesa source revision and Meson configuration used by WinePS4's ps4-kit `56b3d86`, if any public dependent commit or build trace records it.
-2. Compare archive members and undefined symbols for the Mesa build used by DolphinPS4; verify whether WSI/runtime are merged into `libvulkan_radeon.a` or supplied separately.
+2. Verify the archive members and undefined symbols for the selected Mesa build against the public helper's stated `libvulkan_radeon.a` runtime/WSI aggregation.
 3. Identify the exact symbols WinePS4's final link expects from ps4-kit (including any `ps4kit::` entry points).
 4. Separate RADV/GNM winsys symbols from VideoOut WSI symbols and from generic OpenOrbis runtime hooks.
 5. Only then implement a CMake helper and independent WSI needed by the current WinePS4 source.
