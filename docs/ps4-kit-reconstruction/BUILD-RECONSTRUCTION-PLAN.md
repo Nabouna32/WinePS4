@@ -59,7 +59,7 @@ Important: `ps4_kit_link_mesa` is the largest remaining target-build blocker. Wi
 - [x] Vendor the MIT/per-file GNM winsys and Mesa 26.0.8 integration patch from DolphinPS4 commit `879b3e57f3d3180bcb5f2234db3903688b28cd7d`; preserve separate license notices.
 - [x] Add `prepare-source.sh` with forward/reverse `git apply --check`, and `build-mesa.sh` to generate the PS4 Meson cross file and build the public RADV archive targets.
 - [x] Implement the first clean-room Wine window-mode WSI: headless surface, window-sized linear host-visible swapchain images, row-pitch handling, acquire/present synchronization, and exact desktop callback forwarding. Host syntax and fake-RADV dispatch tests pass.
-- [ ] Pin the Mesa source checkout that matches the patch and run the actual cross build; verify the resulting 16-archive link closure against the WinePS4 link command.
+- [x] Verify patch applicability and GNM staging against the real upstream Mesa 26.0.8 tag in GitHub Actions run [#265](https://github.com/Nabouna32/WinePS4/actions/runs/43503275708); [ ] run the actual PS4 cross build and verify the resulting 16-archive link closure against the WinePS4 link command.
 - [ ] Validate image-format/memory support, resize/recreation, synchronization and desktop presentation on PS4. The desktop remains the sole VideoOut owner; the Wine WSI does not use the public full-screen flip path.
 
 ### Milestone D — packaging
@@ -107,4 +107,4 @@ A milestone is complete only when its evidence is recorded:
 - [ ] `app/package.sh` produces the expected package with all expected paths.
 - [ ] The final package is tested on a PS4 (separate runtime milestone).
 
-Current status: the host-side kit reconstruction now includes environment, linker/CMake, runtime/package prototypes, the MIT Mesa GNM source/patch, a Mesa cross-build driver, and the first Wine window WSI. GitHub Actions run [#244](https://github.com/Nabouna32/WinePS4/actions/runs/43500846603) passes all four host CI jobs. No real OpenOrbis target build, actual Mesa cross-build, end-to-end WinePS4 link, package build or PS4 hardware validation has been completed.
+Current status: the host-side kit reconstruction now includes environment, linker/CMake, runtime/package prototypes, the MIT Mesa GNM source/patch, a Mesa cross-build driver, and the first Wine window WSI. GitHub Actions run [#244](https://github.com/Nabouna32/WinePS4/actions/runs/43500846603) passed all four host CI jobs. Run [#265](https://github.com/Nabouna32/WinePS4/actions/runs/43503275708) additionally passed the real upstream Mesa 26.0.8 patch/staging check; its remaining host jobs are being run. No real OpenOrbis target build, actual Mesa cross-build, end-to-end WinePS4 link, package build or PS4 hardware validation has been completed.
