@@ -18,6 +18,14 @@
 #include <ucontext.h>
 #endif
 
+#if defined(__PS4__)
+#define PS4_KIT_SA_SIGINFO 0x40
+#define PS4_KIT_SA_RESTART 0x0002
+#else
+#define PS4_KIT_SA_SIGINFO SA_SIGINFO
+#define PS4_KIT_SA_RESTART SA_RESTART
+#endif
+
 #if defined(__GNUC__)
 __attribute__((weak, visibility("default")))
 #endif
@@ -145,7 +153,7 @@ static void install_dump_handler_once(void)
     struct sigaction action;
     memset(&action, 0, sizeof(action));
     action.sa_sigaction = dump_signal_handler;
-    action.sa_flags = SA_SIGINFO | SA_RESTART;
+    action.sa_flags = PS4_KIT_SA_SIGINFO | PS4_KIT_SA_RESTART;
     sigemptyset(&action.sa_mask);
     sigaction(SIGUSR1, &action, NULL);
 }
@@ -194,8 +202,18 @@ void ps4_watch_thread(const char *name)
             return;
         }
         index = (int)count;
-        memset(&g_threads[index], 0, sizeof(g_threads[index]));
         g_threads[index].handle = self;
+        g_threads[index].name[0] = 0;
+        g_threads[index].tid = 0;
+        g_threads[index].stack_limit = 0;
+        g_threads[index].dump_done = 0;
+        g_threads[index].rip = 0;
+        g_threads[index].rsp = 0;
+        atomic_init(&g_threads[index].sampler_registered, 0);
+        atomic_init(&g_threads[index].sample_count, 0u);
+        atomic_init(&g_threads[index].sample_last_rip, 0);
+        atomic_init(&g_threads[index].hot_count, 0u);
+        atomic_init(&g_threads[index].hot_last_rip, 0);
         atomic_store_explicit(&g_thread_count, count + 1u, memory_order_release);
     }
 
