@@ -43,17 +43,29 @@ printf '%s\n' "$@" > "$FAKE_NINJA_LOG"
 NINJA
 chmod +x "$tmp/bin/ninja"
 
-printf "amd_common_files = files(\n  'ac_ps4_drm.c',\n)\n" > "$tmp/mesa/src/amd/common/meson.build"
+printf "amd_common_files = files(\n  'ac_linux_drm.c',\n)\n" > "$tmp/mesa/src/amd/common/meson.build"
 git -C "$tmp/mesa" init -q
 git -C "$tmp/mesa" config user.email test@example.invalid
 git -C "$tmp/mesa" config user.name "Mesa Build Test"
 git -C "$tmp/mesa" add .
-git -C "$tmp/mesa" commit -qm "fake patched Mesa"
+git -C "$tmp/mesa" commit -qm "fake Mesa baseline"
+cat > "$tmp/mesa.patch" <<'PATCH'
+diff --git a/src/amd/common/meson.build b/src/amd/common/meson.build
+--- a/src/amd/common/meson.build
++++ b/src/amd/common/meson.build
+@@ -1,3 +1,4 @@
+ amd_common_files = files(
++  'ac_ps4_drm.c',
+   'ac_linux_drm.c',
+ )
+PATCH
+git -C "$tmp/mesa" apply "$tmp/mesa.patch"
 
 export PATH="$tmp/bin:$PATH"
 export PS4_KIT="$ROOT/ps4-kit"
 export PS4_BUILD_ROOT="$tmp/build-root"
 export PS4_MESA_SOURCE="$tmp/mesa"
+export PS4_MESA_PATCH="$tmp/mesa.patch"
 export PS4_MESA_BUILD="$tmp/build-root/build/mesa"
 export PS4_LIBDRM_SOURCE="$tmp/libdrm"
 export PS4_MESA_VENV="$tmp/venv"
