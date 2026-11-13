@@ -69,7 +69,45 @@ Relevant public callers:
 4. Preserve Wine's priority model and 1 MiB minimum stack. The current branch's pthread wrappers are only a first host-tested implementation; verify target TLS, attr mutability and failure behavior with the OpenOrbis runtime.
 5. Keep Wine's window-mode WSI: no VideoOut call in a program process. The native emulator WSI and the Wine desktop callback have different ownership and frame transport.
 
-## 5. Remaining evidence gaps
+
+## 5. First executable reconstruction step: deterministic heap policy planner
+
+The current WinePS4 `port/ps4_main.c` callback was fetched directly from the
+public repository at the pinned base revision. Its actual values and comments
+confirm the three policies without relying on inferred summaries:
+
+- Desktop: direct-first, 384 MiB direct; 128 MiB system-flexible only if direct fails.
+- Normal Wine program: direct-first, 64 MiB main; up to eight 64 MiB direct overflow heaps; preserve 256 MiB direct-memory reserve; six 2 MiB automatic arenas; system and regular flexible pools disabled (`regular_reserve = SIZE_MAX - 32 MiB`).
+- Program launched by the desktop outside the seven local-process slots: regular flexible only, 16 MiB main and up to three further 16 MiB heaps; no direct or system pool.
+
+Added clean-room files:
+
+- `ps4-kit/include/ps4_kit_heap.h`: explicit plan and pool types.
+- `ps4-kit/runtime/ps4_kit_heap_policy.c`: validates options and emits an ordered main-pool attempt list plus overflow/arena limits.
+- `ps4-kit/runtime/tests/test_heap_policy.c`: regression tests for all three exact Wine profiles and invalid combinations.
+- `ps4-kit/runtime/tests/run-heap-policy-tests.sh`: standalone host runner.
+
+The planner is intentionally pure: no syscall, mapping, allocator or memory
+reservation occurs here. This separates a testable policy contract from the
+still-unimplemented target backend and prevents host tests from pretending
+that PS4 memory allocation works. The new CI runtime job runs this test.
+
+Important next backend requirements:
+
+1. Add a target-only mspace allocator over a separately mapped region; dlmalloc
+   2.8.6 is a candidate engine because its upstream allocator source is MIT-0,
+   but the PS4 adapter must be independently written and separately licensed.
+2. Implement direct/system/regular pool acquisition with checked alignment,
+   map rollback and exact size limits; do not treat total direct-memory size as
+   currently available memory.
+3. Enforce the 256 MiB direct reserve when growing overflow heaps; the
+   planner carries the value but does not yet enforce it against kernel state.
+4. Implement per-thread automatic arenas only after cross-thread free/realloc
+   behavior and arena lifetime are proven with mspace footers or an equivalent
+   ownership mechanism.
+5. Preserve the current Wine process callback and all `port/` files unchanged.
+
+## 6. Remaining evidence gaps
 
 - The private kit repository and full object IDs for the prefixes above are not public in the evidence examined here.
 - The exact allocator data structures, lock strategy, auto-arena trigger policy and fallback order are not recovered. Wine's notes constrain externally visible behavior but do not reveal implementation.
