@@ -39,3 +39,8 @@ The repository now contains the kit entry points, runtime/package prototypes, a 
 - Do not commit Sony SDK files, private keys, console credentials, or proprietary binaries.
 - Do not describe this directory as the original ps4-kit.
 - Keep experimental code separate from WinePS4's production build until it passes a real build.
+
+
+## Dependency recovery
+
+The reconstruction now follows an explicit reuse-first inventory: [DEPENDENCY-RECOVERY.md](DEPENDENCY-RECOVERY.md) traces PacBrew's PS4 toolchain/portlibs, the DolphinPS4 → Crema/Resonance → M33 build-tree chain, WinePS4's exact FreeType 2.13.3 and FFmpeg 7.1.1 requirements, and the separate PS4MC/Kodi dependency recipes. It records version mismatches so PacBrew's older FFmpeg 5.0 / FreeType 2.10.1 packages are not mistaken for WinePS4's required builds.
