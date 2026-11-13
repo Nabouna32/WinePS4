@@ -38,16 +38,16 @@ so choosing one automatically would be unsafe.
 - `scripts/make-pkg.sh`: initial OpenOrbis `PkgTool.Core` / `create-gp4`
   implementation, with the SFO attributes expected by WinePS4. Its fake-tool
   smoke test is in `scripts/tests/`.
-- `mesa/README.md`: records the public Mesa 26.0.8 / GNM build-root candidate;
-  no Mesa sources or archives are vendored yet.
+- `mesa/ac_ps4_drm.c`: MIT-licensed PS4 GNM winsys source from DolphinPS4 commit `879b3e57f3d3180bcb5f2234db3903688b28cd7d`, with its separate MIT notice.
+- `mesa/ps4_vk_wsi_window.cpp`: initial clean-room window-mode WSI using the existing Wine callback ABI; host syntax and fake-RADV dispatch tests are in CI.
+- `mesa/prepare-source.sh`: stages the GNM winsys only into an external Mesa tree whose matching Meson patch already includes the file; it refuses to guess the revision-sensitive patch.
+- `mesa/README.md`: records the public Mesa 26.0.8 / GNM build-root candidate. No Mesa source tree or compiled archives are vendored.
 
-Host-only checks are green: [GitHub Actions run #90](https://github.com/Nabouna32/WinePS4/actions/runs/43447560868) passed environment bootstrap, linker/CMake, fake package-builder and mocked runtime tests. These checks do not validate the PS4 toolchain or generated PKG.
+Host-only checks passed in [GitHub Actions run #168](https://github.com/Nabouna32/WinePS4/actions/runs/43498925858), including WSI syntax and fake-RADV dispatch, as well as environment bootstrap, linker/CMake, fake package-builder and mocked runtime tests. The guarded GNM staging test was added afterwards and is awaiting its CI run. These checks do not validate the PS4 toolchain or generated PKG.
 
 ## Known blockers
 
-- `ps4_kit_link_mesa()` still fails closed. WinePS4 expects statically linked
-  RADV plus its window-mode WSI callback ABI; a public full-screen VideoOut
-  WSI is not a drop-in replacement.
+- `ps4_kit_link_mesa()` now includes the window-mode WSI source, but cannot link until the external Mesa source tree, matching Vulkan-Headers sysroot and candidate archive closure are present. The matching Mesa Meson integration patch remains unresolved.
 - The custom heap backend and diagnostics implementation are not present yet.
   The current runtime helpers cover only the thread/module functions.
 - The exact target LLVM version and exact PAID/auth-info values still need to
@@ -55,5 +55,4 @@ Host-only checks are green: [GitHub Actions run #90](https://github.com/Nabouna3
 - The package script has not yet been run against a real OpenOrbis install;
   its fake-tool test cannot establish that the resulting PKG is valid.
 
-No claim is made yet that the project configures, links, packages, or runs on
-hardware.
+No claim is made yet that the project configures, links, packages, or runs on hardware.
