@@ -17,16 +17,16 @@
 - Added `ps4-kit/toolchain/env.sh`, the path-compatible entry point expected by the unchanged WinePS4 scripts. It exposes `PS4_KIT`, `PSB`, `OPENORBIS`, `PS4_SYSROOT`, versioned LLVM tool names and `ps4_cmake`; `CLANG_VER` remains explicit because the WinePS4 kit pin's exact LLVM version is not yet proven.
 - Added `ps4-kit/ps4-kit.cmake` as the existing CMake include path, delegating to the compatibility implementation.
 - Added `ps4-kit/scripts/make-pkg.sh`, implementing the six-argument interface used by the unchanged `app/package.sh`: SFO generation, GP4 generation and `PkgTool.Core pkg_build`. The plain SFO profile honours WinePS4's `SFO_ATTRIBUTE=0x800002`; `NO_RIGHT_SPRX=1` is honoured as passed by the project. It uses local OpenOrbis tools only and does not add SDK binaries to the repository.
-- Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path. The test was run locally against mocked OpenOrbis tools and passed; this does not validate the real OpenOrbis packaging binaries.
+- Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path. The test passes in GitHub Actions with mocked OpenOrbis tools; this does not validate the real OpenOrbis packaging binaries.
 - Added source-level `ps4-kit/include/ps4_kit.h` and `ps4_kit_diag.h` declarations based on WinePS4's actual call sites. The heap-options struct is explicitly a clean-room contract, not a recovered private ABI layout.
 - Added `ps4-kit/runtime/ps4_kit_runtime.c` for `ps4_kit_load_module`, thread-priority helpers, minimum thread stack and a `pthread_create` wrapper. The CMake kit now links this runtime and exposes the include directory without editing WinePS4 project files.
-- Added a host test with mocked Sce APIs for the runtime wrapper. The equivalent host compile/run passed locally; a target OpenOrbis build is still required.
+- Added a host test with mocked Sce APIs for the runtime wrapper. The host compile/run passes in GitHub Actions with mocked Sce imports; a target OpenOrbis build is still required.
 - Added installation and packaging-boundary notes under `ps4-kit/`.
 - No files under `app/`, `port/`, `shell/`, or the Wine source were changed to integrate the kit. The intended installation is a symlink at `$HOME/ps4-kit`.
 
 ## Packaging evidence and limits
 
-The GP4/SFO/PkgTool workflow is visible in public DolphinPS4 and PS4SX2 package helpers. PS4SX2's public variant explicitly supports `SFO_ATTRIBUTE`; WinePS4's unchanged package script already sets that variable to `0x800002`. This supports the initial plain-profile implementation, but it does not prove the exact private kit's defaults. See `ps4-kit/scripts/README.md` for source pins and the remaining validation requirements. The new smoke test uses fake tools and has not been executed here; even when it passes, a real OpenOrbis PKG inspection remains necessary.
+The GP4/SFO/PkgTool workflow is visible in public DolphinPS4 and PS4SX2 package helpers. PS4SX2's public variant explicitly supports `SFO_ATTRIBUTE`; WinePS4's unchanged package script already sets that variable to `0x800002`. This supports the initial plain-profile implementation, but it does not prove the exact private kit's defaults. See `ps4-kit/scripts/README.md` for source pins and the remaining validation requirements. The fake-tool smoke test passes in CI; a real OpenOrbis PKG inspection remains necessary.
 
 ## Evidence and design basis
 
@@ -76,4 +76,4 @@ bash ps4-kit/scripts/tests/test_make_pkg.sh
 bash ps4-kit/runtime/tests/run-host-tests.sh
 ```
 
-The host tests cover generator transformations, fail-closed behavior, CMake configure-time wiring using a synthetic OpenOrbis fixture, and the package script's argument/SFO/output contract using fake tools. They have been added but have **not yet been executed in this session**. They are not a substitute for running the generator against the exact `link.x` installed on the target build host.
+GitHub Actions run [#9](https://github.com/Nabouna32/WinePS4/actions/runs/43444896819) passed all three host-test jobs: linker/CMake, package script and runtime wrappers. These are host-side tests with synthetic/fake dependencies; they are not a substitute for running the generator against the exact `link.x`, compiling with the actual OpenOrbis toolchain, or building a real PKG.
