@@ -15,6 +15,17 @@ static int append_attempt(ps4_kit_heap_plan *plan,
     return 0;
 }
 
+void ps4_kit_heap_options_init(ps4_kit_heap_options *options)
+{
+    if (!options)
+        return;
+
+    memset(options, 0, sizeof(*options));
+    options->log_tag = "ps4-kit";
+    options->source_order = PS4_KIT_HEAP_SYSTEM_FIRST;
+    options->system_pool_max = PS4_KIT_HEAP_DEFAULT_SYSTEM_MAX;
+}
+
 int ps4_kit_heap_make_plan(const ps4_kit_heap_options *options,
                            ps4_kit_heap_plan *plan)
 {
@@ -26,9 +37,16 @@ int ps4_kit_heap_make_plan(const ps4_kit_heap_options *options,
     plan->auto_arena_size = options->auto_arena_size;
     plan->max_auto_arenas = options->max_auto_arenas;
 
+    if (!!options->auto_arena_size != !!options->max_auto_arenas)
+        return -1;
+
+    /*
+     * regular_only is an overriding mode. Wine's callback sets this flag and
+     * regular_max without clearing the shared defaults (system_pool_max is
+     * initialized to 512 MiB); the backend must ignore all other pools.
+     */
     if (options->regular_only) {
-        if (!options->regular_max || options->direct_max ||
-            options->system_pool_max || options->overflow_direct_max)
+        if (!options->regular_max)
             return -1;
         if (append_attempt(plan, PS4_KIT_POOL_REGULAR_FLEXIBLE,
                            options->regular_max) != 0)
@@ -70,11 +88,14 @@ int ps4_kit_heap_make_plan(const ps4_kit_heap_options *options,
                        options->regular_max) != 0)
         return -1;
 
+    if (!plan->main_attempt_count)
+        return -1;
+
     if (options->max_overflow_heaps) {
-        if (!options->overflow_direct_max)
-            return -1;
         plan->overflow_pool = PS4_KIT_POOL_DIRECT;
-        plan->overflow_heap_size = options->overflow_direct_max;
+        plan->overflow_heap_size = options->overflow_direct_max
+            ? options->overflow_direct_max
+            : PS4_KIT_HEAP_DEFAULT_OVERFLOW_SIZE;
         plan->max_overflow_heaps = options->max_overflow_heaps;
         plan->overflow_reserve = options->overflow_direct_reserve;
     } else if (options->overflow_direct_max ||
