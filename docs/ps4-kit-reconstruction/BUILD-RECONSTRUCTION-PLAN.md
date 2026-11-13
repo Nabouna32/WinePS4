@@ -12,10 +12,11 @@ WinePS4's app/runtime behavior to make the reconstruction easier**: all missing
 compatibility behavior must be supplied by the kit boundary.
 
 The broader project list and evidence are in
-[PROJECT-COMPATIBILITY-MATRIX.md](PROJECT-COMPATIBILITY-MATRIX.md). In
-particular, MGR-PS4 names a second private kit revision (`79fba0f`) and needs
-a native VideoOut profile; WinePS4's `56b3d86` build needs its distinct
-window-desktop WSI.
+[PROJECT-COMPATIBILITY-MATRIX.md](PROJECT-COMPATIBILITY-MATRIX.md) and
+[DIRECT-CONSUMER-AUDIT.md](DIRECT-CONSUMER-AUDIT.md). MGR-PS4 (`79fba0f`)
+and MP3-PS4 expose CMake project-injection hooks with NetFS disabled;
+TTT2-PS4 documents kit revision `ff30ff6` and a separate CMake path. WinePS4
+(`56b3d86`) needs its distinct window-desktop WSI.
 
 ## 1. Exact build graph from WinePS4
 
@@ -100,7 +101,30 @@ CMake contract and the app's VideoOut/RADV symbols; do not assume Wine's
 - [ ] Reconstruct a separate `native-videoout` WSI profile for MGR and the
   shared emulator/recompilation projects. Do not reuse the Wine desktop WSI.
 
-### Milestone D — MGR direct-consumer compatibility
+### Milestone D — ReXGlue direct-consumer compatibility
+
+- [x] Audit the public MGR and MP3 build scripts: they use
+  `CMAKE_PROJECT_sa2_INCLUDE` and `CMAKE_PROJECT_mp3_INCLUDE` respectively,
+  and both pass `PS4_KIT_NETFS=OFF`.
+- [x] Add a host-only configure regression test for both project() injection
+  paths: `bash ps4-kit/tests/test-project-injection.sh`.
+- [ ] Audit the full MGR/MP3 patched CMakeLists and generated link commands;
+  identify which target receives the runtime, RADV archive closure, ICD entry
+  point, native VideoOut WSI and system-library imports.
+- [ ] Implement the ReXGlue/native-VideoOut profile only after that symbol and
+  link-map audit; do not silently reuse Wine's window-desktop WSI.
+- [ ] Validate MGR's `sa2_eboot` and MP3's `mp3_eboot` links and package
+  outputs independently, with their own content manifests.
+
+### Milestone E — TTT2 direct-consumer compatibility
+
+- [ ] Audit `TTT2-PS4/port/ps4/CMakeLists.txt`, runtime sources and its link
+  command; its public script does not use the MGR/MP3 project injection path.
+- [ ] Validate the `ttt2_eboot` target, XMA/WMA FFmpeg subset, DXVK/vkd3d
+  inputs, native VideoOut WSI and package helper.
+- [ ] Confirm the kit revision and runtime ABI expected by TTT2 (`ff30ff6`).
+
+### Milestone F — shared SDK artifacts and project adapters
 
 - [ ] Audit MGR's CMake project injection, required kit symbols and packaging
   arguments at the pinned public MGR commit.
