@@ -27,7 +27,13 @@ so choosing one automatically would be unsafe.
   LLVM tools and the `ps4_cmake` helper.
 - `ps4-kit.cmake`: compatibility entry point used by the unchanged app and
   launcher CMake files; delegates to the clean-room interface under
-  `toolchain/ps4-kit-compat/`.
+  `toolchain/ps4-kit-compat/` and exposes the kit headers.
+- `include/ps4_kit.h` / `ps4_kit_diag.h`: source-level declarations reconstructed
+  from WinePS4's own call sites. The heap-options layout is a new paired
+  clean-room contract, not a recovered private binary ABI.
+- `runtime/ps4_kit_runtime.c`: initial implementations for thread priorities,
+  minimum thread stack, and OpenOrbis internal system-module loading. The
+  wrapper is linked through `ps4_kit_app()`; a host test uses mocked Sce APIs.
 - `scripts/make-pkg.sh`: initial OpenOrbis `PkgTool.Core` / `create-gp4`
   implementation, with the SFO attributes expected by WinePS4. Its fake-tool
   smoke test is in `scripts/tests/`.
@@ -37,9 +43,10 @@ so choosing one automatically would be unsafe.
 - `ps4_kit_link_mesa()` still fails closed. WinePS4 expects statically linked
   RADV plus its window-mode WSI callback ABI; a public full-screen VideoOut
   WSI is not a drop-in replacement.
-- The private kit runtime headers/functions, exact target LLVM version, and
-  exact PAID/auth-info values still need to be recovered or independently
-  implemented.
+- The custom heap backend and diagnostics implementation are not present yet.
+  The current runtime helpers cover only the thread/module functions.
+- The exact target LLVM version and exact PAID/auth-info values still need to
+  be recovered or independently validated.
 - The package script has not yet been run against a real OpenOrbis install;
   its fake-tool test cannot establish that the resulting PKG is valid.
 
