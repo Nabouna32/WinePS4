@@ -231,7 +231,7 @@ void ps4_watch_thread(const char *name)
              (name && name[0]) ? name : "?");
     g_threads[index].tid = current_thread_id();
     g_threads[index].stack_limit =
-        (uintptr_t)__builtin_frame_address(0) + sizeof(uintptr_t);
+        (uintptr_t)__builtin_frame_address(0) + 16u;
     g_tls_thread_index = index;
     pthread_mutex_unlock(&g_thread_lock);
 }
