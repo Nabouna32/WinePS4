@@ -156,3 +156,16 @@ Required next implementation/test sequence:
 3. Integrate the use_fixed_addr branch and report the correct minPlacedMemoryMapAlignment.
 4. Reconcile the private-kit sceKernelEnableDmemAliasing prerequisite before the first placed map; do not assume the OrbisDesk patch's excerpt proves this prerequisite is unnecessary.
 5. Test 64-bit and 32-bit DXVK separately on hardware; host tests can only validate the policy and mocked call order.
+
+
+## W126 implementation is not a drop-in patch for the current winsys
+
+A follow-up source audit found that OrbisDesk invokes its placed-map generator only in its Wine build variant, after switching from the DolphinPS4 source tree to Crema's later `port/mesa/ac_ps4_drm.c`. The generator references `b->write_combined` and `ps4_flush_cpu_cache()`; neither exists in the exact DolphinPS4 winsys blob currently staged in this branch (`a4589f0601c889a200a93d59968c763daff4aff2`). Crema's pinned winsys blob `234d846ea25990c9d7307f41c022b1cc32e3164e` adds both, and its cache flush addresses a real stale-dirty-line hazard when direct-memory pages move between cached onion and write-combined garlic mappings.
+
+The correct next code change is therefore **not** to copy the W126 script verbatim. First add or port the missing cache-coherency prerequisite into our chosen winsys base, preserving its ownership semantics; then add the fixed CPU alias and RADV map branch. Do not set the alias as the ordinary `b->cpu` mapping, and do not release the BO's direct-memory backing while the alias can still be used.
+
+The OrbisDesk script also does not show the private-kit `sceKernelEnableDmemAliasing` call recorded in WinePS4's notes for patch 0031. That prerequisite must be located in OrbisDesk/Crema initialization or implemented before the first alias mapping, rather than silently omitted.
+
+Finally, the Vulkan contract separates `memoryMapPlaced` from `memoryUnmapReserve`: the latter means the address range remains reserved after unmap. We must inspect RADV's exact unmap behavior and the Wine side's reservation ownership before advertising either feature. See the [Vulkan extension proposal](https://docs.vulkan.org/features/latest/features/proposals/VK_EXT_map_memory_placed.html) and the current [memory chapter](https://docs.vulkan.org/spec/latest/chapters/memory.html).
+
+The host patch-apply check remains valid for the existing patch only. It does not validate placed mapping, cache coherency, aliasing, or the Vulkan unmap/reservation lifecycle.
