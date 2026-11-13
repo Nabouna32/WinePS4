@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+COMPAT = ROOT / "toolchain" / "ps4-kit-compat"
 
 class CMakeCompatibilitySmokeTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("cmake") and shutil.which("python3"), "CMake and Python 3 are required")
@@ -31,13 +32,13 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
                 "cmake_minimum_required(VERSION 3.20)\n"
                 "set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)\n"
                 "project(compat_smoke C)\n"
-                "include(\"\${RECONSTRUCTION_ROOT}/toolchain/ps4-kit-compat/ps4-kit.cmake\")\n"
+                "include(\"" + str(COMPAT / "ps4-kit.cmake") + "\")\n"
                 "add_executable(sample main.c)\n"
                 "ps4_kit_app(sample)\n", encoding="utf-8")
             build = work / "build"
             result = subprocess.run(
                 ["cmake", "-S", str(project), "-B", str(build),
-                 f"-DOPENORBIS={openorbis}", f"-DRECONSTRUCTION_ROOT={ROOT}"],
+                 f"-DOPENORBIS={openorbis}"],
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             self.assertEqual(result.returncode, 0, result.stdout)
             generated = build / "ps4-link.x"
