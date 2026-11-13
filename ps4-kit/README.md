@@ -21,6 +21,28 @@ current WinePS4 CMake files invoke versioned LLVM tools directly. The exact
 version used by private ps4-kit revision `56b3d86` has not yet been recovered,
 so choosing one automatically would be unsafe.
 
+## Build the Mesa/RADV prerequisite
+
+The WinePS4 CMake helper links static RADV archives; it does not build Mesa by itself.
+Prepare the external Mesa 26.0.8-family Git checkout at `$PS4_MESA_SOURCE`, the
+header-only libdrm source at `$PS4_BUILD_ROOT/src/libdrm`, the host Meson venv at
+`$PS4_BUILD_ROOT/mesa-venv`, and host `glslangValidator` at
+`$PS4_BUILD_ROOT/host-tools/bin/glslangValidator`. The target sysroot must contain
+libc++/libc++abi and the OpenOrbis libc overlay.
+
+Then run:
+
+```bash
+bash "$PS4_KIT/scripts/build-mesa.sh" setup
+```
+
+The script verifies the Mesa patch with forward/reverse `git apply --check`, stages
+the MIT GNM winsys, generates the PS4 Meson cross file, and builds the 19 public
+RADV static targets. It stops without modifying the Mesa tree if the patch does not
+match. The final WinePS4 link step consumes the 16-archive closure in
+`ps4-kit/mesa/archives.cmake`. This is a public Mesa 26.0.8 candidate, not proof
+of the exact Mesa revision used by private kit commit `56b3d86`.
+
 ## Current implementation map
 
 - `toolchain/env.sh`: OpenOrbis/PacBrew environment, build paths, versioned
