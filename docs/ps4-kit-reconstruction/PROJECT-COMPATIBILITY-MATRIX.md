@@ -27,8 +27,9 @@ configure against one shared kit, then close their distinct link/runtime needs.
 |---|---|---|
 | [DolphinPS4](https://github.com/iHaiDeeZ/DolphinPS4) | Foundational public OpenOrbis/Clang 21 + libc++ 21 and Mesa 26.0.8 GNM/RADV build; its MIT/per-file GNM winsys is already staged in this reconstruction | Toolchain reference, Mesa/GNM baseline, native VideoOut WSI reference; audit per-file licences before reuse |
 | [Crema](https://github.com/iHaiDeeZ/Crema) | Cemu PS4 port; supplies a later GNM winsys variant and Mesa build tree used by other projects | Mesa/RADV build inputs and native VideoOut runtime reference; its cache-coherency additions are relevant to Wine placed mappings |
-| [Resonance](https://github.com/iHaiDeeZ/Resonance) | Dreamcast/Flycast PS4 port; its build tree is the seed for M33 and the common runtime ancestry | Shared runtime, heap, diagnostics, VideoOut WSI, sysroot and build-tree conventions |
+| [Resonance](https://github.com/iHaiDeeZ/Resonance) | Dreamcast/Flycast PS4 port; its build tree is the seed for M33 and other later ports | Shared runtime, heap, diagnostics, VideoOut WSI, sysroot and build-tree conventions |
 | [M33](https://github.com/iHaiDeeZ/M33) | `docs/TECHNICAL.md` says its `port/` runtime and toolchain come from Resonance; `seed-build-tree.sh` brings in Resonance's sysroot/Mesa plus RPCS3 FFmpeg 7.1.1 | Compatibility tests for runtime, memory arenas, VideoOut and packaging; FFmpeg artifact provenance |
+| [xemu-ps4](https://github.com/iHaiDeeZ/xemu-ps4) | Its build guide seeds `xemups4-build` from Resonance's tree, then builds a project-specific libc overlay, Vulkan headers, pixman, glib and SDL3 | Reusable sysroot/Mesa seed plus a test of the kit's ability to support additional host/target dependency recipes |
 | [SMW](https://github.com/iHaiDeeZ/SMW) | `docs/BUILDING.md` uses Resonance's build tree and Crema's Mesa build; release `sdk-1` bundles a sysroot and static Mesa archives | Reproducible SDK/sysroot artifact format and common RADV archive bundle |
 | [TOTK-PS4](https://github.com/iHaiDeeZ/TOTK-PS4) | Its build guide seeds its work tree from SMW's build tree | Validate that the same SDK bundle/build-tree contract works for another large static recompilation |
 
@@ -58,7 +59,7 @@ substrate shared, and make project-facing profiles explicit:
    configuration match.
 5. **Presentation profiles** — at minimum:
    - `native-videoout`: app owns VideoOut, swapchain buffers and flip queue
-     (DolphinPS4/Crema/Resonance/M33/SMW/TOTK/MGR-style apps);
+     (DolphinPS4/Crema/Resonance/M33/xemu-ps4/SMW/TOTK/MGR-style apps);
    - `window-desktop`: Wine program has no VideoOut; its headless swapchain
      is copied/forwarded to the desktop callback (WinePS4).
    These backends share RADV/GNM primitives but not surface ownership or
@@ -99,9 +100,9 @@ substrate shared, and make project-facing profiles explicit:
 3. Extract the common host toolchain/sysroot/Mesa manifest into a versioned
    SDK profile, using SMW's published `sdk-1` format as a reproducibility
    reference rather than copying opaque binaries blindly.
-4. Add build-tree smoke profiles for DolphinPS4/Crema/Resonance, then M33 and
-   SMW/TOTK. Record which ones build from source and which consume a prebuilt
-   SDK bundle.
+4. Add build-tree smoke profiles for DolphinPS4/Crema/Resonance, then M33,
+   xemu-ps4, SMW and TOTK. Record which ones build from source and which
+   consume a prebuilt SDK bundle.
 5. Only call the kit multi-project compatible when each profile has a clean
    configure, link, package and (where hardware is available) runtime test.
 
