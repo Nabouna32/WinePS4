@@ -74,8 +74,8 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
                 "set(PS4_KIT_WINDOW_WSI_SOURCE \"" + wsi_source.as_posix() + "\" CACHE FILEPATH \"\")\n"
                 "include(\"" + str(COMPAT / "ps4-kit.cmake") + "\")\n"
                 "add_executable(sample main.c)\n"
-                "ps4_kit_link_mesa(sample)\n"
-                "ps4_kit_app(sample)\n", encoding="utf-8")
+                "ps4_kit_app(sample)\n"
+                "ps4_kit_link_mesa(sample)\n", encoding="utf-8")
             build = work / "build"
             result = subprocess.run(
                 ["cmake", "-S", str(project), "-B", str(build), f"-DOPENORBIS={openorbis}"],
