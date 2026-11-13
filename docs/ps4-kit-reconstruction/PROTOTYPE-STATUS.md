@@ -12,10 +12,11 @@
   - `check-oelf.cmake` checks for exactly one read-write PT_LOAD before packaging;
   - `ps4_kit_link_mesa(target)` intentionally stops with a clear error. The private VideoOut WSI is not reproduced, and linking a public RADV archive set alone would not be equivalent.
 - `toolchain/ps4-kit-compat/tests/test_linker_script.py`: host-side regression tests against a synthetic linker-script fixture.
+- `toolchain/ps4-kit-compat/tests/test_cmake_smoke.py`: configure-only CMake smoke test using a temporary fake OpenOrbis tree; checks generated script, link command redirection and eboot target declaration.
 
 ## Evidence and design basis
 
-The eboot output layout is directly required by WinePS4's existing `app/package.sh`. The create-fself invocation and OELF segment check follow public OpenOrbis/DolphinPS4 build conventions:
+The eboot output layout is directly required by WinePS4's existing `app/package.sh`. The `create-fself` option names and required input/output shape are confirmed by the official OpenOrbis tool documentation; the OELF segment check follows a public DolphinPS4 build convention:
 - https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/ps4-love-style.cmake
 - https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/check-oelf.cmake
 - https://github.com/iHaiDeeZ/xemu-ps4/blob/3738f4d7389055e9727c7ccf79af64e562eeb369/toolchain/make-link-script.py
@@ -43,4 +44,4 @@ The implementation is independent and does not copy those files.
 python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
 ```
 
-The unit tests cover generator transformations and fail-closed behavior only. They are not a substitute for running the generator against the exact `link.x` installed on the target build host.
+The host tests now cover generator transformations, fail-closed behavior, and CMake configure-time wiring using a synthetic OpenOrbis fixture. They have been added but have **not yet been executed in this session**. They are not a substitute for running the generator against the exact `link.x` installed on the target build host.
