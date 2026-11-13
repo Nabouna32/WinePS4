@@ -25,6 +25,10 @@
 - Added installation and packaging-boundary notes under `ps4-kit/`.
 - No files under `app/`, `port/`, `shell/`, or the Wine source were changed to integrate the kit. The intended installation is a symlink at `$HOME/ps4-kit`.
 
+## Environment bootstrap test
+
+The environment bootstrap test passes locally with a fake SDK and checks the path contract, versioned tool names, sysroot preservation and `ps4_cmake` flag sanitization. It is now a separate CI job; this does not validate an actual PacBrew/OpenOrbis installation.
+
 ## Packaging evidence and limits
 
 The GP4/SFO/PkgTool workflow is visible in public DolphinPS4 and PS4SX2 package helpers. PS4SX2's public variant explicitly supports `SFO_ATTRIBUTE`; WinePS4's unchanged package script already sets that variable to `0x800002`. This supports the initial plain-profile implementation, but it does not prove the exact private kit's defaults. See `ps4-kit/scripts/README.md` for source pins and the remaining validation requirements. The fake-tool smoke test passes in CI; a real OpenOrbis PKG inspection remains necessary.
