@@ -32,7 +32,7 @@ The public `scripts/build-mesa.sh` independently lists a broader static target s
 
 - `src/vulkan/runtime/libvulkan_instance.a`
 - `src/vulkan/runtime/libvulkan_runtime.a`
-- `src/vulkan/wsi/libvulkan_wsi.a)
+- `src/vulkan/wsi/libvulkan_wsi.a`)
 
 It also describes a PS4 GNM winsys based on `libSceGnmDriver`, with no Linux DRM device on the console. It builds a patched `ac_ps4_drm.c` into Mesa's AMD common sources.
 
@@ -87,3 +87,23 @@ The Wine patch narrows the interface considerably. Its `dlls/wineps4.drv/vulkan.
 The callback maps the host surface handle back to the Wine HWND, clips the rendered client area into the top-level window and sends the pixels to the desktop over WinePS4's existing display socket. The patch comments identify the implementation as `gpu/ps4_vk_wsi.cpp` and explicitly describe its swapchain images as window-sized, CPU-readable memory. The desktop itself owns VideoOut.
 
 This means the SSBU WSI is useful Vulkan reference code, but **not a drop-in replacement**: it presents full-screen buffers to VideoOut, whereas WinePS4 needs a window-sized surface and a pixel callback. The reconstruction must implement the Wine-specific window mode and those two C ABI hooks while leaving Wine's existing callback/display behavior unchanged. This is now the precise graphics integration target.
+
+## Concrete WSI adaptation map
+
+The SSBU WSI source exposes the Vulkan entry points needed for a first adaptation: headless-surface creation/destruction, surface capability/format/present-mode queries, swapchain creation/destruction, image enumeration, image acquisition, queue presentation, and the `QueueSubmit` / `QueueSubmit2` semaphore wrappers.
+
+Its current implementation is specifically full-screen:
+- it fixes the surface extent to 1920x1080;
+- allocates linear host-visible images and maps them;
+- registers the image addresses with `sceVideoOutRegisterBuffers`;
+- presents with `ac_ps4_submit_flip` or `sceVideoOutSubmitFlip`.
+
+For Wine's window mode, the adaptation boundary is now explicit:
+1. Keep the RADV ICD dispatch wrapping and the generic Vulkan surface/swapchain entry points.
+2. Take the actual per-window extent and format from `VkSwapchainCreateInfoKHR`, rather than fixed screen dimensions.
+3. Allocate CPU-readable linear swapchain images and retain each image's mapped pointer and `VkSubresourceLayout.rowPitch`.
+4. In `QueuePresentKHR`, wait until the submitted GPU work is complete, then call `ps4kit_window_present(surface, pixels, width, height, row_bytes, bgra)`.
+5. Do not call VideoOut from this WSI. Wine's existing `present_frame()` callback maps the surface to its HWND, clips the client area and sends the pixels to the desktop, which is the only VideoOut owner.
+6. Preserve correct acquire/present synchronization, swapchain resize/destruction, BGRA/RGBA selection and image lifetime. SSBU's binary-semaphore workaround is PS4-specific and must be checked against Wine's DXVK 3.1.1 usage rather than copied blindly.
+
+The clean-room runtime now provides the exact callback-registration functions used by Wine (`ps4kit_set_window_present`, `ps4kit_set_log`) and internal dispatch helpers (`ps4kit_window_present`, `ps4kit_vulkan_log`). Their host test verifies callback arguments and null/unregistered behavior. This is only the callback bridge; no Vulkan WSI entry points or RADV archives have been linked yet.
