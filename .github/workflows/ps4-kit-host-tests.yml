@@ -25,6 +25,10 @@ jobs:
           sudo apt-get install -y cmake ninja-build libvulkan-dev
       - name: Syntax-check the reconstructed Wine window WSI against Vulkan-Headers
         run: c++ -std=c++20 -Wall -Wextra -fsyntax-only -Ips4-kit/include ps4-kit/mesa/ps4_vk_wsi_window.cpp
+      - name: Exercise WSI dispatch forwarding with a fake RADV ICD
+        run: |
+          c++ -std=c++20 -Ips4-kit/include ps4-kit/mesa/ps4_vk_wsi_window.cpp ps4-kit/mesa/tests/test_wsi_dispatch.cpp -o /tmp/ps4-kit-wsi-dispatch
+          /tmp/ps4-kit-wsi-dispatch
       - name: Test linker-script generator and CMake glue
         run: python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
 
