@@ -1,1 +1,12 @@
-Run the host-side regression tests with:\n\n```sh\npython3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v\n```\n\nThese tests exercise the clean-room generator against a small synthetic linker script. They do not prove compatibility with every OpenOrbis release; the real installed `link.x` must still be tested.\n
+Run the host-side regression tests with:
+
+```sh
+python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
+```
+
+The suite includes:
+
+- generator tests against a synthetic linker-script fixture (priority arrays, suffixed data sections, and fail-closed markers);
+- a configure-only CMake smoke test with a temporary fake OpenOrbis tree, checking that the compatibility module generates the patched linker script, redirects the executable link command, and declares the eboot target.
+
+These tests do not prove compatibility with every OpenOrbis release. The real installed `link.x`, actual `create-fself` invocation, target sysroot, final OELF and PS4 hardware behavior still require separate validation.
