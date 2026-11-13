@@ -114,3 +114,41 @@ Important next backend requirements:
 - The current reconstruction has not been target-built or run on hardware. Heap allocation, fixed direct-memory aliases, pthread wrappers, and RADV placed maps still need console tests.
 - No local SDK or LLVM installation was performed during this research.
 
+
+
+## 6. Shared default heap profile recovered from additional consumers
+
+A broader credit/build audit found two additional direct consumers:
+
+- MGR's PS4 callback only sets the log tag; it leaves the rest of the heap
+  options at kit defaults.
+- Godot's PS4 callback sets only `max_overflow_heaps = 8`. Its source comment
+  explicitly describes eight direct-memory overflow heaps of 512 MiB each,
+  leaving the rest of direct memory for RADV.
+
+This means the kit must initialize its options structure before calling the
+application callback. The callback is an override, not a complete policy
+object. A zero-initialized structure is not sufficient for these consumers.
+
+The branch now has `ps4_kit_heap_options_init()` and a provisional shared
+default profile:
+
+- system-flexible main heap, 512 MiB, first;
+- direct-memory overflow size defaults to 512 MiB if the app enables overflow
+  heaps without supplying a size;
+- no overflow heaps or automatic arenas unless the application requests them.
+
+This profile is inferred from the public Resonance/Dolphin runtime lineage and
+Godot's exact callback comment. It is **not** claimed to be the private kit's
+recovered default ABI. The Wine callback overrides it as follows:
+
+- desktop changes the order to direct-first and caps direct/system attempts at
+  384/128 MiB;
+- normal program changes to direct-first, 64 MiB main and 64 MiB overflow,
+  eight heaps, 256 MiB reserve and six 2 MiB arenas;
+- outside process sets `regular_only`, which must override the initialized
+  512 MiB system default and use only 16 MiB regular-flexible heaps.
+
+Host tests now cover the shared default, Godot's 8 x 512 MiB overflow policy,
+and the three exact Wine profiles. The planner still does not execute a
+mapping or allocator operation.
