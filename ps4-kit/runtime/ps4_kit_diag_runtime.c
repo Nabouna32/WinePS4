@@ -35,6 +35,7 @@ const char *ps4_data_dir(void)
 }
 
 #define PS4_KIT_DIAG_MAX_THREADS 96u
+#define PS4_KIT_DIAG_MAX_SAMPLER_THREADS 4u
 #define PS4_KIT_DIAG_NAME_SIZE 32u
 #define PS4_KIT_DIAG_REPORT_NS 10000000000ull
 #define PS4_KIT_DIAG_WAIT_NS 1000000l
@@ -145,8 +146,10 @@ static void profiler_signal_handler(int signal_number, siginfo_t *info, void *co
 
     capture_context(context, &rip, &rsp);
     (void)rsp;
-    atomic_store_explicit(&g_threads[index].sample_last_rip, rip, memory_order_relaxed);
-    atomic_fetch_add_explicit(&g_threads[index].sample_count, 1u, memory_order_relaxed);
+    if (atomic_load_explicit(&g_threads[index].sampler_registered, memory_order_relaxed)) {
+        atomic_store_explicit(&g_threads[index].sample_last_rip, rip, memory_order_relaxed);
+        atomic_fetch_add_explicit(&g_threads[index].sample_count, 1u, memory_order_relaxed);
+    }
 }
 
 static void install_dump_handler_once(void)
@@ -230,12 +233,26 @@ void ps4_watch_thread(const char *name)
 
 void ps4_sampler_register_thread(const char *name)
 {
+    unsigned int i;
+    unsigned int count = 0;
+    int already_registered = 0;
+    int index;
     ps4_watch_thread(name);
-    if (g_tls_thread_index >= 0 &&
-        (unsigned int)g_tls_thread_index < PS4_KIT_DIAG_MAX_THREADS) {
-        atomic_store_explicit(&g_threads[g_tls_thread_index].sampler_registered,
-                              1, memory_order_release);
+    index = g_tls_thread_index;
+    if (index < 0 || (unsigned int)index >= PS4_KIT_DIAG_MAX_THREADS)
+        return;
+
+    pthread_mutex_lock(&g_thread_lock);
+    for (i = 0; i < atomic_load_explicit(&g_thread_count, memory_order_acquire); i++) {
+        if (atomic_load_explicit(&g_threads[i].sampler_registered, memory_order_relaxed)) {
+            count++;
+            if ((int)i == index)
+                already_registered = 1;
+        }
     }
+    if (already_registered || count < PS4_KIT_DIAG_MAX_SAMPLER_THREADS)
+        atomic_store_explicit(&g_threads[index].sampler_registered, 1, memory_order_release);
+    pthread_mutex_unlock(&g_thread_lock);
 }
 
 static int write_all(int fd, const char *buffer, size_t length)
