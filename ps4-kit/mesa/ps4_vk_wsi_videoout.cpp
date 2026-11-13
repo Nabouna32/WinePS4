@@ -152,19 +152,19 @@ bool open_video_out()
     return true;
 }
 
-void wait_off_screen(uint32_t image_count)
+bool wait_off_screen(uint32_t image_count)
 {
     const uint64_t submitted = g_flips.load(std::memory_order_acquire);
     if (submitted < image_count - 1u)
-        return;
+        return true;
 
     const int64_t needed = static_cast<int64_t>(submitted - (image_count - 2u));
     for (unsigned int tries = 0; tries < 40u; ++tries) {
         OrbisVideoOutFlipStatus status{};
         if (sceVideoOutGetFlipStatus(g_video, &status) < 0)
-            return;
+            return false;
         if (status.flipArg >= needed)
-            return;
+            return true;
 
         if (!g_flip_queue) {
             sceKernelUsleep(1000);
@@ -175,6 +175,7 @@ void wait_off_screen(uint32_t image_count)
             sceKernelWaitEqueue(g_flip_queue, &event, 1, &got, &timeout);
         }
     }
+    return false;
 }
 
 VkResult enumerate_instance_extensions(const char *layer, uint32_t *count,
@@ -770,7 +771,8 @@ VkResult VKAPI_CALL wsi_acquire_next_image(VkDevice device, VkSwapchainKHR handl
         if (found == g_swapchains.end())
             return VK_ERROR_OUT_OF_DATE_KHR;
         Swapchain &swapchain = *found->second;
-        wait_off_screen(static_cast<uint32_t>(swapchain.images.size()));
+        if (!wait_off_screen(static_cast<uint32_t>(swapchain.images.size())))
+            return VK_TIMEOUT;
         *index = swapchain.next_image++ % static_cast<uint32_t>(swapchain.images.size());
     }
 
@@ -794,7 +796,7 @@ VkResult VKAPI_CALL wsi_acquire_next_image2(VkDevice device, const VkAcquireNext
 
 VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *info)
 {
-    if (!info || !info->swapchainCount)
+    if (!info || !info->swapchainCount || !info->pSwapchains || !info->pImageIndices)
         return VK_ERROR_INITIALIZATION_FAILED;
 
     VkResult overall = VK_SUCCESS;
@@ -819,9 +821,13 @@ VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *inf
                     if (!wait_idle) {
                         item_result = VK_ERROR_INITIALIZATION_FAILED;
                     } else {
-                        wait_idle(queue);
-                        result = sceVideoOutSubmitFlip(g_video, static_cast<int>(buffer),
-                                                       swapchain.flip_mode, arg);
+                        const VkResult idle_result = wait_idle(queue);
+                        if (idle_result != VK_SUCCESS) {
+                            item_result = idle_result;
+                        } else {
+                            result = sceVideoOutSubmitFlip(g_video, static_cast<int>(buffer),
+                                                           swapchain.flip_mode, arg);
+                        }
                     }
                 }
 
