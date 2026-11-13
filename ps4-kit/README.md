@@ -161,8 +161,8 @@ PS4_DIAG_DATA_DIR macro:
 - ps4_sampler_register_thread, ps4_sampler_set_code_dumps and ps4_sampler_start;
 - ps4_hot_profiler_set_enabled.
 
-The branch exports the per-app data-directory symbol with C linkage and has a
-host test for C and C++ consumers. The sampler/watchdog implementation is not
+The branch exports ps4_data_dir() with C linkage and default visibility, and
+has a host test for C and C++ consumers. The sampler/watchdog implementation is not
 yet present. Public DolphinPS4/Resonance/HENkaku/Conker code is GPL-2.0 project
 code, so it is being used as a behavioral reference rather than copied into
 WinePS4. See
