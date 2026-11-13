@@ -23,7 +23,7 @@ The environment entry point now exports:
 
 This is a candidate build layout from a later public port, not proof of the exact Mesa commit or build options used by WinePS4's private ps4-kit revision `56b3d86`.
 
-The candidate whole-archive closure from the public DolphinPS4 CMake helper is recorded in `archives.cmake`. Its resolver checks every expected archive under `PS4_MESA_BUILD`; the host CMake tests verify both the complete closure and the missing-archive diagnostic. It is now wired into `ps4_kit_link_mesa()`, which validates the archives and adds them with whole-archive semantics. The function still stops until the matching Mesa source headers and Wine-specific WSI source are available.
+The candidate whole-archive closure from the public DolphinPS4 CMake helper is recorded in `archives.cmake`. Its resolver checks every expected archive under `PS4_MESA_BUILD`; the host CMake tests verify both the complete closure and the missing-archive diagnostic. It is now wired into `ps4_kit_link_mesa()`, which validates the archives and adds them with whole-archive semantics. The function still stops until the matching Mesa source tree, Vulkan-Headers sysroot, and all candidate archives are available.
 
 ## Why there is no build script yet
 
