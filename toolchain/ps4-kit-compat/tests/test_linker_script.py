@@ -12,7 +12,7 @@ class LinkerScriptTests(unittest.TestCase):
     def setUp(self):
         self.source = """SECTIONS
 {
-  .init_array : { KEEP(*(.init_array)); }
+  .init_array : { *(.init_array); }
   .data : { *(.data); }
   .tdata : { *(.tdata); }
   .tbss : { *(.tbss); }
