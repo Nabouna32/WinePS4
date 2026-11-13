@@ -437,6 +437,27 @@ VkResult VKAPI_CALL wsi_surface_capabilities2(VkPhysicalDevice physical_device,
     return wsi_surface_capabilities(physical_device, info->surface, &caps->surfaceCapabilities);
 }
 
+VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
+                                        uint32_t *count, VkSurfaceFormatKHR *formats)
+{
+    if (!count || !valid_surface(surface))
+        return VK_ERROR_SURFACE_LOST_KHR;
+    const VkImageUsageFlags supported = supported_linear_usage(
+        physical_device, VK_FORMAT_R8G8B8A8_UNORM);
+    if ((supported & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) !=
+        (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT))
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if (!formats) {
+        *count = 1;
+        return VK_SUCCESS;
+    }
+    if (*count == 0)
+        return VK_INCOMPLETE;
+    formats[0] = {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    *count = 1;
+    return VK_SUCCESS;
+}
+
 VkResult VKAPI_CALL wsi_surface_formats2(VkPhysicalDevice physical_device,
                                              const VkPhysicalDeviceSurfaceInfo2KHR *info,
                                              uint32_t *count, VkSurfaceFormat2KHR *formats)
@@ -461,27 +482,6 @@ VkResult VKAPI_CALL wsi_surface_formats2(VkPhysicalDevice physical_device,
         formats[i].surfaceFormat = base[i];
     *count = copied;
     return copied < available ? VK_INCOMPLETE : VK_SUCCESS;
-}
-
-VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
-                                        uint32_t *count, VkSurfaceFormatKHR *formats)
-{
-    if (!count || !valid_surface(surface))
-        return VK_ERROR_SURFACE_LOST_KHR;
-    const VkImageUsageFlags supported = supported_linear_usage(
-        physical_device, VK_FORMAT_R8G8B8A8_UNORM);
-    if ((supported & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) !=
-        (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT))
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if (!formats) {
-        *count = 1;
-        return VK_SUCCESS;
-    }
-    if (*count == 0)
-        return VK_INCOMPLETE;
-    formats[0] = {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-    *count = 1;
-    return VK_SUCCESS;
 }
 
 VkResult VKAPI_CALL wsi_present_modes(VkPhysicalDevice, VkSurfaceKHR surface,
