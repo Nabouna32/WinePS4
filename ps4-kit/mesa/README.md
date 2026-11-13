@@ -13,7 +13,7 @@ A recent public PS4 port documents a reproducible Mesa build environment:
 - host Meson/Mako/PyYAML environment and `glslangValidator` under the build root;
 - a PS4 GNM implementation of Mesa's AMDGPU kernel interface, `src/amd/common/ac_ps4_drm.c`.
 
-The GNM winsys file is explicitly marked MIT and is staged by `prepare-source.sh` into the external Mesa tree. The helper refuses to edit Meson integration: the matching PS4 Meson patch must already be applied. The public build recipe and archive lists are recorded in `docs/ps4-kit-reconstruction/MESA-LINK-TRACE.md`.
+The GNM winsys file is explicitly marked MIT. The matching public PS4 Mesa integration patch is also identified as MIT/per-file in DolphinPS4's `CREDITS.md`; both are included with separate MIT notices. `prepare-source.sh` uses `git apply --check` before applying the patch to an external Mesa checkout, then stages the winsys. It fails closed if the patch does not match.
 
 The environment entry point now exports:
 
@@ -25,9 +25,9 @@ This is a candidate build layout from a later public port, not proof of the exac
 
 The candidate whole-archive closure from the public DolphinPS4 CMake helper is recorded in `archives.cmake`. Its resolver checks every expected archive under `PS4_MESA_BUILD`; the host CMake tests verify both the complete closure and the missing-archive diagnostic. It is now wired into `ps4_kit_link_mesa()`, which validates the archives and adds them with whole-archive semantics. The function still stops until the matching Mesa source tree, Vulkan-Headers sysroot, and all candidate archives are available.
 
-## Why there is no build script yet
+## Building the candidate Mesa baseline
 
-The public build script lists all Meson archive targets it builds, while the matching CMake helper links the final whole-archive closure. Its comments explicitly say `libvulkan_radeon.a` already contains the Vulkan runtime and WSI objects, explaining why the helper does not link the standalone runtime/WSI archives a second time. The closure is therefore usable as a candidate when paired with the same Mesa revision.
+`ps4-kit/scripts/build-mesa.sh` is a clean-room build driver based on the public DolphinPS4 Mesa 26.0.8 recipe. It requires the OpenOrbis target sysroot, host Meson/Mako/PyYAML environment, host `glslangValidator`, and header-only libdrm source tree. It applies the bundled Mesa patch only when it matches the Git checkout, stages the GNM winsys, creates the PS4 Meson cross file, and builds the 19 public static RADV targets. The final WinePS4 CMake link closure is the 16-archive subset in `archives.cmake`; the separate Vulkan runtime/WSI archives are built as in the public recipe but are not linked twice when already folded into `libvulkan_radeon.a`.
 
 WinePS4 needs a window-sized, CPU-readable headless swapchain that calls `ps4kit_window_present()`; a full-screen VideoOut WSI is not compatible. The first clean-room implementation is now in `ps4_vk_wsi_window.cpp`. It creates linear host-visible/coherent images, uses the actual subresource row pitch, consumes presentation wait semaphores with a queue submit + fence, and calls the desktop callback only after GPU completion. It intentionally does not open VideoOut or use the public full-screen flip path.
 
