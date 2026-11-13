@@ -83,6 +83,11 @@ candidate, not proof of the exact Mesa revision used by private kit commit
 - `runtime/ps4_kit_runtime.c`: initial thread-priority, minimum-stack,
   system-module and Wine Vulkan callback implementations. Host tests use
   mocked Sce APIs.
+- `include/ps4_kit_heap.h` and `runtime/ps4_kit_heap_policy.c`: a pure policy
+  planner that translates Wine's desktop/program/outside-process options into
+  explicit main-heap and overflow attempts. It performs no PS4 allocations;
+  the actual mspace/kernel mapping backend remains a blocker. Run its host
+  tests with `bash ps4-kit/runtime/tests/run-heap-policy-tests.sh`.
 - `scripts/make-pkg.sh`: initial OpenOrbis `PkgTool.Core` / `create-gp4`
   implementation, with the SFO attributes expected by WinePS4.
 - `mesa/ac_ps4_drm.c` and `mesa/patches/mesa-ps4.patch`: MIT/per-file PS4
