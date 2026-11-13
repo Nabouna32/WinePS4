@@ -31,12 +31,16 @@ Repository install instructions use the PacBrew pacman repository and:
 sudo pacman -S ps4-openorbis ps4-openorbis-portlibs
 ```
 
-Important version distinction from the actual PKGBUILDs:
+Important version distinctions from the actual PKGBUILDs:
+- PacBrew's `ps4-openorbis-clang` package is LLVM/Clang 12.0.1, while the modern DolphinPS4,
+  M33 and WinePS4 build recipes use LLVM 21 tools. Install/reuse PacBrew's OpenOrbis headers,
+  musl, SDK utilities and package tools, but use a separate host LLVM 21 toolchain for this
+  reconstruction; do not let the old bundled Clang 12 shadow it.
 - PacBrew FreeType is 2.10.1; WinePS4 documents 2.13.3.
 - PacBrew FFmpeg is 5.0; WinePS4 documents 7.1.1 and M33 uses 7.1.1.
-So PacBrew is a valuable source for the base toolchain and many transitive libraries,
-but those two package binaries/recipes must not silently replace the versions expected
-by the current WinePS4 build.
+So PacBrew is a valuable source for the OpenOrbis base and many transitive libraries,
+but those older compiler/FreeType/FFmpeg versions must not silently replace the versions
+expected by the current WinePS4 build.
 
 ## The credits trail and reusable build trees
 
