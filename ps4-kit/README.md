@@ -97,8 +97,13 @@ candidate, not proof of the exact Mesa revision used by private kit commit
 - `mesa/ac_ps4_drm.c` and `mesa/patches/mesa-ps4.patch`: MIT/per-file PS4
   GNM winsys and Mesa 26.0.8 integration patch from DolphinPS4 commit
   `879b3e57f3d3180bcb5f2234db3903688b28cd7d`, with separate MIT notices.
-- `mesa/ps4_vk_wsi_window.cpp`: initial clean-room Wine window-mode WSI using
-  the existing desktop callback ABI.
+- `mesa/ps4_vk_wsi_window.cpp`: clean-room Wine window-desktop WSI using the
+  existing desktop callback ABI.
+- `mesa/ps4_vk_wsi_videoout.cpp`: first-pass clean-room native VideoOut WSI;
+  2 MiB buffer alignment, four buffer banks with deferred retirement,
+  VideoOut flip queue, GNM GPU-flip submission with CPU fallback, and binary
+  semaphore filtering while preserving timeline semaphores. It is not yet
+  target-compiled or validated on retail hardware.
 - `scripts/build-mesa.sh`: Mesa 26.0.8-family cross-build driver based on the
   public DolphinPS4 recipe.
 
@@ -131,15 +136,17 @@ have been checked.
 
 - The actual OpenOrbis target build, Mesa cross-build, final WinePS4 link and
   eboot/package output have not yet been validated end-to-end.
-- The Wine-specific heap backend and complete diagnostics implementation are
-  not present; the runtime currently covers only a subset of kit functions.
-- The native VideoOut profile is not yet reconstructed in this tree. Public
-  project implementations are references, not automatically safe to copy.
-- `ps4_kit_link_mesa()` now links only the generic RADV archive closure.
+- The Wine-specific heap backend is not present: the current heap planner is
+  policy-only and does not map PS4 memory or provide mspaces/overflow arenas.
+- Diagnostics now have a first-pass runtime, but thread dumps capture only
+  RIP/RSP, samplers log counts/last RIP rather than address histograms, JIT code
+  dumps are absent, and the PS4 signal ABI still needs hardware validation.
+- The native VideoOut source is present as a first-pass implementation, but it
+  has not been compiled with OpenOrbis/Mesa or tested on retail hardware.
+- `ps4_kit_link_mesa()` links only the generic RADV archive closure.
   `ps4_kit_app()` selects `window-desktop` automatically for WinePS4 and
-  `native-videoout` for other Mesa apps. The native VideoOut source is still
-  missing, so native consumers fail clearly rather than receiving the wrong
-  Wine WSI. A host test checks that the two source profiles never mix.
+  `native-videoout` for other Mesa apps. Host tests verify profile separation
+  and the native source's required VideoOut/GNM hooks.
 - MGR's private kit revision `79fba0f` is distinct from WinePS4's
   `56b3d86`; its exact CMake/runtime API still needs a complete audit.
 - The package script has only fake-tool smoke coverage; it has not been run
@@ -162,8 +169,8 @@ PS4_DIAG_DATA_DIR macro:
 - ps4_hot_profiler_set_enabled.
 
 The branch exports ps4_data_dir() with C linkage and default visibility, and
-has a host test for C and C++ consumers. The sampler/watchdog implementation is not
-yet present. Public DolphinPS4/Resonance/HENkaku/Conker code is GPL-2.0 project
-code, so it is being used as a behavioral reference rather than copied into
-WinePS4. See
+includes a first-pass clean-room watcher, busy report, SIGPROF sampler and hot
+profiler. It is intentionally not feature-equivalent yet; see the diagnostics
+trace for exact gaps. Public DolphinPS4/Resonance/HENkaku/Conker code is
+GPL-2.0 project code, so it is used as behavioral reference rather than copied. See
 [DIAGNOSTICS-SAMPLER-TRACE.md](../docs/ps4-kit-reconstruction/DIAGNOSTICS-SAMPLER-TRACE.md).
