@@ -24,6 +24,20 @@ It names the kit's responsibilities as runtime, heap, threads, RADV port/window 
 
 Use it to trace older packaging, controller, display, and OpenOrbis/PacBrew integration patterns. Do not assume its graphics path or old dependencies are ABI-compatible with WinePS4.
 
+### A concrete code-ancestry trace: love-ps4 → Resonance / DolphinPS4 / M33 / Crema
+
+This is stronger than a general credits reference. The public `port/ps4_runtime.cpp` files in Resonance, DolphinPS4, M33 and Crema all begin with an explicit comment that the runtime fixes are **based on** `love-ps4/src/common/ps4_heap.cpp` and `love-ps4/src/common/ps4.cpp`.
+
+The source-level evolution is visible:
+
+- [love-ps4 `ps4_heap.cpp`](https://github.com/iHaiDeeZ/love-ps4/blob/main/src/common/ps4_heap.cpp) wraps the malloc family and creates an `sceLibcMspace` heap over PS4 flexible memory. It documents the OpenOrbis libc's failing 2.5 GiB lazy heap reservation on retail consoles.
+- [love-ps4 `ps4.cpp`](https://github.com/iHaiDeeZ/love-ps4/blob/main/src/common/ps4.cpp) implements `__cxa_thread_atexit_impl` with a pthread-key destructor list because the PS4 libc lacks the expected thread-local destructor entry point.
+- The later [Resonance runtime](https://github.com/iHaiDeeZ/Resonance/blob/6b87389033d4f239e97d36c605bf7eea384d1e23/port/ps4_runtime.cpp), [DolphinPS4 runtime](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/port/ps4_runtime.cpp), [M33 runtime](https://github.com/iHaiDeeZ/M33/blob/78f0f40edd55b6183631150cfe609170b5c530b8/port/ps4_runtime.cpp) and [Crema runtime](https://github.com/iHaiDeeZ/Crema/blob/475b8d5bd3498dbd5cfefe8175f98d017a017739/port/ps4_runtime.cpp) retain that documented lineage but replace the allocator with a bundled dlmalloc mspace. Their comments explain that Sony's `sceLibcMspace` stopped returning memory after roughly 800 small allocations during Dolphin static initialization; the dlmalloc path adds heap checks and diagnostics.
+
+The source headers in love-ps4 carry the LÖVE project's permissive license and conditions (including preserving the notice and marking modified versions). Any direct reuse of those files or derived code must preserve the applicable notices and be recorded in the licence inventory. The later runtime files have their own repository-level licence context, so check each file's exact provenance before copying it.
+
+**Reconstruction implication:** our heap and thread-exit implementations should be compared against this lineage before any further independent implementation is written. The public sources may provide a lawful, technically tested basis for portions of the runtime, subject to licence and API review. They do not provide Wine's private kit's exact revision or its Wine-specific window WSI.
+
 ## 3. Public independent PS4 SDK/porting ecosystems
 
 ### OpenOrbis + PacBrew
