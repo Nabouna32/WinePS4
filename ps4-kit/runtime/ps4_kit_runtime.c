@@ -17,7 +17,7 @@ extern int scePthreadGetprio(pthread_t thread, int *priority);
 extern int sceSysmoduleLoadModuleInternal(uint32_t module_id);
 
 static size_t g_min_thread_stack;
-static __thread int g_new_thread_priority = -1;
+static __thread int g_new_thread_priority __attribute__((tls_model("initial-exec"))) = -1;
 
 struct ps4_kit_thread_start {
     void *(*start)(void *);
