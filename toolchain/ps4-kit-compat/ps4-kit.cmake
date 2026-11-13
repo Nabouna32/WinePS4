@@ -45,7 +45,7 @@ function(ps4_kit_app target)
             "-out=${oelf}" --eboot "${eboot}"
             --paid "${PS4_PAID}" --authinfo "${PS4_AUTH_INFO}"
         COMMAND "${CMAKE_COMMAND}" "-DOELF=${oelf}"
-            -P "${CMAKE_CURRENT_LIST_DIR}/check-oelf.cmake"
+            -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/check-oelf.cmake"
         DEPENDS ${target}
         VERBATIM
         COMMENT "Creating PS4 eboot for ${target}")
