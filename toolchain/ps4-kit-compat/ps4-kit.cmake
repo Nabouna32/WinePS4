@@ -87,8 +87,44 @@ function(ps4_kit_link_window_wsi target)
     target_compile_options(${target} PRIVATE -march=btver2)
 endfunction ()
 
-# Generic RADV link closure only. WSI is selected by ps4_kit_app() so a native
-# consumer can never accidentally receive the Wine desktop callback backend.
+# Attach the selected WSI once both the application helper and Mesa link helper
+# have run. Wine's CMake calls ps4_kit_app() before ps4_kit_link_mesa(); MGR,
+# MP3, ConkerLR and Godot call them in the opposite order.
+function(_ps4_kit_attach_wsi target)
+    get_target_property(_already_attached ${target} PS4_KIT_WSI_ATTACHED)
+    if (_already_attached)
+        return()
+    endif ()
+    get_target_property(_app_configured ${target} PS4_KIT_APP_CONFIGURED)
+    get_target_property(_mesa_linked ${target} PS4_KIT_MESA_LINKED)
+    if (NOT _app_configured OR NOT _mesa_linked)
+        return()
+    endif ()
+
+    _ps4_kit_resolve_wsi_profile(_ps4_wsi_profile)
+    if (_ps4_wsi_profile STREQUAL "window-desktop")
+        ps4_kit_link_window_wsi(${target})
+    else ()
+        if (NOT EXISTS "${PS4_KIT_NATIVE_WSI_SOURCE}")
+            message(FATAL_ERROR
+                "Native VideoOut WSI is not reconstructed yet: ${PS4_KIT_NATIVE_WSI_SOURCE}. "
+                "Refusing to link Wine's window-desktop WSI into '${target}'.")
+        endif ()
+        target_sources(${target} PRIVATE "${PS4_KIT_NATIVE_WSI_SOURCE}")
+        target_include_directories(${target} PRIVATE
+            "${PS4_VULKAN_HEADERS}"
+            "${PS4_MESA_SOURCE}/include"
+            "${PS4_MESA_SOURCE}/src"
+            "${_PS4_KIT_ROOT}/include")
+        target_compile_features(${target} PRIVATE cxx_std_20)
+        target_compile_options(${target} PRIVATE -march=btver2)
+        target_link_libraries(${target} PRIVATE SceVideoOut SceSysmodule)
+    endif ()
+    set_property(TARGET ${target} PROPERTY PS4_KIT_WSI_ATTACHED TRUE)
+endfunction ()
+
+# Generic RADV link closure only. WSI selection is deferred until both kit
+# helpers have run, regardless of which order the consumer's CMake uses.
 function(ps4_kit_link_mesa target)
     if (NOT TARGET ${target})
         message(FATAL_ERROR "ps4_kit_link_mesa: target '${target}' does not exist")
@@ -114,6 +150,7 @@ function(ps4_kit_link_mesa target)
     target_compile_options(${target} PRIVATE -march=btver2)
     target_link_libraries(${target} PRIVATE --whole-archive ${_ps4_mesa_archives} --no-whole-archive)
     set_property(TARGET ${target} PROPERTY PS4_KIT_MESA_LINKED TRUE)
+    _ps4_kit_attach_wsi(${target})
 endfunction ()
 
 # WinePS4's package script expects <target>_eboot/<target>.oelf and eboot.bin.
@@ -122,31 +159,11 @@ function(ps4_kit_app target)
         message(FATAL_ERROR "ps4_kit_app: target '${target}' does not exist")
     endif ()
 
-    get_target_property(_ps4_mesa_linked ${target} PS4_KIT_MESA_LINKED)
-    if (_ps4_mesa_linked)
-        _ps4_kit_resolve_wsi_profile(_ps4_wsi_profile)
-        if (_ps4_wsi_profile STREQUAL "window-desktop")
-            ps4_kit_link_window_wsi(${target})
-        else ()
-            if (NOT EXISTS "${PS4_KIT_NATIVE_WSI_SOURCE}")
-                message(FATAL_ERROR
-                    "Native VideoOut WSI is not reconstructed yet: ${PS4_KIT_NATIVE_WSI_SOURCE}. "
-                    "Refusing to link Wine's window-desktop WSI into '${target}'.")
-            endif ()
-            target_sources(${target} PRIVATE "${PS4_KIT_NATIVE_WSI_SOURCE}")
-            target_include_directories(${target} PRIVATE
-                "${PS4_VULKAN_HEADERS}"
-                "${PS4_MESA_SOURCE}/include"
-                "${PS4_MESA_SOURCE}/src"
-                "${_PS4_KIT_ROOT}/include")
-            target_compile_features(${target} PRIVATE cxx_std_20)
-            target_compile_options(${target} PRIVATE -march=btver2)
-            target_link_libraries(${target} PRIVATE SceVideoOut SceSysmodule)
-        endif ()
-    endif ()
-
     target_link_libraries(${target} PRIVATE ps4_kit_runtime kernel c SceLibcInternal)
     target_link_options(${target} PRIVATE "LINKER:--wrap=pthread_create")
+    set_property(TARGET ${target} PROPERTY PS4_KIT_APP_CONFIGURED TRUE)
+    _ps4_kit_attach_wsi(${target})
+
     set(out_dir "${CMAKE_CURRENT_BINARY_DIR}/${target}_eboot")
     set(oelf "${out_dir}/${target}.oelf")
     set(eboot "${out_dir}/eboot.bin")
@@ -164,3 +181,4 @@ function(ps4_kit_app target)
         COMMENT "Creating PS4 eboot for ${target}")
     add_custom_target(${target}_eboot ALL DEPENDS "${eboot}" "${oelf}")
 endfunction ()
+
