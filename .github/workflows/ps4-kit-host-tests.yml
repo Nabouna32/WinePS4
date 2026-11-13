@@ -29,6 +29,8 @@ jobs:
         run: |
           c++ -std=c++20 -Ips4-kit/include ps4-kit/mesa/ps4_vk_wsi_window.cpp ps4-kit/mesa/tests/test_wsi_dispatch.cpp -o /tmp/ps4-kit-wsi-dispatch
           /tmp/ps4-kit-wsi-dispatch
+      - name: Test Mesa build driver syntax and help
+        run: bash ps4-kit/scripts/tests/test_build_mesa.sh
       - name: Test guarded Mesa GNM source staging
         run: bash ps4-kit/mesa/tests/test_prepare_source.sh
       - name: Test linker-script generator and CMake glue
