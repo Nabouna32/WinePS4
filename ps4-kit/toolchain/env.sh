@@ -19,13 +19,10 @@ export PS4_MESA_BUILD="${PS4_MESA_BUILD:-$PS4_BUILD_ROOT/build/mesa}"
 export PS4_TARGET="${PS4_TARGET:-x86_64-pc-freebsd12-elf}"
 export JOBS="${JOBS:-$(nproc)}"
 
-# WinePS4 calls version-suffixed LLVM utilities directly (ld.lld-$CLANG_VER,
-# llvm-objcopy-$CLANG_VER). Do not silently select a different toolchain.
-if [[ -z "${CLANG_VER:-}" ]]; then
-    echo "ps4-kit: set CLANG_VER to the LLVM major version used by your OpenOrbis install" >&2
-    return 1 2>/dev/null || exit 1
-fi
-export CLANG_VER
+# The public WinePS4 FFmpeg recipe and the DolphinPS4/M33 build guides use LLVM 21.
+# Keep an override for a deliberately different local toolchain, but don't make
+# users guess the version when bootstrapping the documented environment.
+export CLANG_VER="${CLANG_VER:-21}"
 export PS4_CC="${PS4_CC:-clang-$CLANG_VER}"
 export PS4_CXX="${PS4_CXX:-clang++-$CLANG_VER}"
 export PS4_LD="${PS4_LD:-ld.lld-$CLANG_VER}"
