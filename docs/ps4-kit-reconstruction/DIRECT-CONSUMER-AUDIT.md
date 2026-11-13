@@ -251,3 +251,25 @@ private kit.
 The acceptance criterion is not merely "CMake configured": each direct
 consumer must eventually configure, compile, link its actual target, produce
 its own package, and have runtime behavior tested independently.
+
+
+## 8. TTT2's additional runtime ABI and CMake contract
+
+The TTT2 patch is now inspected directly from its patch blob (the file is too
+large for the ordinary file-content endpoint). Its PS4 CMake project:
+
+- sets project name ttt2_ps4 and executable target ttt2;
+- includes $HOME/ps4-kit/ps4-kit.cmake;
+- expects PS4_KIT_DIR to be the root of the kit and adds
+  $PS4_KIT_DIR/runtime to its platform include path;
+- calls ps4_kit_link_mesa(ttt2) then ps4_kit_app(ttt2);
+- links the kit's diagnostics API through its platform glue.
+
+The compatibility entry point now exports PS4_KIT_DIR and PS4_KIT_ROOT. The
+helper implementation supports both observed call orders: Wine calls
+ps4_kit_app before ps4_kit_link_mesa, while the ReXGlue/Godot/TTT2 paths call
+Mesa first.
+
+The TTT2 patch also requires the diagnostics functions listed in
+DIAGNOSTICS-SAMPLER-TRACE.md. Those are not implemented yet, so TTT2 remains a
+confirmed direct consumer but not a currently linkable target.
