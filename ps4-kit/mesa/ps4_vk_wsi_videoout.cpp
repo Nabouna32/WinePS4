@@ -15,6 +15,7 @@
 #include <vulkan/vulkan.h>
 
 #include <orbis/SystemService.h>
+#include <orbis/Sysmodule.h>
 #include <orbis/VideoOut.h>
 #include <orbis/libkernel.h>
 
@@ -139,6 +140,10 @@ bool open_video_out()
     std::lock_guard guard(g_video_lock);
     if (g_video >= 0)
         return true;
+
+    // SystemService is an internal module; the OpenOrbis sample loads it
+    // explicitly before calling sceSystemServiceHideSplashScreen().
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SYSTEM_SERVICE);
 
     g_video = sceVideoOutOpen(0xFF, 0, 0, nullptr);
     if (g_video < 0)
