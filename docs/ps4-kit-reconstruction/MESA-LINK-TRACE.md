@@ -1,6 +1,6 @@
 # RADV / Mesa build-link trace
 
-Status: evidence comparison only. This is a build dependency investigation, not a working WinePS4 graphics port.
+Status: initial Wine window-mode WSI and the public PS4 GNM winsys source are now present in the reconstruction branch. Target Mesa integration/build and PS4 validation remain incomplete.
 
 ## Why this is a compile blocker
 
@@ -34,9 +34,16 @@ The public `scripts/build-mesa.sh` independently lists a broader static target s
 - `src/vulkan/runtime/libvulkan_runtime.a`
 - `src/vulkan/wsi/libvulkan_wsi.a`)
 
-It also describes a PS4 GNM winsys based on `libSceGnmDriver`, with no Linux DRM device on the console. It builds a patched `ac_ps4_drm.c` into Mesa's AMD common sources.
+It also describes a PS4 GNM winsys based on `libSceGnmDriver`, with no Linux DRM device on the console. It stages a PS4 GNM winsys `ac_ps4_drm.c` into Mesa's AMD common sources.
 
 Source: https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/scripts/build-mesa.sh
+
+The MIT-licensed GNM winsys source from that exact DolphinPS4 commit is now included at
+`ps4-kit/mesa/ac_ps4_drm.c`. Its original SPDX notice and copyright line are retained. The
+source's GitHub blob is `a4589f0601c889a200a93d59968c763daff4aff2` (2,938 lines). The guarded
+`ps4-kit/mesa/prepare-source.sh` stages it into an already-patched Mesa tree only if Meson's
+`src/amd/common/meson.build` already lists `ac_ps4_drm.c`; it refuses to invent or rewrite the
+revision-sensitive Meson integration.
 
 ## Public evidence: xemu-ps4 and MGR-PS4
 
@@ -57,7 +64,7 @@ For WinePS4's target kit revision `56b3d86`, the exact Mesa revision and archive
 2. Verify the archive members and undefined symbols for the selected Mesa build against the public helper's stated `libvulkan_radeon.a` runtime/WSI aggregation.
 3. Identify the exact symbols WinePS4's final link expects from ps4-kit (including any `ps4kit::` entry points).
 4. Separate RADV/GNM winsys symbols from VideoOut WSI symbols and from generic OpenOrbis runtime hooks.
-5. Only then implement a CMake helper and independent WSI needed by the current WinePS4 source.
+5. Pin/reconstruct the Mesa Meson integration patch, stage the MIT GNM winsys, and build the archive closure; then validate the clean-room WSI against that exact Mesa revision.
 
 ## Scope reminder
 
@@ -73,7 +80,7 @@ A later public port provides a concrete, licensed implementation candidate rathe
 
 The implementation wraps statically linked RADV's ICD/device proc-address functions, exposes `VK_EXT_headless_surface` and `VK_KHR_swapchain`, allocates linear host-visible images, registers their addresses with VideoOut, and submits flips through the Mesa PS4 winsys. Its exported entry point is `dxvk_ps4_vk_get_instance_proc_addr()`; other consumers describe the same conceptual boundary as `ps4kit::vk_get_instance_proc_addr`.
 
-This gives us an implementation to study and potentially adapt under its MIT terms, preserving the copyright and licence notice. It is not yet known whether WinePS4's private kit revision `56b3d86` used the same ABI, and the WSI currently has SSBU-specific logging/trace hooks and assumptions. Do not copy it into the kit unchanged or claim Wine compatibility until its API is reconciled with Wine's `winevulkan` path.
+This provides the public dispatch and linear-image evidence used by the clean-room Wine WSI in `ps4-kit/mesa/ps4_vk_wsi_window.cpp`. The SSBU implementation itself is not copied into the kit: its VideoOut presentation and SSBU-specific behavior are excluded.
 
 SSBU's [Mesa build script](https://github.com/iHaiDeeZ/SSBU/blob/7e83c0eb9367c657960876f1ea2b4b5491d99099/scripts/build-mesa.sh) also pins a Crema Mesa base commit (`7d010de97ed0e5d3b02e0d7c6bf0c829298490c9`) and builds the archive set in its CMake helper. This is a stronger reproducible candidate than a floating Mesa branch, but it is later than WinePS4's kit pin and must be treated as a candidate baseline, not as proof of the original kit's exact Mesa revision.
 
@@ -106,7 +113,7 @@ For Wine's window mode, the adaptation boundary is now explicit:
 5. Do not call VideoOut from this WSI. Wine's existing `present_frame()` callback maps the surface to its HWND, clips the client area and sends the pixels to the desktop, which is the only VideoOut owner.
 6. Preserve correct acquire/present synchronization, swapchain resize/destruction, BGRA/RGBA selection and image lifetime. SSBU's binary-semaphore workaround is PS4-specific and must be checked against Wine's DXVK 3.1.1 usage rather than copied blindly.
 
-The clean-room runtime now provides the exact callback-registration functions used by Wine (`ps4kit_set_window_present`, `ps4kit_set_log`) and internal dispatch helpers (`ps4kit_window_present`, `ps4kit_vulkan_log`). Their host test verifies callback arguments and null/unregistered behavior. This is only the callback bridge; no Vulkan WSI entry points or RADV archives have been linked yet.
+The clean-room runtime provides the callback-registration functions used by Wine (`ps4kit_set_window_present`, `ps4kit_set_log`) and the WSI exports `ps4kit_vk_get_instance_proc_addr()`. The new WSI implements surface/swapchain dispatch and uses a queue-submit fence wait before calling `ps4kit_window_present()` with the actual surface handle, mapped pixels, row pitch and format. Host syntax and fake-RADV dispatch tests pass in CI; target Mesa linking and hardware presentation remain unverified.
 
 ## Newer reproducible Mesa build-root evidence
 
@@ -118,6 +125,6 @@ References:
 - [DolphinPS4 ps4-love-style.cmake](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/toolchain/ps4-love-style.cmake)
 - [DolphinPS4 CREDITS](https://github.com/iHaiDeeZ/DolphinPS4/blob/879b3e57f3d3180bcb5f2234db3903688b28cd7d/CREDITS.md), which identifies the PS4 Mesa GNM backend and patch as MIT/per-file licensed.
 
-The reconstructed `ps4-kit/toolchain/env.sh` now exports the same build-root vocabulary: `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, and `PS4_MESA_BUILD`, defaulting to the existing WinePS4 build tree. This is a path-compatibility step only; no Mesa source is cloned or built yet.
+The reconstructed `ps4-kit/toolchain/env.sh` exports the same build-root vocabulary: `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, and `PS4_MESA_BUILD`, defaulting to the existing WinePS4 build tree. The GNM winsys source is now vendored and can be staged into a pre-patched Mesa tree. No Mesa source is cloned or built yet because the exact Meson integration patch/revision remains unresolved.
 
 **Important:** the public helper's whole-archive list omits the separate runtime/WSI archives that the public build script also builds. We must establish which archive set belongs to which Mesa patch/revision before using it. Mesa 26.0.8 is a promising later baseline, not a recovered fact about private kit revision `56b3d86`.
