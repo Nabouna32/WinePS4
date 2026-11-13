@@ -134,3 +134,25 @@ References:
 The reconstructed `ps4-kit/toolchain/env.sh` exports the same build-root vocabulary: `PS4_BUILD_ROOT`, `PS4_MESA_SOURCE`, and `PS4_MESA_BUILD`, defaulting to the existing WinePS4 build tree. The GNM winsys and its MIT Meson integration patch are now vendored, and `ps4-kit/scripts/build-mesa.sh` drives the candidate static build. No Mesa source is cloned or built yet; the user's external source checkout must match the patch before the script proceeds.
 
 **Important:** the public helper's whole-archive list omits the separate runtime/WSI archives that the public build script also builds. We must establish which archive set belongs to which Mesa patch/revision before using it. Mesa 26.0.8 is a promising later baseline, not a recovered fact about private kit revision `56b3d86`.
+
+
+## Newly confirmed blocker: placed CPU aliases for 32-bit Wine memory
+
+An independent OrbisDesk hardware investigation now confirms the requirement described by WinePS4's private-kit notes 941b771 / Mesa patch 0030 and 53cf427 / patch 0031. Its W124 test records DXVK x86 failing because Crema's radv_amdgpu_winsys_bo_map() returned NULL for use_fixed_addr. Its W126 patch then adds a CPU-only alias mapping for the same direct-memory BO backing:
+
+- sceKernelMapDirectMemory() maps the BO's physical direct memory at Wine's reserved address with MAP_FIXED.
+- Address and length are aligned to 16 KiB; the helper verifies that the kernel returned exactly the requested address.
+- The GPU mapping remains in place; the CPU alias addresses the same physical pages.
+- RADV's BO cpu_map is updated, and minPlacedMemoryMapAlignment is raised to at least 16 KiB.
+- The alias reservation is returned to Wine after unmapping; the helper does not silently consume Wine's reservation.
+
+OrbisDesk reports that this enabled 32-bit DXVK D3D9 to create its device and run a physical test below 4 GiB. See [OrbisDesk W124/W126](https://github.com/jl-casella/OrbisDesk/blob/dev/docs/HARDWARE_W124.md) and its [MIT patch generator](https://github.com/jl-casella/OrbisDesk/blob/bc745be7ee60f4667e78c51a9627cd275521b116/tools/vk-h0/patch-mesa-placed.py).
+
+**Audit of this branch:** the current ps4-kit/mesa/patches/mesa-ps4.patch and staged ps4-kit/mesa/ac_ps4_drm.c do not yet implement this placed-memory alias path; repository code search also found no VK_EXT_map_memory_placed / sceKernelEnableDmemAliasing integration. Therefore, passing the current Mesa patch apply-check and WSI host tests does **not** mean 32-bit Wine memory mapping is supported. This is now an explicit outstanding Mesa/RADV task.
+
+Required next implementation/test sequence:
+1. Identify the exact selected Mesa 26.0.8/Crema BO fields and the existing direct-memory allocation lifetime.
+2. Implement the alias helper behind the PS4 GNM winsys, including fixed-address validation, 16 KiB alignment, cache handling where required, and failure rollback.
+3. Integrate the use_fixed_addr branch and report the correct minPlacedMemoryMapAlignment.
+4. Reconcile the private-kit sceKernelEnableDmemAliasing prerequisite before the first placed map; do not assume the OrbisDesk patch's excerpt proves this prerequisite is unnecessary.
+5. Test 64-bit and 32-bit DXVK separately on hardware; host tests can only validate the policy and mocked call order.
