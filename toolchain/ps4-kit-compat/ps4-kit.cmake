@@ -18,6 +18,7 @@ set(_PS4_KIT_RUNTIME
 if (NOT TARGET ps4_kit_runtime)
     add_library(ps4_kit_runtime STATIC "${_PS4_KIT_RUNTIME}")
     target_include_directories(ps4_kit_runtime PUBLIC "${_PS4_KIT_ROOT}/include")
+    target_compile_features(ps4_kit_runtime PUBLIC c_std_11)
 endif ()
 
 set(PS4_PAID "${PS4_PAID}" CACHE STRING "PS4 program authority ID")
