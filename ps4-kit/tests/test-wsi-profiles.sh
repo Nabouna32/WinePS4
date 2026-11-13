@@ -63,8 +63,13 @@ cmake_minimum_required(VERSION 3.20)
 project($ENV{TEST_PROJECT} C CXX)
 include($ENV{PS4_KIT_ROOT}/ps4-kit.cmake)
 add_executable(test_app main.c)
-ps4_kit_link_mesa(test_app)
-ps4_kit_app(test_app)
+if (TEST_CALL_ORDER STREQUAL "app-first")
+    ps4_kit_app(test_app)
+    ps4_kit_link_mesa(test_app)
+else ()
+    ps4_kit_link_mesa(test_app)
+    ps4_kit_app(test_app)
+endif ()
 get_target_property(_sources test_app SOURCES)
 if (TEST_EXPECTED_WSI STREQUAL "window")
     list(FIND _sources "${PS4_KIT_WINDOW_WSI_SOURCE}" _window_index)
@@ -84,9 +89,11 @@ endif ()
 message(STATUS "PASS: ${CMAKE_PROJECT_NAME} selected ${TEST_EXPECTED_WSI} WSI only")
 EOF
 
-for spec in "wineps4:window" "sa2:native"; do
+for spec in "wineps4:window:app-first" "sa2:native:link-first"; do
     project="${spec%%:*}"
-    expected="${spec##*:}"
+    rest="${spec#*:}"
+    expected="${rest%%:*}"
+    order="${rest##*:}"
     build="$TMP/build-$project"
     echo "== WSI profile: $project -> $expected"
     TEST_PROJECT="$project" \
@@ -98,6 +105,7 @@ for spec in "wineps4:window" "sa2:native"; do
         -DPS4_VULKAN_HEADERS="$VULKAN_HEADERS" \
         -DPS4_KIT_NATIVE_WSI_SOURCE="$NATIVE_WSI" \
         -DTEST_EXPECTED_WSI="$expected" \
+        -DTEST_CALL_ORDER="$order" \
         > "$TMP/$project.log" 2>&1 || {
             cat "$TMP/$project.log" >&2
             exit 1
