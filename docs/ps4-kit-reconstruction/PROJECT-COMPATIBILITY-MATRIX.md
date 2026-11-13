@@ -128,7 +128,7 @@ that lets contributors build lawful public project sources and work on them.
 | WinePS4 | Host CMake smoke test; app-before-Mesa helper order; window-desktop profile | Target heap backend, target runtime validation and full target Mesa/eboot/PKG build |
 | MGR-PS4 | Project injection hook and Mesa-before-app helper order | Native VideoOut WSI, real target heap/runtime and ReXGlue target build |
 | MP3-PS4 | Project injection hook and Mesa-before-app helper order | Native VideoOut WSI, real target heap/runtime and ReXGlue target build |
-| TTT2-PS4 | PS4_KIT_DIR export, native profile selection and project CMake path recovered | Native VideoOut WSI plus diagnostics/sampler symbols: ps4_watch_thread, ps4_dump_thread_stacks, ps4_thread_busy_report, ps4_sampler_register_thread, ps4_sampler_set_code_dumps, ps4_sampler_start and ps4_hot_profiler_set_enabled |
+| TTT2-PS4 | PS4_KIT_DIR export, native profile selection and project CMake path recovered | Native VideoOut WSI; diagnostics symbols now have a first-pass implementation but need full stack unwinding, address histograms and target validation |
 | ConkerLR-PS4 | Kit environment/CMake integration and libs-only build path recovered | Native VideoOut WSI and target runtime |
 | Godot PS4 | Direct ps4-kit.cmake inclusion, Mesa/app helper calls and default heap callback recovered | Native VideoOut WSI and target runtime |
 
