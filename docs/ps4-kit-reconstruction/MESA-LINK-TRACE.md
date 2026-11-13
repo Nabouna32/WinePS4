@@ -169,3 +169,18 @@ The OrbisDesk script also does not show the private-kit `sceKernelEnableDmemAlia
 Finally, the Vulkan contract separates `memoryMapPlaced` from `memoryUnmapReserve`: the latter means the address range remains reserved after unmap. We must inspect RADV's exact unmap behavior and the Wine side's reservation ownership before advertising either feature. See the [Vulkan extension proposal](https://docs.vulkan.org/features/latest/features/proposals/VK_EXT_map_memory_placed.html) and the current [memory chapter](https://docs.vulkan.org/spec/latest/chapters/memory.html).
 
 The host patch-apply check remains valid for the existing patch only. It does not validate placed mapping, cache coherency, aliasing, or the Vulkan unmap/reservation lifecycle.
+
+
+## RADV's generic placed-map and unmap dispatch
+
+The upstream RADV device-memory path already separates the API contract from the winsys:
+
+- `radv_MapMemory2()` reads `VK_MEMORY_MAP_PLACED_BIT_EXT`, extracts `VkMemoryMapPlacedInfoEXT::pPlacedAddress`, and calls `buffer_map(ws, bo, use_fixed_address, fixed_address)`.
+- `radv_UnmapMemory2()` forwards `VK_MEMORY_UNMAP_RESERVE_BIT_EXT` as the `replace` argument to `buffer_unmap()`.
+- The generic AMDGPU winsys `buffer_unmap()` path handles `replace=true` by replacing the mapped pages with a `PROT_NONE | MAP_FIXED` anonymous mapping; without the reserve flag it calls `munmap()`.
+
+This means the PS4-specific W126 change belongs in the `__PS4__` branch of `radv_amdgpu_winsys_bo_map()` plus the PS4 winsys helper and alignment property. It should not invent a second Vulkan map/unmap API. The existing RADV unmap reserve path is the mechanism that preserves the guest address reservation when the caller requests it.
+
+Source cross-check: public RADV `radv_device_memory.c` map/unmap dispatch and `radv_amdgpu_bo.c` map/unmap implementation; see [the device-memory source excerpt](https://fossies.org/linux/mesa/src/amd/vulkan/radv_device_memory.c) and [the AMDGPU winsys source](https://chromium.googlesource.com/external/gitlab.freedesktop.org/mesa/mesa/%2B/36f31751872d0110a7e13d1db25f0472f55785eb/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_bo.c). These are later public source snapshots; the exact 26.0.8 checkout used by this branch still needs a line-level pin/check before patching.
+
+Do not claim `memoryUnmapReserve` just because placed mapping works. It must remain true only if the PS4's `MAP_FIXED` replacement of the alias with a `PROT_NONE` reservation succeeds reliably and the Wine side expects that behavior.
