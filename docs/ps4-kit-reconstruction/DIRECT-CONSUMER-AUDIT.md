@@ -231,8 +231,11 @@ private kit.
 
 ## 7. Next implementation gates
 
-1. [x] Add the host injection test to `.github/workflows/ps4-kit-host-tests.yml`;
-   its first GitHub Actions result still needs to be checked.
+1. [x] Add the host injection and WSI-profile tests to
+   `.github/workflows/ps4-kit-host-tests.yml`. Earlier run #456 passed the
+   helper-order/profile checks; the expanded diagnostics runtime test had a
+   test-root path failure in run #483, and the path is fixed but a fresh run
+   has not yet been confirmed.
 2. Audit the full MGR and MP3 patched CMakeLists and generated link commands;
    identify which target receives runtime, RADV archives, ICD entry point,
    VideoOut WSI and system-library imports.
