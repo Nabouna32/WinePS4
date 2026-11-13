@@ -72,11 +72,13 @@ TTT2 calls PS4_DIAG_DATA_DIR("/data/TTT2") once from its platform glue. The
 runtime must use that value for samples.log and profile.log, while
 ps4_dump_thread_stacks must honor the explicit path supplied by the watchdog.
 
-The current branch's macro only emits a C++ namespace-scope const object. A
-plain namespace-scope const in C++ may have internal linkage, so this is not
-yet a reliable exported runtime contract. The header should emit an extern-C
-visible symbol and the diagnostics runtime should read it, with a safe
-fallback directory when no application override is present.
+The public runtime lineage uses a function named ps4_data_dir() (HENkaku's
+ps4_crashlog.cpp defines it and the sampler calls it to build log paths).
+PS4_DIAG_DATA_DIR(path) therefore needs to define that function, not a data
+variable. The branch now defines it with C linkage and default visibility so
+it remains exported even when the consumer builds with -fvisibility=hidden.
+The diagnostics runtime should call ps4_data_dir(), with a safe fallback
+implementation when no application override is present.
 
 ## 4. Licensing and implementation strategy
 
@@ -96,9 +98,9 @@ fallback directory when no application override is present.
 
 ## 5. Current reconstruction gap
 
-The branch currently provides only the PS4_DIAG_DATA_DIR macro. It does not
-yet implement any of the sampler, hot-profiler, thread-busy or stack-dump
-symbols above. TTT2 therefore cannot complete its final link yet. The next
+The branch currently provides only the PS4_DIAG_DATA_DIR macro/function
+contract. It does not yet implement any of the sampler, hot-profiler,
+thread-busy or stack-dump symbols above. TTT2 therefore cannot complete its final link yet. The next
 runtime milestone is a clean-room diagnostics component with:
 
 1. exported per-app data directory and bounded thread registry;
