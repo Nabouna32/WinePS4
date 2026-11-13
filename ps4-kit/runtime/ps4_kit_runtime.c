@@ -8,6 +8,7 @@
  */
 
 #include "ps4_kit.h"
+#include "ps4_kit_vulkan.h"
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -15,6 +16,35 @@
 extern int scePthreadSetprio(pthread_t thread, int priority);
 extern int scePthreadGetprio(pthread_t thread, int *priority);
 extern int sceSysmoduleLoadModuleInternal(uint32_t module_id);
+
+
+static ps4kit_window_present_fn g_window_present;
+static ps4kit_vulkan_log_fn g_vulkan_log;
+
+void ps4kit_set_window_present(ps4kit_window_present_fn hook)
+{
+    __atomic_store_n(&g_window_present, hook, __ATOMIC_RELEASE);
+}
+
+void ps4kit_set_log(ps4kit_vulkan_log_fn log)
+{
+    __atomic_store_n(&g_vulkan_log, log, __ATOMIC_RELEASE);
+}
+
+void ps4kit_window_present(unsigned long long surface, const void *pixels,
+                           unsigned width, unsigned height, unsigned row_bytes, int bgra)
+{
+    ps4kit_window_present_fn hook = __atomic_load_n(&g_window_present, __ATOMIC_ACQUIRE);
+    if (hook)
+        hook(surface, pixels, width, height, row_bytes, bgra);
+}
+
+void ps4kit_vulkan_log(const char *line)
+{
+    ps4kit_vulkan_log_fn log = __atomic_load_n(&g_vulkan_log, __ATOMIC_ACQUIRE);
+    if (log)
+        log(line);
+}
 
 static size_t g_min_thread_stack;
 static __thread int g_new_thread_priority __attribute__((tls_model("initial-exec"))) = -1;
