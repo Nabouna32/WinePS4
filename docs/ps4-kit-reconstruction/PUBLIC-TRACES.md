@@ -82,11 +82,12 @@ The reconstruction now implements WinePS4's thread priority, minimum stack and m
 
 ## 7. Next work items
 
-- [ ] Audit every `ps4_kit_*` call and every `PS4_*` variable in WinePS4.
-- [ ] Extract the exact compiler/linker command lines from the build scripts and CMake files.
-- [ ] Identify OpenOrbis-provided pieces versus kit-specific pieces.
-- [ ] Design a minimal `ps4-kit.cmake` compatibility layer.
-- [ ] Document the required linker script and executable format.
-- [ ] Map Mesa/RADV and VideoOut dependencies before attempting a graphics replacement.
-- [ ] Recreate package assembly only after the executable build is understood.
-- [ ] Verify each stage on hardware; do not claim buildability from static inspection alone.
+- [x] Audit the visible `ps4_kit_*` call sites and environment variables in WinePS4; continue the audit as build errors expose additional symbols.
+- [ ] Extract the exact compiler/linker command lines and LLVM version from a working kit-era build or reproducible cache.
+- [x] Separate known OpenOrbis imports from kit-specific runtime functions where public evidence permits.
+- [x] Add the initial `ps4-kit.cmake` compatibility entry point and OpenOrbis linker-script helper.
+- [x] Reconstruct the initial six-argument package builder and add fake-tool tests.
+- [ ] Reconstruct the heap backend and diagnostics runtime; the heap-options source contract is provisional.
+- [ ] Reconstruct the Wine-specific RADV/WSI path and complete static link closure.
+- [ ] Run all host tests through CI, then validate against the user's real OpenOrbis tools and sysroot.
+- [ ] Verify the final package and runtime on hardware; do not claim buildability from static inspection alone.
