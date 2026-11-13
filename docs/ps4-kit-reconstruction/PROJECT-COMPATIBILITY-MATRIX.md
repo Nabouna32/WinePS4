@@ -13,10 +13,10 @@ that a project calls the private kit API.
 |---|---|---|---|
 | [WinePS4](https://github.com/iHaiDeeZ/WinePS4) | `docs/BUILDING.md`, `app/CMakeLists.txt`, `app/launcher/CMakeLists.txt`, probes | `56b3d86`; `ps4_cmake`, `ps4-kit.cmake`, `ps4_kit_app()`, `ps4_kit_link_mesa()`, `PS4_LINK_SCRIPT`, `PS4_SYSROOT`, `make-pkg.sh` | **window-desktop**: headless Vulkan surface, window-sized host-readable swapchain images and callback to the desktop; no app-owned VideoOut |
 | [MGR-PS4](https://github.com/iHaiDeeZ/MGR-PS4) | `README.md`, `CREDITS.md`, `scripts/build-mgr.sh` | `79fba0f`; sources `toolchain/env.sh`, injects `ps4-kit.cmake` through `CMAKE_PROJECT_sa2_INCLUDE`, sets `PS4_KIT_NETFS=OFF`; builds `sa2_eboot` and uses kit packaging | **native-videoout**: ReXGlue PS4 SDK, RADV and app-owned VideoOut |
-| [MP3-PS4](https://github.com/iHaiDeeZ/MP3-PS4) | `CREDITS.md`, `docs/DEVELOPMENT.md`, `scripts/build-mp3.sh` | Revision not stated in checked docs; injects `ps4-kit.cmake` through `CMAKE_PROJECT_mp3_INCLUDE`, sets `PS4_KIT_NETFS=OFF`; builds `mp3_eboot` and uses kit packaging | **native-videoout**: ReXGlue PS4 SDK, RADV and app-owned VideoOut |
+| [MP3-PS4](https://github.com/iHaiDeeZ/MP3-PS4) | `README.md`, `CREDITS.md`, `docs/DEVELOPMENT.md`, `scripts/build-mp3.sh` | `56b3d86`; injects `ps4-kit.cmake` through `CMAKE_PROJECT_mp3_INCLUDE`, sets `PS4_KIT_NETFS=OFF`; builds `mp3_eboot` and uses kit packaging | **native-videoout**: ReXGlue PS4 SDK, RADV and app-owned VideoOut |
 | [TTT2-PS4](https://github.com/iHaiDeeZ/TTT2-PS4) | `README.md`, `CREDITS.md`, `scripts/build-ttt2.sh` | `ff30ff6`; sources `toolchain/env.sh`, uses `ps4_cmake` on `port/ps4` and `make-pkg.sh`; credits kit runtime, RADV and VideoOut | **native-videoout**: XenonRecomp/DXVK, app-owned VideoOut and package creation |
 
-The named private revisions differ, and MP3's checked public docs do not state one. The replacement must therefore be a versioned,
+WinePS4 and MP3-PS4 both document kit revision `56b3d86`; MGR and TTT2 document the distinct revisions `79fba0f` and `ff30ff6`. The replacement must therefore be a versioned,
 documented compatibility layer rather than a one-off snapshot tuned only to
 WinePS4. The exact private implementation and complete historical APIs remain unavailable;
 do not invent undocumented function signatures. MGR and MP3 expose the same
