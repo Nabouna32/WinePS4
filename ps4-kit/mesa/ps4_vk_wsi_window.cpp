@@ -269,9 +269,11 @@ VkResult VKAPI_CALL wsi_create_device(VkPhysicalDevice physical_device,
     get_queues(physical_device, &family_count, families.data());
 
     uint32_t graphics_family = UINT32_MAX;
-    for (uint32_t i = 0; i < family_count; ++i) {
-        if (families[i].queueCount && (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-            graphics_family = i;
+    for (uint32_t requested = 0; requested < info->queueCreateInfoCount; ++requested) {
+        const uint32_t candidate = info->pQueueCreateInfos[requested].queueFamilyIndex;
+        if (candidate < family_count && info->pQueueCreateInfos[requested].queueCount &&
+            families[candidate].queueCount && (families[candidate].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+            graphics_family = candidate;
             break;
         }
     }
