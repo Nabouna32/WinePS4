@@ -3,8 +3,8 @@
 Date: 2026-11-13
 
 This audit follows the direct-consumer patch for TTT2 into the public
-DolphinPS4, Resonance, HENkaku and Conker runtime implementations. It identifies
-the missing symbols that prevent a complete TTT2 link. The implementations in
+DolphinPS4, Resonance, HENkaku and Conker runtime implementations. It records
+the required ABI and the first-pass clean-room implementation now in this branch. The implementations in
 those public repositories are GPL-2.0 project trees and are used here as
 behavioral references only; this reconstruction must not copy their code
 without a separate licence review.
