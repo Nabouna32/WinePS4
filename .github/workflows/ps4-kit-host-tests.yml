@@ -39,8 +39,10 @@ jobs:
         run: bash ps4-kit/tests/test-project-injection.sh
       - name: Check both helper orders and separate WSI profiles
         run: bash ps4-kit/tests/test-wsi-profiles.sh
-      - name: Check exported diagnostics data-directory symbol
+      - name: Check exported diagnostics data-directory function
         run: bash ps4-kit/tests/test-diag-data-dir.sh
+      - name: Test diagnostics thread registry and watchdog dump
+        run: bash ps4-kit/runtime/tests/run-diag-runtime-tests.sh
 
   environment:
     runs-on: ubuntu-latest
