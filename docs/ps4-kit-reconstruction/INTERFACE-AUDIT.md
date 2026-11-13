@@ -59,7 +59,32 @@ It also expects prepared external builds under the user's home directory:
 A ps4-kit compatibility module alone therefore cannot make the full project build without the PS4 sysroot, compatible system libraries, Mesa/RADV stack, and these separately prepared dependencies.
 
 
-## 5. Networking boundary (new source audit)
+## 5. Runtime and Vulkan APIs exposed by the Wine patch
+
+The checked-in `patches/wine-ps4.patch` exposes two additional groups of kit APIs:
+
+### Vulkan window integration
+
+Wine's added `dlls/wineps4.drv/vulkan.c` declares and calls:
+
+- `ps4kit_set_window_present(hook)`, where the callback signature is
+  `(unsigned long long surface, const void *pixels, unsigned width, unsigned height, unsigned row_bytes, int bgra)`;
+- `ps4kit_set_log(log_callback)`, receiving one log line at a time.
+
+The callback associates a headless host surface with a Wine client surface, clips its image to the containing top-level window and forwards the pixels through WinePS4's existing display socket. The kit therefore needs a window-sized headless Vulkan surface/swapchain path, with CPU-readable completed frames. It is not enough to implement only a full-screen VideoOut swapchain. The patch names the kit implementation `gpu/ps4_vk_wsi.cpp`.
+
+### Kit headers and runtime symbols
+
+The current app also includes kit-owned headers `ps4_kit.h` and `ps4_kit_diag.h` (not checked into WinePS4). The visible call sites require at least:
+
+- heap configuration callback type `ps4_kit_heap_options` and `ps4_kit_configure_heap()`;
+- `ps4_kit_set_min_thread_stack()`;
+- `ps4_kit_set_thread_priority()`, `ps4_kit_set_new_thread_priority()`, and `ps4_kit_thread_priority()`;
+- diagnostic macro `PS4_DIAG_DATA_DIR()`.
+
+These are now confirmed compatibility requirements from WinePS4's own source, not guesses from other ports. The exact struct fields, default weak implementations, diagnostics hooks and runtime library composition still need to be recovered from the full source references and target behavior.
+
+## 6. Networking boundary (new source audit)
 
 The network stack is not wholly provided by ps4-kit. WinePS4 owns substantial parts of the Windows-to-Orbis adaptation:
 
@@ -74,7 +99,7 @@ The private network boundary is therefore narrower than the complete Windows net
 
 This inventory does **not** establish that the NetCtl selector numbers/payloads are independently verified, or that general DNS works without the kit. Those remain explicit validation tasks.
 
-## 6. Safe implementation sequence
+## 7. Safe implementation sequence
 
 - [x] Inventory public call sites and environment variables.
 - [ ] Obtain a reproducible, legally redistributable PS4 toolchain/sysroot and record its provenance.
@@ -87,7 +112,7 @@ This inventory does **not** establish that the NetCtl selector numbers/payloads 
 - [ ] Treat RADV/Mesa and the window-system integration as a separate, substantial milestone.
 - [ ] Validate each stage with a tiny independent test program before attempting WinePS4.
 
-## 7. What remains unknown
+## 8. What remains unknown
 
 The public WinePS4 call sites do **not** reveal:
 - compiler executable names, target triple, default compile/link flags, or CMake toolchain file;
