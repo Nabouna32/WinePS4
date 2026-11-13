@@ -119,3 +119,26 @@ substrate shared, and make project-facing profiles explicit:
 No proprietary files, game dumps, keys or private SDK binaries belong in this
 reconstruction. The goal is an independent, source-auditable toolchain/runtime
 that lets contributors build lawful public project sources and work on them.
+
+
+## 6. Current branch readiness (2026-11-13)
+
+| Consumer | CMake/API compatibility reconstructed | Remaining hard blocker |
+|---|---|---|
+| WinePS4 | Host CMake smoke test; app-before-Mesa helper order; window-desktop profile | Target heap backend, target runtime validation and full target Mesa/eboot/PKG build |
+| MGR-PS4 | Project injection hook and Mesa-before-app helper order | Native VideoOut WSI, real target heap/runtime and ReXGlue target build |
+| MP3-PS4 | Project injection hook and Mesa-before-app helper order | Native VideoOut WSI, real target heap/runtime and ReXGlue target build |
+| TTT2-PS4 | PS4_KIT_DIR export, native profile selection and project CMake path recovered | Native VideoOut WSI plus diagnostics/sampler symbols: ps4_watch_thread, ps4_dump_thread_stacks, ps4_thread_busy_report, ps4_sampler_register_thread, ps4_sampler_set_code_dumps, ps4_sampler_start and ps4_hot_profiler_set_enabled |
+| ConkerLR-PS4 | Kit environment/CMake integration and libs-only build path recovered | Native VideoOut WSI and target runtime |
+| Godot PS4 | Direct ps4-kit.cmake inclusion, Mesa/app helper calls and default heap callback recovered | Native VideoOut WSI and target runtime |
+
+The helper order is deliberately order-independent: Wine calls ps4_kit_app()
+before ps4_kit_link_mesa(), while MGR, MP3, TTT2, ConkerLR and Godot call
+Mesa first. The CMake layer waits until both helpers have run before attaching
+the selected WSI source.
+
+The host CI workflow now includes tests for both helper orders and distinct
+WSI profiles, plus the C/C++ exported diagnostics-directory symbol. These
+tests do not constitute a target compile. Native VideoOut is intentionally
+missing and fails configuration explicitly rather than receiving the Wine
+window WSI by mistake.
