@@ -64,10 +64,12 @@ Important: `ps4_kit_link_mesa` is the largest known missing build blocker. It is
 
 ### Milestone D — packaging
 
-- Recreate only the packaging functions actually called by `app/package.sh`.
-- Confirm SFO fields, category, content ID, system version, fake SELF/OELF handling and package layout from public OpenOrbis tools and public PS4 ports.
-- Keep user-supplied assets/modules and proprietary system files out of the repository.
-- Run package inspection and validate every expected staged path before claiming success.
+- [x] Recreate the six-argument `make-pkg.sh` interface called by `app/package.sh`, using local OpenOrbis `PkgTool.Core` and `create-gp4` tools.
+- [x] Implement the plain SFO fields and honour WinePS4's existing `SFO_ATTRIBUTE=0x800002`; retain `NO_RIGHT_SPRX=1` behavior.
+- [x] Add a fake-tool smoke test for the script's arguments, content ID, SFO attribute and final output path.
+- [x] Keep SDK tools and any local sample PRXs outside the repository; only copy optional sample modules from the user's local OpenOrbis tree when present.
+- [ ] Run the smoke test and validate the script against the user's actual OpenOrbis `PkgTool.Core` / `create-gp4` versions.
+- [ ] Inspect the generated SFO/GP4/PKG and validate every staged path before claiming a valid installable package.
 
 ## 4. Evidence hierarchy
 
@@ -105,4 +107,4 @@ A milestone is complete only when its evidence is recorded:
 - [ ] `app/package.sh` produces the expected package with all expected paths.
 - [ ] The final package is tested on a PS4 (separate runtime milestone).
 
-Current status: early reconstruction only. No end-to-end build or PS4 hardware validation has been completed.
+Current status: early reconstruction only. The packaging script and a fake-tool test have been added but not executed; no real OpenOrbis package build, end-to-end target build or PS4 hardware validation has been completed.
