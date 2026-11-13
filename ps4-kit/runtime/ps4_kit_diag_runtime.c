@@ -269,14 +269,22 @@ static int open_data_file(const char *name)
     return open(path, O_WRONLY | O_CREAT | O_APPEND, 0666);
 }
 
-static void wait_for_dump(ps4_kit_diag_thread *thread)
+static void wait_for_dump_set(unsigned int count, const unsigned char *signaled)
 {
     struct timespec pause;
     unsigned int tries;
     pause.tv_sec = 0;
     pause.tv_nsec = PS4_KIT_DIAG_WAIT_NS;
-    for (tries = 0; tries < 100u && !thread->dump_done; tries++)
+    for (tries = 0; tries < 100u; tries++) {
+        unsigned int i;
+        int pending = 0;
+        for (i = 0; i < count; i++)
+            if (signaled[i] && !g_threads[i].dump_done)
+                pending = 1;
+        if (!pending)
+            break;
         nanosleep(&pause, NULL);
+    }
 }
 
 void ps4_dump_thread_stacks(const char *path, const char *reason)
@@ -284,6 +292,7 @@ void ps4_dump_thread_stacks(const char *path, const char *reason)
     pthread_t handles[PS4_KIT_DIAG_MAX_THREADS];
     char names[PS4_KIT_DIAG_MAX_THREADS][PS4_KIT_DIAG_NAME_SIZE];
     int tids[PS4_KIT_DIAG_MAX_THREADS];
+    unsigned char signaled[PS4_KIT_DIAG_MAX_THREADS] = {0};
     unsigned int count;
     unsigned int i;
     int fd = -1;
@@ -527,22 +536,23 @@ static void *hot_profiler_thread_main(void *unused)
                 handles[i] = g_threads[i].handle;
             pthread_mutex_unlock(&g_thread_lock);
 
-            for (i = 0; i < count; i++) {
-                if (pthread_equal(handles[i], pthread_self()))
-                    continue;
-                g_threads[i].dump_done = 0;
-                if (pthread_kill(handles[i], SIGUSR1) != 0)
-                    continue;
-                {
-                    unsigned int tries;
-                    for (tries = 0; tries < 20u && !g_threads[i].dump_done; tries++)
-                        nanosleep(&pause, NULL);
+            {
+                unsigned char signaled[PS4_KIT_DIAG_MAX_THREADS] = {0};
+                for (i = 0; i < count; i++) {
+                    if (pthread_equal(handles[i], pthread_self()))
+                        continue;
+                    g_threads[i].dump_done = 0;
+                    if (pthread_kill(handles[i], SIGUSR1) == 0)
+                        signaled[i] = 1;
                 }
-                if (g_threads[i].dump_done) {
-                    atomic_store_explicit(&g_threads[i].hot_last_rip,
-                                          g_threads[i].rip, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&g_threads[i].hot_count, 1u,
-                                              memory_order_relaxed);
+                nanosleep(&pause, NULL);
+                for (i = 0; i < count; i++) {
+                    if (signaled[i] && g_threads[i].dump_done) {
+                        atomic_store_explicit(&g_threads[i].hot_last_rip,
+                                              g_threads[i].rip, memory_order_relaxed);
+                        atomic_fetch_add_explicit(&g_threads[i].hot_count, 1u,
+                                                  memory_order_relaxed);
+                    }
                 }
             }
         }
