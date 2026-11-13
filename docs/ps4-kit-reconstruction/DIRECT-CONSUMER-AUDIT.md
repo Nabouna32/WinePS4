@@ -236,15 +236,16 @@ private kit.
 2. Audit the full MGR and MP3 patched CMakeLists and generated link commands;
    identify which target receives runtime, RADV archives, ICD entry point,
    VideoOut WSI and system-library imports.
-3. Implement the native-videoout WSI as a separate profile from the recovered
-   contract above, with source provenance and lifecycle tests. Keep
-   `PS4_KIT_NETFS=OFF` explicit and avoid implementing or advertising NetFS
-   until its required symbols and semantics are known.
+3. Compile and validate the first-pass native-videoout WSI against the exact
+   OpenOrbis/Mesa headers, then test buffer retirement, flip completion and
+   semaphore behavior on retail hardware. Keep `PS4_KIT_NETFS=OFF` explicit
+   and avoid implementing or advertising NetFS until its required symbols and
+   semantics are known.
 4. Audit TTT2's `port/ps4/CMakeLists.txt` and runtime target separately; it
    has a different integration path from MGR/MP3.
-5. Reuse the public Resonance/Crema-derived WSI only after recording exact
-   source provenance and per-file licence. The repository-level licence alone
-   is not sufficient evidence for copying an individual file.
+5. Continue using Resonance/Crema/M33/SSBU/SMW WSI files as behavioral
+   references only. The native WSI in this branch is clean-room; retain
+   per-file licence provenance and do not copy GPL-2.0 implementation files.
 6. Keep Wine's `window-desktop` callback, placed-memory mapping and
    direct-first heap policy isolated from the native-videoout profiles.
 
@@ -273,5 +274,5 @@ Mesa first.
 The TTT2 diagnostics symbols now have a first-pass clean-room implementation
 in ps4_kit_diag_runtime.c. The current version is linkable in principle but
 still lacks full stack unwinding, per-address sample histograms, JIT dumps and
-retail-hardware signal validation. TTT2 remains blocked by the missing native
-VideoOut WSI and the remaining target runtime/allocator work.
+retail-hardware signal validation. TTT2 remains blocked by native WSI target compilation/hardware validation and
+the remaining heap/runtime work.
