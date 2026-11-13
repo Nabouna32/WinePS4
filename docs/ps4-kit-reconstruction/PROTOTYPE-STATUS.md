@@ -15,8 +15,15 @@
 - `toolchain/ps4-kit-compat/tests/test_cmake_smoke.py`: configure-only CMake smoke test using a temporary fake OpenOrbis tree; checks generated script, link command redirection and eboot target declaration.
 
 - Added `ps4-kit/toolchain/env.sh`, the path-compatible entry point expected by the unchanged WinePS4 scripts. It exposes `PS4_KIT`, `PSB`, `OPENORBIS`, `PS4_SYSROOT`, versioned LLVM tool names and `ps4_cmake`; `CLANG_VER` remains explicit because the WinePS4 kit pin's exact LLVM version is not yet proven.
-- Added `ps4-kit/ps4-kit.cmake` as the existing CMake include path, delegating to the compatibility implementation. Added installation and packaging-boundary notes under `ps4-kit/`.
+- Added `ps4-kit/ps4-kit.cmake` as the existing CMake include path, delegating to the compatibility implementation.
+- Added `ps4-kit/scripts/make-pkg.sh`, implementing the six-argument interface used by the unchanged `app/package.sh`: SFO generation, GP4 generation and `PkgTool.Core pkg_build`. The plain SFO profile honours WinePS4's `SFO_ATTRIBUTE=0x800002`; `NO_RIGHT_SPRX=1` is honoured as passed by the project. It uses local OpenOrbis tools only and does not add SDK binaries to the repository.
+- Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path.
+- Added installation and packaging-boundary notes under `ps4-kit/`.
 - No files under `app/`, `port/`, `shell/`, or the Wine source were changed to integrate the kit. The intended installation is a symlink at `$HOME/ps4-kit`.
+
+## Packaging evidence and limits
+
+The GP4/SFO/PkgTool workflow is visible in public DolphinPS4 and PS4SX2 package helpers. PS4SX2's public variant explicitly supports `SFO_ATTRIBUTE`; WinePS4's unchanged package script already sets that variable to `0x800002`. This supports the initial plain-profile implementation, but it does not prove the exact private kit's defaults. See `ps4-kit/scripts/README.md` for source pins and the remaining validation requirements. The new smoke test uses fake tools and has not been executed here; even when it passes, a real OpenOrbis PKG inspection remains necessary.
 
 ## Evidence and design basis
 
@@ -53,13 +60,15 @@ The implementation is independent and does not copy those files.
 - The private kit's exact compiler and linker command contract for WinePS4's pinned kit revision `56b3d86`; the new environment entry point is an evidence-based approximation and has not been tested.
 - WinePS4's exact PAID/auth-info requirements; current values are configurable defaults drawn from a public PS4 port and must be confirmed for this application.
 - The exact WinePS4-compatible RADV + VideoOut WSI interface and archive dependency closure; public MIT WSI source is now identified as a candidate but not integrated or tested.
-- Crash logging, profiling, stdio/runtime hooks and the private packaging script.
+- Crash logging, profiling, stdio/runtime hooks and the exact private-kit runtime ABI.
+- Validation of `make-pkg.sh` against the installed OpenOrbis `PkgTool.Core` / `create-gp4`, including SFO inspection and a real PKG build.
 - A real OpenOrbis configure/link test, eboot validation on a PS4, and a complete WinePS4 build.
 
 ## Test command
 
 ```sh
 python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
+bash ps4-kit/scripts/tests/test_make_pkg.sh
 ```
 
-The host tests now cover generator transformations, fail-closed behavior, and CMake configure-time wiring using a synthetic OpenOrbis fixture. They have been added but have **not yet been executed in this session**. They are not a substitute for running the generator against the exact `link.x` installed on the target build host.
+The host tests cover generator transformations, fail-closed behavior, CMake configure-time wiring using a synthetic OpenOrbis fixture, and the package script's argument/SFO/output contract using fake tools. They have been added but have **not yet been executed in this session**. They are not a substitute for running the generator against the exact `link.x` installed on the target build host.
