@@ -4,6 +4,9 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+# Ensure the bundled upstream Mesa patch is a syntactically valid Git patch.
+git apply --stat "$ROOT/ps4-kit/mesa/patches/mesa-ps4.patch" >/dev/null
+
 cat > "$tmp/test.patch" <<'PATCH'
 diff --git a/src/amd/common/meson.build b/src/amd/common/meson.build
 --- a/src/amd/common/meson.build
