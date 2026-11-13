@@ -23,7 +23,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -260,7 +259,11 @@ VkResult VKAPI_CALL wsi_create_device(VkPhysicalDevice physical_device,
     uint32_t family_count = 0;
     auto get_queues = instance_function<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
         g_instance, "vkGetPhysicalDeviceQueueFamilyProperties");
-    if (!get_queues) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!get_queues) {
+        auto destroy = device_function<PFN_vkDestroyDevice>(*device, "vkDestroyDevice");
+        if (destroy) destroy(*device, allocator);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     get_queues(physical_device, &family_count, nullptr);
     std::vector<VkQueueFamilyProperties> families(family_count);
     get_queues(physical_device, &family_count, families.data());
@@ -490,7 +493,11 @@ VkResult VKAPI_CALL wsi_create_swapchain(VkDevice device, const VkSwapchainCreat
                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if (!info->imageUsage || (info->imageUsage & ~supported_usage))
         return VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR;
-    if (info->minImageCount < 2 || info->minImageCount > 3)
+    if (info->minImageCount < 2 || info->minImageCount > 3 ||
+        info->preTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
+        info->compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR ||
+        info->presentMode != VK_PRESENT_MODE_FIFO_KHR ||
+        (info->imageSharingMode == VK_SHARING_MODE_CONCURRENT && info->queueFamilyIndexCount < 2))
         return VK_ERROR_INITIALIZATION_FAILED;
 
     auto swapchain = std::make_unique<Swapchain>();
