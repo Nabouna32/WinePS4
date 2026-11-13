@@ -71,7 +71,7 @@ class CMakeCompatibilitySmokeTest(unittest.TestCase):
                 "set(PS4_MESA_BUILD \"" + mesa_build.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_MESA_SOURCE \"" + mesa_source.as_posix() + "\" CACHE PATH \"\")\n"
                 "set(PS4_VULKAN_HEADERS \"" + vulkan_headers.as_posix() + "\" CACHE PATH \"\")\n"
-                "set(PS4_KIT_MESA_WSI_SOURCE \"" + wsi_source.as_posix() + "\" CACHE FILEPATH \"\")\n"
+                "set(PS4_KIT_WINDOW_WSI_SOURCE \"" + wsi_source.as_posix() + "\" CACHE FILEPATH \"\")\n"
                 "include(\"" + str(COMPAT / "ps4-kit.cmake") + "\")\n"
                 "add_executable(sample main.c)\n"
                 "ps4_kit_link_mesa(sample)\n"
