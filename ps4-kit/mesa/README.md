@@ -34,3 +34,7 @@ WinePS4 needs a window-sized, CPU-readable headless swapchain that calls `ps4kit
 The callback ABI and lifecycle requirements are recorded in [WINDOW-WSI-CONTRACT.md](../../docs/ps4-kit-reconstruction/WINDOW-WSI-CONTRACT.md). Exact source files, commit IDs, license provenance, and the distinction between technical references and code copied are recorded in [VULKAN-WSI-SOURCES.md](../../docs/ps4-kit-reconstruction/VULKAN-WSI-SOURCES.md).
 
 The dispatch path is no longer an open question: unchanged `port/ps4_unixlibs.c` already forwards the synthetic `libvulkan.so.1` entry points to `ps4kit_vk_get_instance_proc_addr()`, which the new WSI exports. The next blockers are target-specific: pin the Mesa/Vulkan-Headers revision, confirm RADV supports the advertised linear image formats/usages and coherent memory types, verify the queue/fence behavior, then exercise resize/recreation and the desktop callback on a PS4. The deliberate `ps4_kit_link_mesa()` guard stays until those checks pass.
+
+## Real upstream patch check
+
+GitHub Actions run [#265](https://github.com/Nabouna32/WinePS4/actions/runs/43503275708) now fetches the official upstream `mesa-26.0.8` tag from Mesa's GitLab repository and runs `prepare-source.sh` against that real source tree. The dedicated `mesa-upstream-patch` job passed: the patch applies cleanly, the GNM source is staged, and `git diff --check` reports no whitespace errors. This validates patch applicability to the public 26.0.8 tag; it does not yet validate the PS4 cross-build or resulting archives.
