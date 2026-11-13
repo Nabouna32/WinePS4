@@ -84,6 +84,10 @@ candidate, not proof of the exact Mesa revision used by private kit commit
 - `runtime/ps4_kit_runtime.c`: initial thread-priority, minimum-stack,
   system-module and Wine Vulkan callback implementations. Host tests use
   mocked Sce APIs.
+- `runtime/ps4_kit_diag_runtime.c`: first-pass thread registry, RIP/RSP dump,
+  CPU busy report, four-thread SIGPROF sampler and 20 ms hot profiler. It is
+  linkable in principle but not yet equivalent to the full public profiler or
+  validated against retail PS4 signal handling.
 - `include/ps4_kit_heap.h` and `runtime/ps4_kit_heap_policy.c`: a pure policy
   planner with a provisional shared-port default (512 MiB system-flexible
   main heap; 512 MiB direct overflow size when a consumer enables overflow),
