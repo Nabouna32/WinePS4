@@ -21,9 +21,13 @@
 #if defined(__PS4__)
 #define PS4_KIT_SA_SIGINFO 0x40
 #define PS4_KIT_SA_RESTART 0x0002
+#define PS4_KIT_SIGUSR1 30
+#define PS4_KIT_SIGPROF 27
 #else
 #define PS4_KIT_SA_SIGINFO SA_SIGINFO
 #define PS4_KIT_SA_RESTART SA_RESTART
+#define PS4_KIT_SIGUSR1 SIGUSR1
+#define PS4_KIT_SIGPROF SIGPROF
 #endif
 
 #if defined(__GNUC__)
@@ -160,7 +164,7 @@ static void install_dump_handler_once(void)
     action.sa_sigaction = dump_signal_handler;
     action.sa_flags = PS4_KIT_SA_SIGINFO | PS4_KIT_SA_RESTART;
     sigemptyset(&action.sa_mask);
-    sigaction(SIGUSR1, &action, NULL);
+    sigaction(PS4_KIT_SIGUSR1, &action, NULL);
 }
 
 static void install_prof_handler_once(void)
@@ -170,7 +174,7 @@ static void install_prof_handler_once(void)
     action.sa_sigaction = profiler_signal_handler;
     action.sa_flags = SA_SIGINFO | SA_RESTART;
     sigemptyset(&action.sa_mask);
-    sigaction(SIGPROF, &action, NULL);
+    sigaction(PS4_KIT_SIGPROF, &action, NULL);
 }
 
 static void install_dump_handler(void)
@@ -347,7 +351,7 @@ void ps4_dump_thread_stacks(const char *path, const char *reason)
     pthread_mutex_lock(&g_signal_capture_lock);
     for (i = 0; i < count; i++) {
         g_threads[i].dump_done = 0;
-        if (pthread_kill(handles[i], SIGUSR1) == 0)
+        if (pthread_kill(handles[i], PS4_KIT_SIGUSR1) == 0)
             signaled[i] = 1;
     }
     wait_for_dump_set(count, signaled);
@@ -523,7 +527,7 @@ static void *sampler_thread_main(void *unused)
             pthread_mutex_unlock(&g_thread_lock);
             for (i = 0; i < count; i++)
                 if (enabled[i])
-                    pthread_kill(handles[i], SIGPROF);
+                    pthread_kill(handles[i], PS4_KIT_SIGPROF);
         }
         if (monotonic_ns() - last_report >= PS4_KIT_DIAG_REPORT_NS) {
             write_sampler_report();
