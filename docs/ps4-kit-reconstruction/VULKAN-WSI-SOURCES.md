@@ -28,8 +28,8 @@ What is reused as *technical evidence*:
 - Query `VkSubresourceLayout` instead of assuming a tightly packed `width * 4` stride.
 
 What is intentionally **not** reused:
-- The SSBU WSI's VideoOut lifecycle, fixed 1920x1080 surface, VideoOut buffer registration, flip queue, flip submissions, splash-screen handling, and its binary-semaphore dropping workaround. Those are full-screen game-specific behavior and are incompatible with Wine's per-window desktop callback.
-- The new `ps4-kit/mesa/ps4_vk_wsi_window.cpp` is a clean-room implementation of the Wine callback contract. It is not a copy of the SSBU source file. The MIT header here describes this branch's implementation; it does not relicense Mesa, Vulkan-Headers, Wine, or OpenOrbis.
+- The SSBU VideoOut path is not used by Wine's per-window desktop WSI. Its lifecycle is implemented in a separate native profile, `ps4-kit/mesa/ps4_vk_wsi_videoout.cpp`.
+- `ps4_vk_wsi_window.cpp` remains a clean-room implementation of the Wine callback contract. `ps4_vk_wsi_videoout.cpp` is also clean-room: it was built from the MIT window WSI plus independently inspected API/behavioral evidence, not copied from SSBU, SMW or M33. The MIT headers describe this branch's new files only; they do not relicense Mesa, Vulkan-Headers, Wine, OpenOrbis or any reference repository.
 
 ## 3. Mesa GNM winsys source
 
@@ -131,3 +131,79 @@ The clean-room CMake layer now has this contract:
 - ps4-kit/tests/test-wsi-profiles.sh and the CI workflow verify that the two profiles attach different source files.
 
 This makes the current compatibility boundary honest: Wine's profile remains isolated; MGR, MP3, TTT2, ConkerLR and Godot are identified as native-VideoOut consumers but cannot yet complete their eboot configure/link until the native WSI source and its dependencies are reconstructed.
+
+
+## 4. Native VideoOut WSI reconstruction (first pass)
+
+The native profile is now implemented separately in
+`ps4-kit/mesa/ps4_vk_wsi_videoout.cpp`. It is attached only when
+`PS4_KIT_WSI_PROFILE=native-videoout`; WinePS4 continues to use
+`ps4_vk_wsi_window.cpp`.
+
+### Cross-checked public behavior
+
+- SSBU `port/ps4_vk_wsi.cpp` (MIT repository code) opens VideoOut with system
+  user ID `0xFF`, creates a flip event queue, registers linear RGBA buffers,
+  waits until an image is no longer scanned out, and queues flips through
+  `ac_ps4_submit_flip` with a CPU `sceVideoOutSubmitFlip` fallback.
+- SSBU and SMW use `VkImageSubresourceLayout::rowPitch` for VideoOut pitch;
+  they do not assume `width * 4`. The VideoOut attribute uses
+  `ORBIS_VIDEO_OUT_PIXEL_FORMAT_A8B8G8R8_SRGB` with linear tiling.
+- SSBU aligns registered buffer addresses to 2 MiB. The new implementation
+  over-allocates Vulkan memory, aligns the bind offset to both 2 MiB and the
+  RADV memory requirement, checks the final VideoOut address, and validates
+  pitch/size before registration.
+- M33's PPSSPP patch contains a more robust four-bank buffer-set scheme:
+  old swapchains whose VideoOut unregister fails are parked until a later flip
+  makes unregister safe. The new implementation uses four banks of four buffer
+  indices and deferred retirement rather than SSBU's simple two-bank
+  alternation.
+- SSBU filters binary semaphores from queue submissions but preserves timeline
+  semaphores; its comments report device loss around empty binary-semaphore
+  submissions. M33's PPSSPP WSI drops all semaphores for its own single-queue
+  profile. The new generic profile filters binary semaphores and preserves
+  timeline semaphores in both `vkQueueSubmit` and `vkQueueSubmit2`.
+
+### What the first-pass source currently does
+
+- Exposes the headless surface and swapchain extensions through RADV dispatch.
+- Supports a fixed 1920x1080 RGBA8 UNORM linear surface, 2–3 swapchain images,
+  FIFO/MAILBOX/IMMEDIATE modes, and host-visible/coherent image memory.
+- Opens VideoOut lazily, creates a flip event queue (with polling fallback),
+  registers aligned buffers, tracks four buffer banks, and defers old
+  swapchain destruction until VideoOut allows unregister.
+- Uses the GNM winsys `ac_ps4_submit_flip` helper first, falling back to
+  `vkQueueWaitIdle` plus `sceVideoOutSubmitFlip`.
+- Does not use Wine's `ps4kit_window_present` callback or alter the
+  window-desktop profile.
+
+### Remaining native WSI risks
+
+1. It has not yet been compiled against the actual OpenOrbis headers and Mesa
+   revision, nor tested on a retail PS4.
+2. The surface is fixed at 1920x1080 and RGBA8; scaling, rotation, other formats,
+   HDR and multiple simultaneous VideoOut surfaces are not implemented.
+3. The semaphore workaround assumes the PS4 app's rendering is ordered through
+   the same in-order RADV/GNM queue. Binary semaphores are intentionally
+   discarded; applications that use them for genuine cross-queue
+   synchronization may break. Timeline submit pNext handling currently
+   requires `VkTimelineSemaphoreSubmitInfo` to be the first node if present.
+4. The dispatch state is process-global and assumes one Vulkan device/VideoOut
+   session. Multi-device support and explicit VideoOut close/equeue teardown
+   are not implemented.
+5. The four-bank retirement scheme can return out-of-host-memory if all banks
+   remain registered; callers must handle swapchain recreation failure.
+6. The GPU-flip helper and CPU fallback have not been measured for frame
+   pacing, tearing or device-loss behavior on hardware.
+
+### Source/licence boundaries
+
+- SSBU's own WSI source is MIT-licensed in that repository and is used as
+  technical evidence, not copied.
+- M33's `PS4VulkanWSI.cpp` appears as an added file inside
+  `patches/ppsspp-ps4.patch`; that project is GPL-2.0. It is used only to
+  confirm the four-bank/deferred-retirement behavior, not copied.
+- SMW's WSI source is added inside its `wonder-ps4.patch`; it is also treated
+  as behavioral evidence only.
+- The native WSI file in this branch is new MIT clean-room code based on the
+  branch's own MIT window WSI and independently verified API contracts.
