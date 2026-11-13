@@ -110,3 +110,19 @@ Further constraints before implementation:
 ## 8. Licence/provenance caution
 
 The copied DolphinPS4 winsys file has its own MIT SPDX header and the reconstruction tree carries `LICENSE.ac_ps4_drm`. DolphinPS4's `CREDITS.md` also describes its Mesa port as MIT/per-file and the reconstruction carries a separate `patches/LICENSE.mesa-ps4` notice. OrbisDesk's current `THIRD_PARTY.md`, however, describes the Mesa patches originating in DolphinPS4 as GPL-2.0-or-later while separately identifying the winsys as MIT. These descriptions are not fully aligned. Keep the original notices, do not assume a repository-level licence overrides file-specific terms, and re-check the exact provenance before copying any further Mesa hunks. The OrbisDesk generator itself has an MIT header, but that does not automatically relicense the generated third-party source context.
+
+
+## 9. Why the private kit may need sceKernelEnableDmemAliasing
+
+A further independent implementation clue comes from shadPS4's PS4 libkernel emulation at commit `b97bafa353d868fe189955491ed38776b3518ed5`, file `src/core/libraries/kernel/memory.cpp`:
+
+- `sceKernelEnableDmemAliasing()` sets a process-level `g_alias_dmem` flag.
+- In `sceKernelMapNamedDirectMemory()`, for SDK 2.50+ mappings that are not stacks, the normal "already mapped physical direct-memory" check is enabled only when `g_alias_dmem` is false.
+- `sceKernelMapDirectMemory()` forwards to that named mapping function.
+- The parallel `sceKernelMapDirectMemory2()` path also passes `!g_alias_dmem` into the memory manager.
+
+This gives a plausible explanation for WinePS4's private-kit note `53cf427`: the PS4 kernel can reject a second mapping of the same physical direct-memory pages unless the process first enables aliasing. The placed map is exactly such a second mapping: the original BO remains GPU-mapped while a CPU-only alias is created at Wine's low reserved address.
+
+Reference: [shadPS4 memory.cpp at the inspected commit](https://github.com/shadps4-emu/shadPS4/blob/b97bafa353d868fe189955491ed38776b3518ed5/src/core/libraries/kernel/memory.cpp).
+
+Important limit: shadPS4 is an emulator implementation of the PS4 API, not a specification of retail firmware internals. It supports the interpretation of the private note, but does not prove the exact firmware gating/version behavior. DolphinPS4 and Crema source searches did not expose a public call to this API; that absence is not proof the call is unnecessary on retail hardware. Keep the private-kit note as the strongest direct evidence, and initialize aliasing once, before any placed BO alias, if the reconstructed runtime exposes the API.
