@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  rexxglue-project-injection:
+  rexglue-project-injection:
     name: MGR and MP3 CMake injection
     runs-on: ubuntu-latest
     steps:
