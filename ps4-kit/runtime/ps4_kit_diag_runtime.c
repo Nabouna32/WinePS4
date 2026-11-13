@@ -53,6 +53,7 @@ typedef struct ps4_kit_diag_thread {
     volatile uintptr_t rip;
     volatile uintptr_t rsp;
     _Atomic int sampler_registered;
+    _Atomic uint64_t self_cpu_ns;
     _Atomic unsigned int sample_count;
     _Atomic uintptr_t sample_last_rip;
     _Atomic unsigned int hot_count;
@@ -210,6 +211,7 @@ void ps4_watch_thread(const char *name)
         g_threads[index].rip = 0;
         g_threads[index].rsp = 0;
         atomic_init(&g_threads[index].sampler_registered, 0);
+        atomic_init(&g_threads[index].self_cpu_ns, 0u);
         atomic_init(&g_threads[index].sample_count, 0u);
         atomic_init(&g_threads[index].sample_last_rip, 0);
         atomic_init(&g_threads[index].hot_count, 0u);
@@ -348,6 +350,21 @@ void ps4_dump_thread_stacks(const char *path, const char *reason)
     close(fd);
 }
 
+void ps4_thread_cpu_tick(void)
+{
+    clockid_t clock_id;
+    struct timespec cpu;
+    int index = g_tls_thread_index;
+    uint64_t cpu_ns;
+    if (index < 0 || (unsigned int)index >= PS4_KIT_DIAG_MAX_THREADS)
+        return;
+    if (pthread_getcpuclockid(pthread_self(), &clock_id) != 0 ||
+        clock_gettime(clock_id, &cpu) != 0)
+        return;
+    cpu_ns = (uint64_t)cpu.tv_sec * 1000000000ull + (uint64_t)cpu.tv_nsec;
+    atomic_store_explicit(&g_threads[index].self_cpu_ns, cpu_ns, memory_order_relaxed);
+}
+
 typedef struct ps4_kit_diag_busy_entry {
     char name[PS4_KIT_DIAG_NAME_SIZE];
     int percent;
@@ -384,11 +401,13 @@ void ps4_thread_busy_report(char *out, size_t size, int min_percent)
     for (i = 0; i < count; i++) {
         clockid_t clock_id;
         struct timespec cpu;
-        uint64_t cpu_ns;
-        if (pthread_getcpuclockid(handles[i], &clock_id) != 0 ||
-            clock_gettime(clock_id, &cpu) != 0)
-            continue;
-        cpu_ns = (uint64_t)cpu.tv_sec * 1000000000ull + (uint64_t)cpu.tv_nsec;
+        uint64_t cpu_ns = atomic_load_explicit(&g_threads[i].self_cpu_ns, memory_order_relaxed);
+        if (!cpu_ns) {
+            if (pthread_getcpuclockid(handles[i], &clock_id) != 0 ||
+                clock_gettime(clock_id, &cpu) != 0)
+                continue;
+            cpu_ns = (uint64_t)cpu.tv_sec * 1000000000ull + (uint64_t)cpu.tv_nsec;
+        }
         if (previous_wall && wall > previous_wall && previous_cpu[i] &&
             cpu_ns >= previous_cpu[i]) {
             uint64_t elapsed = wall - previous_wall;
