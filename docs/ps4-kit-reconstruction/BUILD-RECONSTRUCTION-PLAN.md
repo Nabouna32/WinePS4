@@ -1,8 +1,21 @@
 # Build-first ps4-kit reconstruction plan
 
-Priority: **compile and package the existing WinePS4 revision unchanged**. Do not spend time improving networking, application behavior or adding features unless a concrete build failure requires it.
+Priority: **compile and package the existing WinePS4 revision unchanged first**.
+The broader goal is then to extend the same clean-room kit to the other public
+projects that directly consume ps4-kit or reuse its shared toolchain/runtime
+lineage. Do not spend time improving networking, application behavior or adding
+features unless a concrete build failure requires it.
 
-The target is the current public build described by `docs/BUILDING.md`, not an imagined clean-room redesign. **Do not modify WinePS4's app/runtime behavior to make the reconstruction easier**: all missing compatibility behavior must be supplied by the kit boundary.
+The target for the first milestone is the current public WinePS4 build described
+by `docs/BUILDING.md`, not an imagined clean-room redesign. **Do not modify
+WinePS4's app/runtime behavior to make the reconstruction easier**: all missing
+compatibility behavior must be supplied by the kit boundary.
+
+The broader project list and evidence are in
+[PROJECT-COMPATIBILITY-MATRIX.md](PROJECT-COMPATIBILITY-MATRIX.md). In
+particular, MGR-PS4 names a second private kit revision (`79fba0f`) and needs
+a native VideoOut profile; WinePS4's `56b3d86` build needs its distinct
+window-desktop WSI.
 
 ## 1. Exact build graph from WinePS4
 
@@ -17,7 +30,10 @@ The build has three distinct products and several prebuilt inputs:
 3. **Target app**: `app/build.sh all` configures/builds `app/CMakeLists.txt`, then separately configures/builds `app/launcher/CMakeLists.txt`.
 4. **Package**: `app/package.sh` stages the host Wine output, prefix, DXVK, fonts, certificates and two eboots, then invokes `$PS4_KIT/scripts/make-pkg.sh`.
 
-The primary deliverable for the first milestone is a successful configure + link of both target executables. Packaging is the next milestone; the full release package is not complete until all host-side inputs and packaging helpers are reproducible too.
+The primary deliverable for the first milestone is a successful configure + link
+of both target executables. Packaging is the next milestone; the full release
+package is not complete until all host-side inputs and packaging helpers are
+reproducible too.
 
 ## 2. Exact ps4-kit surface consumed by the current source
 
@@ -34,77 +50,133 @@ Observed directly in the current WinePS4 scripts:
 | `$PS4_LINK_SCRIPT` | main CMake project | Writable linker script; WinePS4 inserts image base `0x60000000` |
 | `$PS4_SYSROOT` | target build | Headers and static system libraries, including zlib/OpenSSL and C++ runtime where required |
 
-Important: `ps4_kit_link_mesa` is the largest remaining target-build blocker. WinePS4 expects RADV plus a per-window headless WSI that forwards CPU-readable frames to the desktop callback; a full-screen VideoOut swapchain from another port is not a drop-in. Public DolphinPS4 provides a MIT/per-file Mesa 26.0.8 GNM winsys and integration patch, plus the static RADV archive closure and whole-archive linking convention.
+MGR-PS4 is the second direct integration target. Its public script calls
+`ps4_cmake`, injects `ps4-kit.cmake` through
+`CMAKE_PROJECT_sa2_INCLUDE`, and disables the kit's optional NETFS component.
+Before implementing a generic MGR adapter, audit the complete private-facing
+CMake contract and the app's VideoOut/RADV symbols; do not assume Wine's
+`ps4_kit_link_mesa` WSI is suitable.
 
 ## 3. Reconstruction order
 
-### Milestone A — make configuration deterministic
+### Milestone A — deterministic shared toolchain
 
-- Reproduce `toolchain/env.sh` and `ps4_cmake` from the public OpenOrbis/DolphinPS4/xemu build conventions.
-- Record exact compiler versions and executable names from WinePS4's pinned kit-era build assumptions; do not silently select whichever clang is on PATH.
-- Ensure both app and launcher configure from a clean build directory.
-- Run the linker-script generator against the exact installed OpenOrbis `link.x`; test marker counts and the resulting full script.
-- Confirm WinePS4's image-base edit at `0x60000000` is preserved after generating the patched linker script.
+- Reproduce `toolchain/env.sh` and `ps4_cmake` from public OpenOrbis,
+  DolphinPS4 and xemu-ps4 conventions.
+- Use LLVM 21 as the modern public-port baseline while retaining explicit
+  version overrides; the private WinePS4 kit's exact compiler remains
+  unconfirmed.
+- Separate host compiler/build tools from target compiler, sysroot and SDK.
+- Add a machine-readable manifest for OpenOrbis, LLVM/libc++, Mesa, Vulkan
+  headers, host Meson/glslang and package tools.
+- Ensure the Wine app and launcher configure from clean build directories.
 
-### Milestone B — produce a minimal valid eboot for both targets
+### Milestone B — WinePS4 minimal eboots and package
 
-- Verify the exact `create-fself` invocation and output names against the installed OpenOrbis tool.
-- Reproduce `ps4_kit_app` target dependencies and output paths exactly.
-- Verify the generated OELF program headers, imports/exports and process parameters.
-- Build the launcher first; then build the main executable with the same toolchain and expected system libraries.
-- Keep the ELF, OELF, eboot and link map as CI/build artifacts for diagnosis.
+- Verify the exact `create-fself` invocation and output names against the
+  installed OpenOrbis tool.
+- Reproduce `ps4_kit_app` dependencies and output paths exactly.
+- Verify generated OELF program headers, imports/exports and process parameters.
+- Build launcher first, then main executable with expected system libraries.
+- Keep ELF, OELF, eboot and link map as CI/build artifacts.
+- Validate `make-pkg.sh` against real OpenOrbis `PkgTool.Core` and
+  `create-gp4` versions.
 
-### Milestone C — reconstruct the RADV + Wine window WSI link path
+### Milestone C — RADV/GNM and presentation profiles
 
-- [x] Vendor the MIT/per-file GNM winsys and Mesa 26.0.8 integration patch from DolphinPS4 commit `879b3e57f3d3180bcb5f2234db3903688b28cd7d`; preserve separate license notices.
-- [x] Add `prepare-source.sh` with forward/reverse `git apply --check`, and `build-mesa.sh` to generate the PS4 Meson cross file and build the public RADV archive targets.
-- [x] Implement the first clean-room Wine window-mode WSI: headless surface, window-sized linear host-visible swapchain images, row-pitch handling, acquire/present synchronization, and exact desktop callback forwarding. Host syntax and fake-RADV dispatch tests pass.
-- [x] Verify patch applicability and GNM staging against the real upstream Mesa 26.0.8 tag in GitHub Actions run [#265](https://github.com/Nabouna32/WinePS4/actions/runs/43503275708); [ ] run the actual PS4 cross build and verify the resulting 16-archive link closure against the WinePS4 link command.
-- [ ] Validate image-format/memory support, resize/recreation, synchronization and desktop presentation on PS4. The desktop remains the sole VideoOut owner; the Wine WSI does not use the public full-screen flip path.
+- [x] Vendor the MIT/per-file GNM winsys and Mesa 26.0.8 integration patch
+  from DolphinPS4 commit `879b3e57f3d3180bcb5f2234db3903688b28cd7d`;
+  preserve separate license notices.
+- [x] Add `prepare-source.sh` and `build-mesa.sh` with revision checks and
+  the public RADV target set.
+- [x] Implement the first clean-room Wine window-mode WSI: headless surface,
+  window-sized linear host-visible swapchain images, row-pitch handling,
+  acquire/present synchronization and desktop callback forwarding.
+- [ ] Run the actual PS4 cross build and verify the 16-archive Wine link closure.
+- [ ] Validate Wine image formats, memory, resize/recreation, synchronization
+  and desktop presentation on PS4.
+- [ ] Audit the full Crema GNM winsys delta (write-combined tracking and CPU
+  cache flush) before implementing placed-memory aliases.
+- [ ] Reconstruct a separate `native-videoout` WSI profile for MGR and the
+  shared emulator/recompilation projects. Do not reuse the Wine desktop WSI.
 
-### Milestone D — packaging
+### Milestone D — MGR direct-consumer compatibility
 
-- [x] Recreate the six-argument `make-pkg.sh` interface called by `app/package.sh`, using local OpenOrbis `PkgTool.Core` and `create-gp4` tools.
-- [x] Implement the plain SFO fields and honour WinePS4's existing `SFO_ATTRIBUTE=0x800002`; retain `NO_RIGHT_SPRX=1` behavior.
-- [x] Add a fake-tool smoke test for the script's arguments, content ID, SFO attribute and final output path.
-- [x] Keep SDK tools and any local sample PRXs outside the repository; only copy optional sample modules from the user's local OpenOrbis tree when present.
-- [ ] Run the smoke test and validate the script against the user's actual OpenOrbis `PkgTool.Core` / `create-gp4` versions.
-- [ ] Inspect the generated SFO/GP4/PKG and validate every staged path before claiming a valid installable package.
+- [ ] Audit MGR's CMake project injection, required kit symbols and packaging
+  arguments at the pinned public MGR commit.
+- [ ] Add a host configure test for `CMAKE_PROJECT_sa2_INCLUDE` and
+  `PS4_KIT_NETFS=OFF`.
+- [ ] Identify native VideoOut surface/swapchain ownership and link closure.
+- [ ] Add a dedicated MGR/native-VideoOut smoke build without changing MGR
+  sources or WinePS4 sources.
+- [ ] Validate MGR's package output against its own title/SFO/content manifest.
+
+### Milestone E — shared SDK artifacts and project adapters
+
+- [ ] Publish a source/version manifest for the OpenOrbis sysroot, LLVM 21
+  libc++, Mesa/RADV archive set, Vulkan-Headers, glslang and package tools.
+- [ ] Reproduce the SMW `sdk-1` bundle from declared source inputs and verify
+  its SHA-256; do not depend on opaque unverified binaries.
+- [ ] Add build-tree adapters for DolphinPS4, Crema and Resonance, starting
+  from their public build scripts and per-file licences.
+- [ ] Verify M33's Resonance sysroot/Mesa seed and RPCS3 FFmpeg 7.1.1 artifact
+  lineage.
+- [ ] Verify SMW and TOTK-PS4 consume the same compatible SDK manifest.
+- [ ] Keep project-specific heap, WSI, FFmpeg and third-party settings in
+  profiles rather than global defaults.
 
 ## 4. Evidence hierarchy
 
 Use, in order:
 
-1. WinePS4's own build scripts and its documented ps4-kit revision `56b3d86`.
-2. Public dependent-project commits that name ps4-kit revisions or expose its interface.
-3. Public DolphinPS4, xemu-ps4 and love-ps4 toolchain scripts for independently reproducible OpenOrbis build mechanics.
+1. Each project's own pinned build scripts, docs, credits and commit history.
+2. Public dependent-project commits that name ps4-kit revisions or expose its
+   interface.
+3. Public DolphinPS4, Crema, Resonance, M33 and SMW build scripts/artifacts.
 4. Official OpenOrbis toolchain and create-fself sources/docs.
-5. Target build logs and symbol tables, when the user can supply them.
+5. Target build logs and symbol tables, when available.
 
-Do not infer private implementation details from a function name alone. Keep an evidence note beside each recovered command, flag, linker rule and archive list.
+Do not infer private implementation details from a function name alone. Keep
+source URL, commit, file path, licence and test evidence beside every reused
+command, flag, linker rule and archive list.
 
 ## 5. Explicitly deprioritized
 
 - Network stack improvements, DNS replacement and NetCtl cleanup.
-- New Wine features, game compatibility, Steam runtime tuning.
-- Graphics/runtime enhancements beyond what is strictly needed to compile and link the current source.
-- Profiling, crash-log UX and performance work.
+- New Wine features, game compatibility and Steam runtime tuning.
+- Graphics/runtime enhancements beyond what is needed to compile/link the
+  selected public project profiles.
+- Profiling and crash-log UX beyond reproducing the common runtime contract.
 
-Networking is documented in `NETWORK-API-MAP.md` as background only. Revisit it only if a build error proves it blocks the target.
+Networking remains background-only unless a build error proves it blocks a
+target profile.
 
 ## 6. Acceptance criteria
 
-A milestone is complete only when its evidence is recorded:
+Wine-first acceptance:
 
 - [ ] Clean host setup documented, including exact tool versions.
 - [ ] Host Wine build reproducible.
-- [ ] FreeType, FFmpeg image libraries, DXVK and test programs present at expected paths.
-- [ ] Main app CMake configure succeeds from an empty build directory.
-- [ ] Launcher CMake configure succeeds from an empty build directory.
-- [ ] Main app ELF links with no unexplained unresolved symbols.
-- [ ] Launcher ELF links with no unexplained unresolved symbols.
+- [ ] FreeType, FFmpeg image libraries, DXVK and test programs present.
+- [ ] Main app and launcher configure from empty build directories.
+- [ ] Main app and launcher ELF link without unexplained unresolved symbols.
 - [ ] Both `create-fself` commands succeed and OELF checks pass.
-- [ ] `app/package.sh` produces the expected package with all expected paths.
-- [ ] The final package is tested on a PS4 (separate runtime milestone).
+- [ ] `app/package.sh` produces the expected package and staged paths.
+- [ ] Final package is tested on a PS4 (separate runtime milestone).
 
-Current status: the host-side kit reconstruction now includes environment, linker/CMake, runtime/package prototypes, the MIT Mesa GNM source/patch, a Mesa cross-build driver, and the first Wine window WSI. GitHub Actions run [#244](https://github.com/Nabouna32/WinePS4/actions/runs/43500846603) passed all four host CI jobs. Run [#265](https://github.com/Nabouna32/WinePS4/actions/runs/43503275708) additionally passed the real upstream Mesa 26.0.8 patch/staging check; its remaining host jobs are being run. No real OpenOrbis target build, actual Mesa cross-build, end-to-end WinePS4 link, package build or PS4 hardware validation has been completed.
+Multi-project acceptance:
+
+- [ ] MGR's public CMake injection and native-VideoOut profile configure.
+- [ ] MGR app links and packages with its own profile.
+- [ ] DolphinPS4/Crema/Resonance build adapters use a pinned shared SDK
+  manifest and preserve per-file licences.
+- [ ] M33, SMW and TOTK-PS4 can consume the same compatible SDK artifact where
+  their own dependency versions permit it.
+- [ ] Each claimed project has a clean configure/link/package log; hardware
+  runtime claims are recorded separately.
+
+Current status: host-side Wine kit scaffolding, runtime/package prototypes,
+MIT Mesa GNM source/patch, Mesa cross-build driver and Wine window WSI exist.
+GitHub Actions run #43512309389 completed successfully, but this is host-only
+validation. No actual OpenOrbis target build, Mesa cross-build, end-to-end
+WinePS4/MGR link, package build or PS4 hardware validation has been completed.
