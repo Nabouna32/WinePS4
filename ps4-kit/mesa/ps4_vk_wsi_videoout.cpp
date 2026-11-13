@@ -62,6 +62,7 @@ struct SwapchainImage {
     VkDeviceSize allocation_size = 0;
     VkDeviceSize bind_offset = 0;
     VkSubresourceLayout layout{};
+    int64_t last_flip_arg = 0;
 };
 
 struct Swapchain {
@@ -157,18 +158,16 @@ bool open_video_out()
     return true;
 }
 
-bool wait_off_screen(uint32_t image_count)
+bool wait_off_screen(int64_t required_flip_arg)
 {
-    const uint64_t submitted = g_flips.load(std::memory_order_acquire);
-    if (submitted < image_count - 1u)
+    if (required_flip_arg <= 0)
         return true;
 
-    const int64_t needed = static_cast<int64_t>(submitted - (image_count - 2u));
     for (unsigned int tries = 0; tries < 40u; ++tries) {
         OrbisVideoOutFlipStatus status{};
         if (sceVideoOutGetFlipStatus(g_video, &status) < 0)
             return false;
-        if (status.flipArg >= needed)
+        if (status.flipArg >= required_flip_arg)
             return true;
 
         if (!g_flip_queue) {
@@ -784,9 +783,13 @@ VkResult VKAPI_CALL wsi_acquire_next_image(VkDevice device, VkSwapchainKHR handl
         if (found == g_swapchains.end())
             return VK_ERROR_OUT_OF_DATE_KHR;
         Swapchain &swapchain = *found->second;
-        if (!wait_off_screen(static_cast<uint32_t>(swapchain.images.size())))
+        const uint32_t candidate = swapchain.next_image %
+                                   static_cast<uint32_t>(swapchain.images.size());
+        if (!wait_off_screen(swapchain.images[candidate].last_flip_arg))
             return VK_TIMEOUT;
-        *index = swapchain.next_image++ % static_cast<uint32_t>(swapchain.images.size());
+        *index = candidate;
+        swapchain.next_image = (candidate + 1u) %
+                               static_cast<uint32_t>(swapchain.images.size());
     }
 
     if (fence) {
@@ -823,6 +826,7 @@ VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *inf
                 item_result = VK_ERROR_OUT_OF_DATE_KHR;
             } else {
                 Swapchain &swapchain = *found->second;
+                SwapchainImage &presented_image = swapchain.images[info->pImageIndices[i]];
                 const unsigned buffer = static_cast<unsigned>(swapchain.first_buffer) +
                                         info->pImageIndices[i];
                 const int64_t arg = static_cast<int64_t>(g_flips.load(std::memory_order_acquire) + 1u);
@@ -847,6 +851,7 @@ VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *inf
                 if (item_result == VK_SUCCESS && result < 0) {
                     item_result = VK_ERROR_SURFACE_LOST_KHR;
                 } else if (item_result == VK_SUCCESS) {
+                    presented_image.last_flip_arg = arg;
                     const uint64_t submitted = g_flips.fetch_add(1u, std::memory_order_acq_rel) + 1u;
                     if (submitted == 1u)
                         sceSystemServiceHideSplashScreen();
