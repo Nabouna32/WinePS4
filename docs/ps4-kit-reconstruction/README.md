@@ -17,7 +17,7 @@ A public repository by the same author, MGR-PS4, describes ps4-kit as providing 
 
 ## Current strategy
 
-Rebuild the **minimum compatible interface**, not an imagined byte-for-byte copy of the private kit:
+Rebuild the **minimum compatible interface**, not an imagined byte-for-byte copy of the private kit. Keep the WinePS4 application sources and their behavior unchanged: all compatibility work belongs under the reconstructed `ps4-kit/` tree (plus research documentation/tests). Install it at `$HOME/ps4-kit` with a symlink so the existing build scripts and CMake includes continue to work.
 
 1. Inventory every CMake function, variable, header, library and script WinePS4 expects.
 2. Separate build-host tools from PS4 runtime components.
@@ -30,7 +30,7 @@ Rebuild the **minimum compatible interface**, not an imagined byte-for-byte copy
 
 **Build-first scope:** [BUILD-RECONSTRUCTION-PLAN.md](BUILD-RECONSTRUCTION-PLAN.md) is the active plan and acceptance checklist. See [PUBLIC-TRACES.md](PUBLIC-TRACES.md) for public evidence, [INTERFACE-AUDIT.md](INTERFACE-AUDIT.md) for the build/runtime boundary, and [MESA-LINK-TRACE.md](MESA-LINK-TRACE.md) for the RADV/VideoOut link blocker. [NETWORK-API-MAP.md](NETWORK-API-MAP.md) is background only; networking is not a priority.
 
-No replacement implementation is claimed to work yet. In particular, the graphics/RADV integration, PS4 linker script, sysroot, packaging/signing path and runtime must be validated rather than guessed.
+The repository now contains a `ps4-kit/` compatibility entry point and an initial `toolchain/env.sh` reconstruction. See [`ps4-kit/README.md`](../../ps4-kit/README.md) for the no-source-edit installation path. This is not yet a complete kit. No replacement implementation is claimed to work yet. In particular, the graphics/RADV integration, PS4 linker script, sysroot, packaging/signing path and runtime must be validated rather than guessed.
 
 ## Rules for contributions
 
