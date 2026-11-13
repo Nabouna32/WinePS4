@@ -421,7 +421,9 @@ VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice physical_device, V
     capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     capabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     capabilities->supportedUsageFlags = supported_linear_usage(
-        physical_device, VK_FORMAT_R8G8B8A8_UNORM);
+        physical_device, VK_FORMAT_R8G8B8A8_UNORM) &
+        (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+         VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     return VK_SUCCESS;
 }
 
@@ -438,8 +440,10 @@ VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice physical_device, VkSurf
 {
     if (!count || !valid_surface(surface))
         return VK_ERROR_SURFACE_LOST_KHR;
-    if (!(supported_linear_usage(physical_device, VK_FORMAT_R8G8B8A8_UNORM) &
-          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT))
+    const VkImageUsageFlags supported = supported_linear_usage(
+        physical_device, VK_FORMAT_R8G8B8A8_UNORM);
+    if ((supported & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) !=
+        (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if (!formats) {
         *count = 1;
@@ -632,8 +636,12 @@ VkResult VKAPI_CALL wsi_create_swapchain(VkDevice device, const VkSwapchainCreat
     constexpr VkImageUsageFlags supported_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if (!info->imageUsage || (info->imageUsage & ~supported_usage) ||
-        (info->imageUsage & ~supported_linear_usage(g_physical_device, info->imageFormat)))
+    const VkImageUsageFlags linear_usage = supported_linear_usage(g_physical_device, info->imageFormat);
+    const VkImageUsageFlags required_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((linear_usage & required_usage) != required_usage ||
+        !info->imageUsage || (info->imageUsage & ~supported_usage) ||
+        (info->imageUsage & ~linear_usage))
         return VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR;
 
     if (info->imageSharingMode == VK_SHARING_MODE_CONCURRENT && info->queueFamilyIndexCount < 2)
