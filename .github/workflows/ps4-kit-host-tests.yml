@@ -26,6 +26,14 @@ jobs:
       - name: Test linker-script generator and CMake glue
         run: python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
 
+  environment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out reconstruction branch
+        uses: actions/checkout@v4
+      - name: Test OpenOrbis environment bootstrap with fake SDK tools
+        run: bash ps4-kit/toolchain/tests/test-env.sh
+
   package-script:
     runs-on: ubuntu-latest
     steps:
