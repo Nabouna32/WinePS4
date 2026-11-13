@@ -32,8 +32,9 @@ so choosing one automatically would be unsafe.
   from WinePS4's own call sites. The heap-options layout is a new paired
   clean-room contract, not a recovered private binary ABI.
 - `runtime/ps4_kit_runtime.c`: initial implementations for thread priorities,
-  minimum thread stack, and OpenOrbis internal system-module loading. The
-  wrapper is linked through `ps4_kit_app()`; a host test uses mocked Sce APIs.
+  minimum thread stack, OpenOrbis internal system-module loading, and the exact
+  Wine Vulkan present/log callback registration bridge. The wrapper is linked
+  through `ps4_kit_app()`; host tests use mocked Sce APIs.
 - `scripts/make-pkg.sh`: initial OpenOrbis `PkgTool.Core` / `create-gp4`
   implementation, with the SFO attributes expected by WinePS4. Its fake-tool
   smoke test is in `scripts/tests/`.
