@@ -1,0 +1,36 @@
+name: ps4-kit host compatibility tests
+
+on:
+  push:
+    branches:
+      - research/ps4-kit-reconstruction
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out reconstruction branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Test linker-script generator and CMake glue
+        run: python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
+
+      - name: Test reconstructed package script with fake OpenOrbis tools
+        run: bash ps4-kit/scripts/tests/test_make_pkg.sh
+
+      - name: Test runtime wrappers with mocked PS4 imports
+        run: bash ps4-kit/runtime/tests/run-host-tests.sh
