@@ -13,7 +13,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/ps4-linker.cmake)
 # The runtime subset is compiled from this clean-room kit tree and linked only
 # through the existing ps4_kit_app() entry point.
 get_filename_component(_PS4_KIT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../ps4-kit" ABSOLUTE)
-set(_PS4_KIT_RUNTIME "${_PS4_KIT_ROOT}/runtime/ps4_kit_runtime.c")
+set(_PS4_KIT_RUNTIME
+    "${_PS4_KIT_ROOT}/runtime/ps4_kit_runtime.c"
+    "${_PS4_KIT_ROOT}/runtime/ps4_kit_heap_policy.c")
 if (NOT TARGET ps4_kit_runtime)
     add_library(ps4_kit_runtime STATIC "${_PS4_KIT_RUNTIME}")
     target_include_directories(ps4_kit_runtime PUBLIC "${_PS4_KIT_ROOT}/include")
