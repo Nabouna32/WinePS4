@@ -125,7 +125,63 @@ generated, and `PS4_KIT_NETFS=OFF` survives configuration. It is a host-only
 configure test: it does not compile the PS4 runtime, link Mesa, create an eboot
 or prove that the private NetFS behavior has been reproduced.
 
-## 5. Next implementation gates
+## 5. Public fork survey (13 November 2026)
+
+The public fork search is useful, but it does **not** currently reveal another
+clean-room reconstruction of the private kit. The surveyed results include
+many mirrors and forks that are unchanged in the files relevant to the kit.
+A fork count is not evidence of an independent build effort.
+
+### DolphinPS4
+
+GitHub listed 16 forks for the upstream repository at the time of the survey.
+The following fork snapshots were inspected at file level:
+
+| Fork | Relevant finding |
+|---|---|
+| [tehrzky/DolphinPS4](https://github.com/tehrzky/DolphinPS4) | Its BUILDING.md, toolchain/build-libcxx.sh, toolchain/build-runtime.sh, scripts/build-mesa.sh and port/mesa/ac_ps4_drm.c have the same blob SHAs as the other sampled snapshots. Its port/ps4_runtime.cpp is an older/different 29.5 KB variant (43240fd…) and lacks the newer executable-memory probing path present upstream. |
+| [dynnocruel-gif/DolphinPS4](https://github.com/dynnocruel-gif/DolphinPS4) | The sampled build files match upstream; port/ps4_runtime.cpp is byte-identical to upstream at blob 29a060f…. |
+| [shitastical/DolphinPS4](https://github.com/shitastical/DolphinPS4) | Same result as dynnocruel-gif for the sampled build files and runtime blob. |
+| [Mrexel55/dolphinps4](https://github.com/Mrexel55/dolphinps4) | Repository is only a tiny stub (size 1); no useful kit implementation surfaced. |
+| [hikaru457/DolphinPS4-sdhc-and-wii-disc-load](https://github.com/hikaru457/DolphinPS4-sdhc-and-wii-disc-load) | A feature fork; not yet shown to contain independent kit/build reconstruction. |
+
+The useful result is not a second kit: it is an **older runtime snapshot** in
+tehrzky's fork that can be compared against current upstream to understand when
+the executable-memory probe was introduced. Do not treat that fork as a more
+complete or more buildable kit.
+
+### Other lineage forks sampled
+
+Targeted file checks also found identical blob SHAs between upstream and the
+sampled forks for:
+- Crema: port/ps4_runtime.cpp (5652434…) in upstream and the checked
+  forks (Glec6, lanvas2008, wagnerguerchee).
+- Resonance: port/ps4_runtime.cpp (377d553…) in upstream and the checked
+  forks (tehrzky, Glec6).
+- M33: port/ps4_runtime.cpp (b4fe309…) in upstream and
+  leecloudvictor/ps4-M33.
+- SMW: scripts/make-sdk.sh (84f8e9a…) in upstream and ayasns/SMW.
+- TTT2-PS4: README.md (d00d041…) in upstream and Stayhye/TTT2-PS4.
+
+These are targeted blob comparisons, not full recursive tree comparisons.
+They show no divergence in the sampled runtime/build entry points; they do
+not prove that every fork file or branch is identical.
+
+### WinePS4 and interpretation
+
+The public fork search found the user's Nabouna32/WinePS4 fork alongside
+upstream; no other public WinePS4 fork surfaced in the search. Among the
+sampled DolphinPS4, Crema, Resonance, M33, SMW and TTT2 forks, no independent
+ps4-kit replacement, compatibility shim, or reproducible build recipe was
+found.
+
+This is a bounded negative result: GitHub search can miss private repositories,
+deleted forks, unindexed branches and renamed copies. Continue checking
+fork-specific commits and branches when a new candidate appears. For now,
+public forks are useful mainly as historical snapshots, not as a recovered
+private kit.
+
+## 6. Next implementation gates
 
 1. [x] Add the host injection test to `.github/workflows/ps4-kit-host-tests.yml`;
    its first GitHub Actions result still needs to be checked.
