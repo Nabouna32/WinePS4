@@ -79,3 +79,17 @@ Host-only checks passed in [GitHub Actions run #168](https://github.com/Nabouna3
   its fake-tool test cannot establish that the resulting PKG is valid.
 
 No claim is made yet that the project configures, links, packages, or runs on hardware.
+
+
+## Scope boundary: native VideoOut Vulkan
+
+The direct, full-screen PS4 VideoOut presentation path is intentionally **not** part of
+this Wine-specific kit. WinePS4's desktop owns the physical display and its WSI forwards
+completed window frames to the desktop callback. A native Vulkan application that owns
+the display needs a separate VideoOut lifecycle, flip queue and presentation backend.
+
+That reusable native path is being prototyped in
+[Nabouna32/Vulkan-test-ps4](https://github.com/Nabouna32/Vulkan-test-ps4), independently
+of this reconstruction. Only proven low-level components (for example, shared GNM/RADV
+build inputs or carefully factored memory/synchronization helpers) should later be shared.
+Do not link the native VideoOut WSI into WinePS4 or change Wine's window callback contract.
