@@ -27,6 +27,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <iterator>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -433,7 +434,7 @@ void destroy_swapchain_images(Swapchain &swapchain)
 }
 
 VkResult create_swapchain_image(Swapchain &swapchain, VkPhysicalDevice physical_device,
-                                VkImageUsageFlags usage, SwapchainImage &out)
+                                const VkSwapchainCreateInfoKHR &swapchain_info, SwapchainImage &out)
 {
     auto create_image = device_function<PFN_vkCreateImage>(swapchain.device, "vkCreateImage");
     auto get_requirements = device_function<PFN_vkGetImageMemoryRequirements>(
@@ -454,9 +455,10 @@ VkResult create_swapchain_image(Swapchain &swapchain, VkPhysicalDevice physical_
     image_info.arrayLayers = 1;
     image_info.samples = VK_SAMPLE_COUNT_1_BIT;
     image_info.tiling = VK_IMAGE_TILING_LINEAR;
-    image_info.usage = usage;
-    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (swapchain.images.empty()) { /* populated by the caller below */ }
+    image_info.usage = swapchain_info.imageUsage;
+    image_info.sharingMode = swapchain_info.imageSharingMode;
+    image_info.queueFamilyIndexCount = swapchain_info.queueFamilyIndexCount;
+    image_info.pQueueFamilyIndices = swapchain_info.pQueueFamilyIndices;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkResult result = create_image(swapchain.device, &image_info, nullptr, &out.image);
@@ -516,9 +518,8 @@ VkResult VKAPI_CALL wsi_create_swapchain(VkDevice device, const VkSwapchainCreat
     swapchain->bgra = info->imageFormat == VK_FORMAT_B8G8R8A8_UNORM;
     swapchain->images.resize(std::clamp<uint32_t>(info->minImageCount, 2, 3));
 
-    const VkImageUsageFlags usage = info->imageUsage;
     for (auto &image : swapchain->images) {
-        VkResult result = create_swapchain_image(*swapchain, g_physical_device, usage, image);
+        VkResult result = create_swapchain_image(*swapchain, g_physical_device, *info, image);
         if (result != VK_SUCCESS) {
             destroy_swapchain_images(*swapchain);
             return result;
@@ -610,9 +611,6 @@ VkResult VKAPI_CALL wsi_acquire_next_image2(VkDevice device, const VkAcquireNext
 VkResult VKAPI_CALL wsi_queue_present(VkQueue queue, const VkPresentInfoKHR *info)
 {
     if (!info || !info->swapchainCount) return VK_ERROR_INITIALIZATION_FAILED;
-
-    auto get_device_queue = device_function<PFN_vkQueueWaitIdle>(g_device, "vkQueueWaitIdle");
-    (void)get_device_queue;
 
     // An empty submit consumes the caller's binary wait semaphores and signals a fence only
     // after all rendering queued before presentation has completed. The callback therefore
