@@ -17,7 +17,10 @@
 - Added `ps4-kit/toolchain/env.sh`, the path-compatible entry point expected by the unchanged WinePS4 scripts. It exposes `PS4_KIT`, `PSB`, `OPENORBIS`, `PS4_SYSROOT`, versioned LLVM tool names and `ps4_cmake`; `CLANG_VER` remains explicit because the WinePS4 kit pin's exact LLVM version is not yet proven.
 - Added `ps4-kit/ps4-kit.cmake` as the existing CMake include path, delegating to the compatibility implementation.
 - Added `ps4-kit/scripts/make-pkg.sh`, implementing the six-argument interface used by the unchanged `app/package.sh`: SFO generation, GP4 generation and `PkgTool.Core pkg_build`. The plain SFO profile honours WinePS4's `SFO_ATTRIBUTE=0x800002`; `NO_RIGHT_SPRX=1` is honoured as passed by the project. It uses local OpenOrbis tools only and does not add SDK binaries to the repository.
-- Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path.
+- Added `ps4-kit/scripts/tests/test_make_pkg.sh`, a fake-tool smoke test for the command-line contract, generated content ID, SFO attribute and final package path. The test was run locally against mocked OpenOrbis tools and passed; this does not validate the real OpenOrbis packaging binaries.
+- Added source-level `ps4-kit/include/ps4_kit.h` and `ps4_kit_diag.h` declarations based on WinePS4's actual call sites. The heap-options struct is explicitly a clean-room contract, not a recovered private ABI layout.
+- Added `ps4-kit/runtime/ps4_kit_runtime.c` for `ps4_kit_load_module`, thread-priority helpers, minimum thread stack and a `pthread_create` wrapper. The CMake kit now links this runtime and exposes the include directory without editing WinePS4 project files.
+- Added a host test with mocked Sce APIs for the runtime wrapper. The equivalent host compile/run passed locally; a target OpenOrbis build is still required.
 - Added installation and packaging-boundary notes under `ps4-kit/`.
 - No files under `app/`, `port/`, `shell/`, or the Wine source were changed to integrate the kit. The intended installation is a symlink at `$HOME/ps4-kit`.
 
@@ -60,7 +63,8 @@ The implementation is independent and does not copy those files.
 - The private kit's exact compiler and linker command contract for WinePS4's pinned kit revision `56b3d86`; the new environment entry point is an evidence-based approximation and has not been tested.
 - WinePS4's exact PAID/auth-info requirements; current values are configurable defaults drawn from a public PS4 port and must be confirmed for this application.
 - The exact WinePS4-compatible RADV + VideoOut WSI interface and archive dependency closure; public MIT WSI source is now identified as a candidate but not integrated or tested.
-- Crash logging, profiling, stdio/runtime hooks and the exact private-kit runtime ABI.
+- The custom heap backend that consumes WinePS4's `ps4_kit_configure_heap()` policy callback; the source-level options struct exists, but the allocator is not implemented.
+- The full diagnostics/crash logging backend, profiler and stdio/runtime hooks.
 - Validation of `make-pkg.sh` against the installed OpenOrbis `PkgTool.Core` / `create-gp4`, including SFO inspection and a real PKG build.
 - A real OpenOrbis configure/link test, eboot validation on a PS4, and a complete WinePS4 build.
 
@@ -69,6 +73,7 @@ The implementation is independent and does not copy those files.
 ```sh
 python3 -m unittest discover -s toolchain/ps4-kit-compat/tests -v
 bash ps4-kit/scripts/tests/test_make_pkg.sh
+bash ps4-kit/runtime/tests/run-host-tests.sh
 ```
 
 The host tests cover generator transformations, fail-closed behavior, CMake configure-time wiring using a synthetic OpenOrbis fixture, and the package script's argument/SFO/output contract using fake tools. They have been added but have **not yet been executed in this session**. They are not a substitute for running the generator against the exact `link.x` installed on the target build host.
