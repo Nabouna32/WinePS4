@@ -1,8 +1,8 @@
 # Wine window-mode Vulkan WSI contract
 
 This note records the interface recovered from the checked-in WinePS4 patch and the
-constraints for a clean-room implementation in `ps4-kit/mesa/`. It deliberately
-does not claim that a WSI implementation exists yet.
+constraints for the clean-room implementation in `ps4-kit/mesa/ps4_vk_wsi_window.cpp`.
+The implementation is an initial pass and remains subject to target validation.
 
 ## 1. The application-facing contract
 
@@ -53,23 +53,23 @@ VideoOut. Therefore the WSI must be headless and window-sized:
 - support swapchain destruction/recreation, including resize and
   `oldSwapchain` handling.
 
-The initial correctness-first implementation may wait for the relevant queue to
-be idle before invoking the callback. This is expected to be slower than a GPU
-copy/async path, but avoids handing Wine a pointer to an image still being
-written. It must still correctly consume the present wait semaphores and honour
-acquire semaphore/fence semantics. Do not silently discard binary semaphores:
+The initial correctness-first implementation submits an empty operation to the
+present queue, waits on the application's presentation semaphores, signals a
+fence, and waits for that fence before invoking the callback. This is slower
+than a GPU-copy/async path, but avoids handing Wine a pointer to an image still
+being written while preserving the caller's binary wait semaphores. Acquire
+uses an empty submit to signal the requested semaphore/fence. Do not silently discard binary semaphores:
 a separate public PS4 WSI does this because of a platform-specific failure mode,
 but that behavior has not been established for this WinePS4/Mesa combination.
 
 ## 3. Memory requirements
 
-The candidate implementation should prefer a memory type satisfying
-`HOST_VISIBLE | HOST_COHERENT` for linear swapchain images. It must use
+The current implementation requires a memory type satisfying
+`HOST_VISIBLE | HOST_COHERENT` for linear swapchain images. It uses
 `vkGetImageSubresourceLayout()` for the mapped base offset and row pitch rather
-than assuming `width * 4`. If coherent memory is unavailable, the implementation
-must flush/invalidate the correct mapped ranges as required by Vulkan before CPU
-access. Any alignment padding must be included in the allocation and binding
-calculation.
+than assuming `width * 4`. Non-coherent memory fallback (flush/invalidate) is not
+implemented yet; the WSI must fail swapchain creation if no coherent host-visible
+type is available.
 
 The public SSBU WSI is useful evidence for PS4 RADV's linear host-visible image
 allocation, but its fixed 1920x1080 VideoOut registration, VideoOut flips, and
@@ -93,12 +93,12 @@ link-time contract, not an inferred loader hook. `PS4DRV_VulkanInit()`'s
 `vulkan_handle` argument is unrelated to this synthetic library path and need
 not be used for WSI dispatch.
 
-The public SSBU port's `vk_get_instance_proc_addr()` is useful as a reference
-for wrapping RADV's `vk_icdGetInstanceProcAddr` and `vk_common_GetDeviceProcAddr`,
-but its DXVK-specific exported name and VideoOut implementation must not be
-copied as-is. The CMake fail-closed guard can be removed only after the Wine
-symbol, the full window-mode WSI, and the actual Mesa link closure are all
-implemented and tested.
+The public SSBU port's `vk_get_instance_proc_addr()` is the reference for wrapping
+RADV's `vk_icdGetInstanceProcAddr` and `vk_common_GetDeviceProcAddr`. This branch
+exports Wine's required `ps4kit_vk_get_instance_proc_addr()` name and supplies
+its own window-mode surface/swapchain dispatch. The CMake fail-closed guard stays
+until target Mesa linking, actual queue synchronization, and window presentation
+are validated.
 
 ## 5. Evidence and limits
 
@@ -111,6 +111,7 @@ implemented and tested.
   `port/ps4_vk_wsi.cpp` and `port/ps4_vk_wsi.h`, MIT-licensed in that
   repository. Its code is not a drop-in implementation and is not copied here.
 
+A host C++ syntax check against the system Vulkan-Headers package passes in CI.
 No PS4 target compilation, Vulkan conformance test, real window presentation, or
 hardware test has been performed. The CMake WSI guard must remain enabled until
-both dispatch integration and the window-mode implementation are validated.
+the exact target Mesa/Vulkan-Headers combination and window-mode behavior are validated.
