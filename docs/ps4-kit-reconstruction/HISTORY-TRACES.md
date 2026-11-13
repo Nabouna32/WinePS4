@@ -44,6 +44,18 @@ The current public xemu-ps4 `toolchain/env.sh` makes the split explicit: clang 2
   - ps4-kit is described as toolchain setup, runtime, Mesa RADV, VideoOut swapchain, crash log, profiler and packaging, and explicitly says it is not published.
   - The build script uses `$HOME/ps4-kit/toolchain/env.sh`, `ps4_cmake`, `ps4-kit.cmake`, `ps4_kit_app`, `PS4_KIT_NETFS`, and `scripts/make-pkg.sh`.
 
+## Version pins recovered from dependent projects
+
+The published build instructions give three useful snapshots of the private kit's evolution:
+
+| Consumer | Publicly recorded ps4-kit revision | Evidence |
+|---|---|---|
+| WinePS4 v00.71 | `56b3d86` | [WinePS4 BUILDING.md](../../BUILDING.md) |
+| TTT2-PS4 v00.29 | `ff30ff6` | [TTT2 README](https://github.com/iHaiDeeZ/TTT2-PS4/blob/main/README.md) |
+| MGR-PS4 v00.09 | not pinned in the checked-in build instructions | [MGR README](https://github.com/iHaiDeeZ/MGR-PS4/blob/main/CREDITS.md) and [build script](https://github.com/iHaiDeeZ/MGR-PS4/blob/main/scripts/build-mgr.sh) |
+
+These hashes are historical identifiers, not source access. They show the kit was actively evolving across consumers; do not assume a function or archive list observed in a later project matches WinePS4's `56b3d86` exactly. For WinePS4 compatibility, treat `56b3d86` as the target and use later ports only to infer candidate interfaces that must be verified.
+
 ## Practical reconstruction consequences
 
 1. Start with PacBrew OpenOrbis and its own `ps4.cmake`, `ps4vars.sh`, CRT, `link.x` and `create-fself`.
