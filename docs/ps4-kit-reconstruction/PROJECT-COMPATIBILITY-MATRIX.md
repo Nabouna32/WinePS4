@@ -126,19 +126,20 @@ that lets contributors build lawful public project sources and work on them.
 | Consumer | CMake/API compatibility reconstructed | Remaining hard blocker |
 |---|---|---|
 | WinePS4 | Host CMake smoke test; app-before-Mesa helper order; window-desktop profile | Target heap backend, target runtime validation and full target Mesa/eboot/PKG build |
-| MGR-PS4 | Project injection hook and Mesa-before-app helper order | Native VideoOut WSI, real target heap/runtime and ReXGlue target build |
-| MP3-PS4 | Project injection hook and Mesa-before-app helper order | Native VideoOut WSI, real target heap/runtime and ReXGlue target build |
-| TTT2-PS4 | PS4_KIT_DIR export, native profile selection and project CMake path recovered | Native VideoOut WSI; diagnostics symbols now have a first-pass implementation but need full stack unwinding, address histograms and target validation |
-| ConkerLR-PS4 | Kit environment/CMake integration and libs-only build path recovered | Native VideoOut WSI and target runtime |
-| Godot PS4 | Direct ps4-kit.cmake inclusion, Mesa/app helper calls and default heap callback recovered | Native VideoOut WSI and target runtime |
+| MGR-PS4 | Project injection hook and Mesa-before-app helper order | Native WSI target compile/hardware validation, real target heap/runtime and ReXGlue target build |
+| MP3-PS4 | Project injection hook and Mesa-before-app helper order | Native WSI target compile/hardware validation, real target heap/runtime and ReXGlue target build |
+| TTT2-PS4 | PS4_KIT_DIR export, native profile selection, project CMake path and first-pass diagnostics symbols | Native WSI target compile/hardware validation; diagnostics still need stack unwinding, address histograms, JIT dumps and target validation |
+| ConkerLR-PS4 | Kit environment/CMake integration and libs-only build path recovered | Native WSI target compile/hardware validation and target runtime |
+| Godot PS4 | Direct ps4-kit.cmake inclusion, Mesa/app helper calls and default heap callback recovered | Native WSI target compile/hardware validation and target runtime |
 
 The helper order is deliberately order-independent: Wine calls ps4_kit_app()
 before ps4_kit_link_mesa(), while MGR, MP3, TTT2, ConkerLR and Godot call
 Mesa first. The CMake layer waits until both helpers have run before attaching
 the selected WSI source.
 
-The host CI workflow now includes tests for both helper orders and distinct
-WSI profiles, plus the C/C++ exported diagnostics-directory symbol. These
-tests do not constitute a target compile. Native VideoOut is intentionally
-missing and fails configuration explicitly rather than receiving the Wine
-window WSI by mistake.
+The host CI workflow includes tests for both helper orders and distinct WSI
+profiles, static checks for the native VideoOut/GNM contract, C/C++ diagnostics
+path linkage and a diagnostics runtime host test. These tests do not constitute
+a target compile. The native VideoOut source is now attached to native-profile
+consumers, but its OpenOrbis/Mesa compile and retail-hardware behavior remain
+unverified; Wine continues to use only the window-desktop WSI.
