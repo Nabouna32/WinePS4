@@ -366,7 +366,9 @@ VkResult VKAPI_CALL wsi_surface_capabilities(VkPhysicalDevice physical_device, V
     caps->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     const VkImageUsageFlags rgba = supported_linear_usage(physical_device, VK_FORMAT_R8G8B8A8_UNORM);
     const VkImageUsageFlags bgra = supported_linear_usage(physical_device, VK_FORMAT_B8G8R8A8_UNORM);
-    caps->supportedUsageFlags = rgba & bgra;
+    const bool have_rgba = (rgba & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0;
+    const bool have_bgra = (bgra & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0;
+    caps->supportedUsageFlags = have_rgba && have_bgra ? (rgba & bgra) : (have_rgba ? rgba : bgra);
     return VK_SUCCESS;
 }
 
@@ -378,14 +380,14 @@ VkResult VKAPI_CALL wsi_surface_capabilities2(VkPhysicalDevice physical_device,
     return wsi_surface_capabilities(physical_device, info->surface, &caps->surfaceCapabilities);
 }
 
-VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice, VkSurfaceKHR surface,
+VkResult VKAPI_CALL wsi_surface_formats(VkPhysicalDevice physical_device, VkSurfaceKHR surface,
                                         uint32_t *count, VkSurfaceFormatKHR *formats)
 {
     if (!count || !valid_surface(surface)) return VK_ERROR_SURFACE_LOST_KHR;
     std::vector<VkSurfaceFormatKHR> supported;
-    if (supported_linear_usage(g_physical_device, VK_FORMAT_R8G8B8A8_UNORM) & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+    if (supported_linear_usage(physical_device, VK_FORMAT_R8G8B8A8_UNORM) & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
         supported.push_back({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR});
-    if (supported_linear_usage(g_physical_device, VK_FORMAT_B8G8R8A8_UNORM) & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+    if (supported_linear_usage(physical_device, VK_FORMAT_B8G8R8A8_UNORM) & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
         supported.push_back({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR});
     if (!formats) {
         *count = static_cast<uint32_t>(supported.size());
