@@ -4,7 +4,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-: "\${PS4_MESA_SOURCE:?source ps4-kit/toolchain/env.sh or set PS4_MESA_SOURCE}"
+: "${PS4_MESA_SOURCE:?source ps4-kit/toolchain/env.sh or set PS4_MESA_SOURCE}"
 
 common="$PS4_MESA_SOURCE/src/amd/common"
 meson_file="$common/meson.build"
