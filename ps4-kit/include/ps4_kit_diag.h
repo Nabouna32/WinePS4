@@ -6,14 +6,16 @@ extern "C" {
 #endif
 
 /* Per-application diagnostics directory used by crash logs and profilers. */
-const char *ps4_data_dir(void);
+__attribute__((visibility("default"))) const char *ps4_data_dir(void);
 
 #ifdef __cplusplus
 }
 #define PS4_DIAG_DATA_DIR(path) \
-    extern "C" const char *ps4_data_dir(void) { return path; }
+    extern "C" __attribute__((used, visibility("default"))) \
+    const char *ps4_data_dir(void) { return path; }
 #else
 #define PS4_DIAG_DATA_DIR(path) \
+    __attribute__((used, visibility("default"))) \
     const char *ps4_data_dir(void) { return path; }
 #endif
 
