@@ -77,3 +77,36 @@ That is a valuable cross-check for the broader TLS warning already present in th
 - The WinePS4 private heap's arena trigger and dlmalloc revision remain unknown.
 - The exact OpenOrbis/musl build used by each project may differ; allocator internals must be checked against the actual selected sysroot.
 - A passing host test cannot validate Orbis kernel memory aliasing, 32-bit VA placement or real frame ownership.
+
+
+## 7. Exact W126 porting gap against our checked-in GNM source
+
+The OrbisDesk build script makes an important source-selection detail explicit:
+
+- Its ordinary Vulkan probe uses the DolphinPS4 baseline.
+- Its Wine variant switches to Crema's own Mesa checkout and copies Crema's `port/mesa/ac_ps4_drm.c`, then runs `patch-mesa-placed.py`.
+- The W126 patch script is therefore written against Crema's later GNM winsys, not against the earlier DolphinPS4 source currently checked into this WinePS4 reconstruction.
+
+This is confirmed by direct source comparison at fixed public revisions:
+
+| Source | Revision / blob | Relevant properties |
+|---|---|---|
+| WinePS4 branch `ps4-kit/mesa/ac_ps4_drm.c` | DolphinPS4 commit `879b3e57f3d3180bcb5f2234db3903688b28cd7d`, blob `a4589f0601c889a200a93d59968c763daff4aff2` | No `write_combined` member, no `ps4_flush_cpu_cache()`, no `<emmintrin.h>` include |
+| Crema `port/mesa/ac_ps4_drm.c` | Crema commit `475b8d5bd3498dbd5cfefe8175f98d017a017739`, blob `234d846ea25990c9d7307f41c022b1cc32e3164e` | Adds `write_combined`, SSE2 cache flush helper, flushes WC mappings during CPU map and whole-BO VA map |
+| OrbisDesk placed-map generator | Commit `bc745be7ee60f4667e78c51a9627cd275521b116`, blob `0a93d9e30a05de9b9d32f2407f7a366d25dcee1c` | Calls `b->write_combined` and `ps4_flush_cpu_cache()`; cannot compile unchanged against the WinePS4/DolphinPS4 file |
+
+The cache flush is not decorative. Crema's comment explains that direct-memory pages move between CPU-cached onion and write-combined garlic owners. A dirty cached line left by the previous owner can later overwrite data written through the new mapping. Its `ps4_flush_cpu_cache()` uses `mfence` / `clflush` / `mfence` over the range. The W126 fixed alias repeats that flush for write-combined BOs after creating the CPU alias.
+
+**Conclusion:** do not paste the W126 helper alone into the current file. Either (A) deliberately move the WinePS4 GNM backend to the Crema winsys revision after auditing the complete source diff and retaining only needed compatible changes, or (B) independently port the small prerequisites (`write_combined` tracking and cache-flush primitive) into our existing GNM backend, then implement the fixed alias. Option B has the smaller review surface, but still needs careful testing against the exact Mesa BO lifecycle.
+
+Further constraints before implementation:
+
+1. Keep the fixed CPU alias separate from `b->cpu` / `b->cpu_owned`; those fields track the existing ordinary mapping and cleanup path. RADV's `bo->cpu_map` should own the per-map pointer.
+2. The BO allocation already rounds `b->size` to `PS4_PAGE` (16 KiB), and `b->phys` is the direct-memory offset. Verify the target mapping length is the Vulkan BO size, not the diagnostic `PS4_TAIL` allocation.
+3. Preserve the kernel's returned address check. If the API reports success but a different address, rollback any unexpected mapping before returning failure.
+4. Inspect the exact RADV unmap branch before claiming that the Wine reservation is preserved. The Vulkan extension distinguishes a placed map from `VK_MEMORY_UNMAP_RESERVE_BIT_EXT`; they are separate capabilities and must not be conflated.
+5. WinePS4 notes say `sceKernelEnableDmemAliasing` is required before the first placed map. The OrbisDesk W126 script does not itself show this call; locate whether its GNM initialization enables aliasing elsewhere before deciding whether to add it.
+
+## 8. Licence/provenance caution
+
+The copied DolphinPS4 winsys file has its own MIT SPDX header and the reconstruction tree carries `LICENSE.ac_ps4_drm`. DolphinPS4's `CREDITS.md` also describes its Mesa port as MIT/per-file and the reconstruction carries a separate `patches/LICENSE.mesa-ps4` notice. OrbisDesk's current `THIRD_PARTY.md`, however, describes the Mesa patches originating in DolphinPS4 as GPL-2.0-or-later while separately identifying the winsys as MIT. These descriptions are not fully aligned. Keep the original notices, do not assume a repository-level licence overrides file-specific terms, and re-check the exact provenance before copying any further Mesa hunks. The OrbisDesk generator itself has an MIT header, but that does not automatically relicense the generated third-party source context.
